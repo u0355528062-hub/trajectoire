@@ -1,0 +1,50 @@
+; Engine configuration file.
+; Trajectoire — prototype médical (Godot 4.4)
+
+config_version=5
+
+[application]
+
+config/name="Trajectoire"
+config/description="Simulation médicale à la première personne — prototype mode Histoire (médecin généraliste)."
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.4", "Forward Plus")
+boot_splash/bg_color=Color(0.03, 0.05, 0.08, 1)
+boot_splash/show_image=false
+
+[autoload]
+
+Game="*res://scripts/core/game.gd"
+Cases="*res://scripts/data/cases.gd"
+
+[display]
+
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/size/window_width_override=1600
+window/size/window_height_override=900
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[gui]
+
+theme/default_font_multichannel_signed_distance_field=false
+theme/default_font_antialiasing=1
+
+[physics]
+
+common/physics_ticks_per_second=120
+3d/physics_engine="Jolt Physics"
+
+[rendering]
+
+textures/canvas_textures/default_texture_filter=1
+anti_aliasing/quality/msaa_3d=2
+anti_aliasing/quality/screen_space_aa=1
+lights_and_shadows/directional_shadow/size=4096
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
+lights_and_shadows/positional_shadow/soft_shadow_filter_quality=3
+environment/defaults/default_clear_color=Color(0.03, 0.05, 0.08, 1)
+environment/ssao/quality=2
+environment/ssil/quality=2
+global_illumination/sdfgi/probe_ray_count=2
