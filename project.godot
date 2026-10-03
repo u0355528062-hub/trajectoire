@@ -8,7 +8,7 @@ config_version=5
 config/name="Trajectoire"
 config/description="Simulation médicale à la première personne — prototype mode Histoire (médecin généraliste)."
 run/main_scene="res://scenes/main.tscn"
-config/features=PackedStringArray("4.4", "Forward Plus")
+config/features=PackedStringArray("4.6", "Forward Plus")
 boot_splash/bg_color=Color(0.03, 0.05, 0.08, 1)
 boot_splash/show_image=false
 
