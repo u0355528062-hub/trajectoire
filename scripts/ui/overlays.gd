@@ -3,12 +3,12 @@ extends RefCounted
 ## Écrans superposés : introduction de journée, bilan, pause, réglages.
 
 
-static func _backdrop(alpha: float = 0.7) -> Control:
+static func _backdrop(alpha: float = 0.55) -> Control:
 	var root := Control.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_STOP
 	var dim := ColorRect.new()
-	dim.color = Color(0.01, 0.02, 0.04, alpha)
+	dim.color = Color(0.01, 0.015, 0.03, alpha)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.add_child(dim)
 	return root
@@ -18,8 +18,7 @@ static func _centered_card(root: Control, width: float) -> VBoxContainer:
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	root.add_child(center)
-	var card := PanelContainer.new()
-	card.theme_type_variation = "Card"
+	var card := Glass.panel(24, 36, 30)
 	card.custom_minimum_size = Vector2(width, 0)
 	center.add_child(card)
 	var v := UITheme.vbox(18)
@@ -28,23 +27,57 @@ static func _centered_card(root: Control, width: float) -> VBoxContainer:
 	return v
 
 
+static func _icon(name: String, size: int, col: Color) -> Label:
+	var l := Label.new()
+	l.text = Icons.glyph(name)
+	l.add_theme_font_override("font", Icons.font())
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", col)
+	return l
+
+
+static func icon_button(icon: String, text: String, variation: String, cb: Callable) -> Button:
+	var b := UITheme.button("", variation, cb)
+	var h := UITheme.hbox(10)
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	h.alignment = BoxContainer.ALIGNMENT_CENTER
+	var col := Color(0.02, 0.1, 0.1) if variation == "PrimaryButton" else UITheme.TEXT
+	var ic := _icon(icon, 18, col)
+	ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(ic)
+	var l := Label.new()
+	l.text = text
+	l.add_theme_font_override("font", UITheme.font("bold" if variation == "PrimaryButton" else "semibold"))
+	l.add_theme_font_size_override("font_size", 17)
+	l.add_theme_color_override("font_color", col)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(l)
+	b.add_child(h)
+	b.custom_minimum_size = Vector2(maxf(160, text.length() * 10.5 + 70), 50)
+	return b
+
+
 # --- Introduction de la journée --------------------------------------------------------
 
 static func day_intro(day: int, title: String, text: String, records: Array[PatientRecord], on_start: Callable) -> Control:
-	var root := _backdrop(0.62)
-	var v := _centered_card(root, 860)
-	v.add_child(UITheme.label("MODE HISTOIRE  ·  JOUR %d SUR %d" % [day, Cases.day_count()], "AccentCaption"))
+	var root := _backdrop(0.5)
+	var v := _centered_card(root, 900)
+	var top := UITheme.hbox(12)
+	v.add_child(top)
+	top.add_child(_icon("calendar", 22, UITheme.ACCENT))
+	top.add_child(UITheme.label("MODE HISTOIRE  ·  JOUR %d SUR %d" % [day, Cases.day_count()], "AccentCaption"))
 	v.add_child(UITheme.label(title, "H1"))
 	var body := UITheme.label(text, "Body", true)
 	body.add_theme_font_size_override("font_size", 19)
-	body.add_theme_color_override("font_color", Color(UITheme.TEXT, 0.88))
+	body.add_theme_color_override("font_color", Color(UITheme.TEXT, 0.9))
 	v.add_child(body)
 	v.add_child(HSeparator.new())
 	v.add_child(UITheme.label("RENDEZ-VOUS PRÉVUS", "Caption"))
 	var g := GridContainer.new()
 	g.columns = 2
-	g.add_theme_constant_override("h_separation", 24)
-	g.add_theme_constant_override("v_separation", 8)
+	g.add_theme_constant_override("h_separation", 26)
+	g.add_theme_constant_override("v_separation", 10)
 	v.add_child(g)
 	for r in records:
 		if r.walk_in:
@@ -55,13 +88,22 @@ static func day_intro(day: int, title: String, text: String, records: Array[Pati
 		h.add_child(t)
 		h.add_child(UITheme.label("%s — %s" % [r.short_name(), String(r.data.get("motif", ""))], "Body"))
 		g.add_child(h)
-	var tip := UITheme.label("Des patients peuvent se présenter sans rendez-vous. Le temps passe pendant vos déplacements et chaque examen prend quelques minutes.", "Muted", true)
-	v.add_child(tip)
+	var tips := PanelContainer.new()
+	tips.add_theme_stylebox_override("panel", UITheme.box(Color(UITheme.ACCENT, 0.08), 14, Color(UITheme.ACCENT, 0.25), 1, 18, 14))
+	v.add_child(tips)
+	var tv := UITheme.vbox(6)
+	tips.add_child(tv)
+	tv.add_child(UITheme.label("COMMENT JOUER", "AccentCaption"))
+	for line in ["Parlez au patient avec E : interrogatoire et consignes (s'installer sur la table, s'allonger…).",
+			"Maintenez TAB pour la roue des outils, visez une zone du corps et maintenez le clic gauche pour examiner.",
+			"Sur l'ordinateur du bureau : agenda, dossier, diagnostic, ordonnance. Chaque action prend du temps."]:
+		var l := UITheme.label("•  " + line, "Body", true)
+		l.add_theme_font_size_override("font_size", 16)
+		tv.add_child(l)
 	var row := UITheme.hbox(12)
 	v.add_child(row)
 	row.add_child(UITheme.spacer(false))
-	var b := UITheme.button("Commencer la journée", "PrimaryButton", on_start)
-	b.custom_minimum_size = Vector2(260, 52)
+	var b := icon_button("play", "Commencer la journée", "PrimaryButton", on_start)
 	row.add_child(b)
 	b.grab_focus.call_deferred()
 	return root
@@ -70,9 +112,12 @@ static func day_intro(day: int, title: String, text: String, records: Array[Pati
 # --- Bilan de fin de journée --------------------------------------------------------------
 
 static func day_report(day: int, results: Array[Dictionary], last: bool, on_continue: Callable, on_menu: Callable) -> Control:
-	var root := _backdrop(0.75)
-	var v := _centered_card(root, 920)
-	v.add_child(UITheme.label("FIN DE LA MATINÉE  ·  JOUR %d" % day, "AccentCaption"))
+	var root := _backdrop(0.65)
+	var v := _centered_card(root, 980)
+	var top := UITheme.hbox(12)
+	v.add_child(top)
+	top.add_child(_icon("trophy", 22, UITheme.WARNING))
+	top.add_child(UITheme.label("FIN DE LA MATINÉE  ·  JOUR %d" % day, "AccentCaption"))
 	v.add_child(UITheme.label("Bilan de la journée", "H1"))
 	var total_score := 0.0
 	var correct := 0
@@ -83,11 +128,11 @@ static func day_report(day: int, results: Array[Dictionary], last: bool, on_cont
 	var avg := total_score / maxf(1.0, results.size())
 	var stats := UITheme.hbox(14)
 	v.add_child(stats)
-	stats.add_child(_kpi("PATIENTS VUS", str(results.size())))
-	stats.add_child(_kpi("DIAGNOSTICS EXACTS", "%d / %d" % [correct, results.size()]))
-	stats.add_child(_kpi("SCORE MOYEN", "%d" % int(avg)))
-	stats.add_child(_kpi("RÉPUTATION", "%d" % int(round(Game.reputation))))
-	stats.add_child(_kpi("HONORAIRES", "%d €" % int(Game.money)))
+	stats.add_child(_kpi("users", "PATIENTS VUS", str(results.size())))
+	stats.add_child(_kpi("brain", "DIAGNOSTICS EXACTS", "%d / %d" % [correct, results.size()]))
+	stats.add_child(_kpi("award", "SCORE MOYEN", "%d" % int(avg)))
+	stats.add_child(_kpi("star", "RÉPUTATION", "%d" % int(round(Game.reputation))))
+	stats.add_child(_kpi("euro", "HONORAIRES", "%d €" % int(Game.money)))
 	v.add_child(HSeparator.new())
 	for r in results:
 		var row := UITheme.hbox(16)
@@ -102,6 +147,7 @@ static func day_report(day: int, results: Array[Dictionary], last: bool, on_cont
 		var d := UITheme.label(r.get("diagnosis_expected", ""), "Muted")
 		d.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(d)
+		row.add_child(UITheme.label("%d examens · %d questions" % [int(r.get("exams", 0)), int(r.get("questions", 0))], "Muted"))
 		row.add_child(UITheme.label("%d pts" % int(r.get("score", 0)), "Body"))
 		v.add_child(row)
 	if last:
@@ -112,69 +158,98 @@ static func day_report(day: int, results: Array[Dictionary], last: bool, on_cont
 	var row2 := UITheme.hbox(12)
 	v.add_child(row2)
 	if not last:
-		row2.add_child(UITheme.button("Menu principal", "GhostButton", on_menu))
+		row2.add_child(icon_button("house", "Menu principal", "GhostButton", on_menu))
 	row2.add_child(UITheme.spacer(false))
-	var b := UITheme.button("Retour au menu" if last else "Journée suivante  →", "PrimaryButton", on_continue)
-	b.custom_minimum_size = Vector2(240, 52)
+	var b := icon_button("house" if last else "arrow-right", "Retour au menu" if last else "Journée suivante", "PrimaryButton", on_continue)
 	row2.add_child(b)
 	b.grab_focus.call_deferred()
 	return root
 
 
-static func _kpi(title: String, value: String) -> Control:
+static func _kpi(icon: String, title: String, value: String) -> Control:
 	var p := PanelContainer.new()
 	p.theme_type_variation = "SoftCard"
 	p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var v := UITheme.vbox(4)
 	p.add_child(v)
-	v.add_child(UITheme.label(title, "Caption"))
-	var l := UITheme.label(value, "H2")
-	v.add_child(l)
+	var h := UITheme.hbox(6)
+	v.add_child(h)
+	h.add_child(_icon(icon, 14, UITheme.ACCENT))
+	h.add_child(UITheme.label(title, "Caption"))
+	v.add_child(UITheme.label(value, "H2"))
 	return p
 
 
 # --- Pause ----------------------------------------------------------------------------
 
 static func pause_menu(on_resume: Callable, on_quit: Callable) -> Control:
-	var root := _backdrop(0.6)
-	var v := _centered_card(root, 460)
-	v.add_child(UITheme.label("PAUSE", "AccentCaption"))
+	var root := _backdrop(0.45)
+	var v := _centered_card(root, 560)
+	var top := UITheme.hbox(12)
+	v.add_child(top)
+	top.add_child(_icon("pause", 22, UITheme.ACCENT))
+	top.add_child(UITheme.label("PAUSE", "AccentCaption"))
 	v.add_child(UITheme.label("Cabinet de Saint-Aubin", "H2"))
 	var settings_holder := UITheme.vbox(12)
 	settings_holder.visible = false
 	var buttons := UITheme.vbox(10)
 	v.add_child(buttons)
 	v.add_child(settings_holder)
-	var resume := UITheme.button("Reprendre", "PrimaryButton", on_resume)
-	resume.custom_minimum_size.y = 50
+	var resume := icon_button("play", "Reprendre", "PrimaryButton", on_resume)
+	resume.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	buttons.add_child(resume)
-	resume.grab_focus.call_deferred()
-	buttons.add_child(UITheme.button("Paramètres", "", func():
+	var sb := icon_button("settings", "Paramètres", "", func():
 		buttons.visible = false
-		settings_holder.visible = true))
-	buttons.add_child(UITheme.button("Quitter vers le menu principal", "", on_quit))
+		settings_holder.visible = true)
+	sb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	buttons.add_child(sb)
+	var q := icon_button("log-out", "Quitter vers le menu principal", "", on_quit)
+	q.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	buttons.add_child(q)
 	settings_holder.add_child(settings_panel())
-	settings_holder.add_child(UITheme.button("Retour", "", func():
+	settings_holder.add_child(icon_button("arrow-left", "Retour", "", func():
 		settings_holder.visible = false
 		buttons.visible = true))
+	resume.grab_focus.call_deferred()
 	return root
 
 
 # --- Réglages -------------------------------------------------------------------------
 
 static func settings_panel() -> Control:
-	var v := UITheme.vbox(16)
-	v.custom_minimum_size = Vector2(400, 0)
-	v.add_child(_slider_row("Sensibilité de la souris", 0.05, 0.8, 0.01, float(Game.settings["sensitivity"]), "sensitivity", "%.2f"))
-	v.add_child(_slider_row("Champ de vision", 60.0, 100.0, 1.0, float(Game.settings["fov"]), "fov", "%d°"))
-	v.add_child(UITheme.label("QUALITÉ GRAPHIQUE", "Caption"))
-	var q := UITheme.hbox(6)
+	var root := UITheme.vbox(14)
+	root.custom_minimum_size = Vector2(480, 0)
+	var tabs := PanelContainer.new()
+	tabs.add_theme_stylebox_override("panel", UITheme.box(Color(1, 1, 1, 0.04), 12, Color(0, 0, 0, 0), 0, 5, 5))
+	root.add_child(tabs)
+	var th := UITheme.hbox(4)
+	tabs.add_child(th)
+	var pages := {}
 	var group := ButtonGroup.new()
+	for item in [["gfx", "Graphismes"], ["audio", "Audio"], ["game", "Jeu"]]:
+		var b := UITheme.button(item[1], "TabButton")
+		b.toggle_mode = true
+		b.button_group = group
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		th.add_child(b)
+		var page := UITheme.vbox(14)
+		page.visible = false
+		root.add_child(page)
+		pages[item[0]] = page
+		b.toggled.connect(func(on: bool): page.visible = on)
+		if item[0] == "gfx":
+			b.button_pressed = true
+			page.visible = true
+
+	var gfx: VBoxContainer = pages["gfx"]
+	gfx.add_child(UITheme.label("QUALITÉ GRAPHIQUE", "Caption"))
+	var q := UITheme.hbox(6)
+	var qgroup := ButtonGroup.new()
 	var names := ["Performance", "Équilibrée", "Ultra"]
 	for i in range(3):
 		var b := UITheme.button(names[i], "TabButton")
 		b.toggle_mode = true
-		b.button_group = group
+		b.button_group = qgroup
 		b.button_pressed = int(Game.settings["quality"]) == i
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.pressed.connect(Game.set_setting.bind("quality", i))
@@ -182,22 +257,34 @@ static func settings_panel() -> Control:
 	var qp := PanelContainer.new()
 	qp.add_theme_stylebox_override("panel", UITheme.box(Color(1, 1, 1, 0.04), 12, Color(0, 0, 0, 0), 0, 5, 5))
 	qp.add_child(q)
-	v.add_child(qp)
-	var qhint := UITheme.label("Ultra : illumination globale SDFGI, brouillard volumétrique, réflexions.", "Muted", true)
+	gfx.add_child(qp)
+	var qhint := UITheme.label("Ultra : illumination globale, brouillard volumétrique, réflexions, ombres douces.", "Muted", true)
 	qhint.add_theme_font_size_override("font_size", 14)
-	v.add_child(qhint)
-	v.add_child(_toggle_row("Balancement de la caméra", "head_bob"))
-	v.add_child(_toggle_row("Plein écran", "fullscreen"))
-	return v
+	gfx.add_child(qhint)
+	gfx.add_child(_slider_row("Champ de vision", 60.0, 100.0, 1.0, float(Game.settings["fov"]), "fov", "%d°"))
+	gfx.add_child(_slider_row("Résolution de rendu", 0.5, 1.0, 0.05, float(Game.settings.get("render_scale", 1.0)), "render_scale", "%.2f"))
+	gfx.add_child(_toggle_row("Plein écran", "fullscreen"))
+	gfx.add_child(_toggle_row("Synchronisation verticale", "vsync"))
+
+	var audio: VBoxContainer = pages["audio"]
+	for a in [["Volume général", "vol_master"], ["Musique", "vol_music"], ["Ambiance", "vol_ambience"], ["Effets sonores", "vol_sfx"], ["Voix", "vol_voice"], ["Interface", "vol_ui"]]:
+		audio.add_child(_slider_row(a[0], 0.0, 1.0, 0.01, float(Game.settings.get(a[1], 0.8)), a[1], "%d %%", 100.0))
+
+	var game: VBoxContainer = pages["game"]
+	game.add_child(_slider_row("Sensibilité de la souris", 0.05, 0.8, 0.01, float(Game.settings["sensitivity"]), "sensitivity", "%.2f"))
+	game.add_child(_toggle_row("Inverser l'axe vertical", "invert_y"))
+	game.add_child(_toggle_row("Balancement de la caméra", "head_bob"))
+	game.add_child(_toggle_row("Sous-titres", "subtitles"))
+	return root
 
 
-static func _slider_row(title: String, min_v: float, max_v: float, step: float, value: float, key: String, fmt: String) -> Control:
+static func _slider_row(title: String, min_v: float, max_v: float, step: float, value: float, key: String, fmt: String, display_mul: float = 1.0) -> Control:
 	var v := UITheme.vbox(6)
 	var h := UITheme.hbox(8)
 	v.add_child(h)
 	h.add_child(UITheme.label(title.to_upper(), "Caption"))
 	h.add_child(UITheme.spacer(false))
-	var val := UITheme.label(fmt % value, "Caption")
+	var val := UITheme.label(fmt % (value * display_mul), "Caption")
 	val.add_theme_color_override("font_color", UITheme.TEXT)
 	h.add_child(val)
 	var s := HSlider.new()
@@ -208,8 +295,9 @@ static func _slider_row(title: String, min_v: float, max_v: float, step: float, 
 	s.focus_mode = Control.FOCUS_NONE
 	s.custom_minimum_size = Vector2(0, 24)
 	s.value_changed.connect(func(x: float):
-		val.text = fmt % x
+		val.text = fmt % (x * display_mul)
 		Game.set_setting(key, x))
+	s.drag_ended.connect(func(_c: bool): Sfx.ui("click", -6.0))
 	v.add_child(s)
 	return v
 
@@ -219,5 +307,7 @@ static func _toggle_row(title: String, key: String) -> Control:
 	c.text = title
 	c.button_pressed = bool(Game.settings[key])
 	c.focus_mode = Control.FOCUS_NONE
-	c.toggled.connect(func(on: bool): Game.set_setting(key, on))
+	c.toggled.connect(func(on: bool):
+		Sfx.ui("click", -4.0)
+		Game.set_setting(key, on))
 	return c

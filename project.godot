@@ -15,6 +15,7 @@ boot_splash/show_image=false
 [autoload]
 
 Game="*res://scripts/core/game.gd"
+Sfx="*res://scripts/core/sfx.gd"
 Cases="*res://scripts/data/cases.gd"
 
 [display]

@@ -25,11 +25,22 @@ var total_correct: int = 0
 var day_results: Array[Dictionary] = []
 
 var settings := {
-	"sensitivity": 0.25,
-	"fov": 75.0,
-	"quality": 2, # 0 = Performance, 1 = Équilibré, 2 = Ultra
+	"sensitivity": 0.22,
+	"fov": 72.0,
+	"quality": 2, # 0 = Performance, 1 = Équilibrée, 2 = Ultra
 	"fullscreen": false,
+	"vsync": true,
 	"head_bob": true,
+	"invert_y": false,
+	"subtitles": true,
+	"vol_master": 0.9,
+	"vol_music": 0.55,
+	"vol_ambience": 0.7,
+	"vol_sfx": 0.85,
+	"vol_voice": 1.0,
+	"vol_ui": 0.7,
+	"render_scale": 1.0,
+	"doctor_name": "Martin",
 }
 
 
@@ -176,6 +187,8 @@ func apply_settings() -> void:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
 		elif not want_fs and is_fs:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+	if DisplayServer.get_name() != "headless":
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if settings["vsync"] else DisplayServer.VSYNC_DISABLED)
 	settings_changed.emit()
 
 
@@ -190,13 +203,22 @@ func _setup_input() -> void:
 	_bind("move_right", [KEY_D, KEY_RIGHT])
 	_bind("sprint", [KEY_SHIFT])
 	_bind("interact", [KEY_E])
-	_bind("agenda", [KEY_TAB])
+	_bind("tool_wheel", [KEY_TAB])
+	_bind("notes", [KEY_C])
 	_bind("pause", [KEY_ESCAPE])
-	if not InputMap.has_action("interact_mouse"):
-		InputMap.add_action("interact_mouse")
-		var mb := InputEventMouseButton.new()
-		mb.button_index = MOUSE_BUTTON_LEFT
-		InputMap.action_add_event("interact_mouse", mb)
+	_bind_mouse("use_tool", MOUSE_BUTTON_LEFT)
+	_bind_mouse("holster", MOUSE_BUTTON_RIGHT)
+	_bind_mouse("tool_next", MOUSE_BUTTON_WHEEL_DOWN)
+	_bind_mouse("tool_prev", MOUSE_BUTTON_WHEEL_UP)
+
+
+func _bind_mouse(action: String, button: MouseButton) -> void:
+	if InputMap.has_action(action):
+		InputMap.erase_action(action)
+	InputMap.add_action(action)
+	var mb := InputEventMouseButton.new()
+	mb.button_index = button
+	InputMap.action_add_event(action, mb)
 
 
 func _bind(action: String, keys: Array) -> void:

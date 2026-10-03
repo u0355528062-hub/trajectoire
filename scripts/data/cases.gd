@@ -2,8 +2,8 @@ extends Node
 ## Base de données médicale du mode Histoire (médecine générale).
 ## Chargée en autoload sous le nom « Cases ».
 ##
-## Les contenus sont simplifiés à visée ludique et pédagogique : ils ne
-## remplacent pas les recommandations officielles (HAS, sociétés savantes).
+## Contenus simplifiés à visée ludique et pédagogique : ils ne remplacent pas
+## les recommandations officielles (HAS, sociétés savantes).
 
 # --- Interrogatoire -----------------------------------------------------------
 
@@ -14,8 +14,8 @@ const QUESTIONS := [
 	{"id": "autres", "text": "Avez-vous remarqué d'autres symptômes ?"},
 	{"id": "antecedents", "text": "Avez-vous des antécédents médicaux ou chirurgicaux ?"},
 	{"id": "traitements", "text": "Prenez-vous des médicaments en ce moment ?"},
-	{"id": "allergies", "text": "Avez-vous des allergies, notamment médicamenteuses ?"},
-	{"id": "mode_vie", "text": "Tabac, alcool, activité physique ?"},
+	{"id": "allergies", "text": "Avez-vous des allergies, notamment à des médicaments ?"},
+	{"id": "mode_vie", "text": "Fumez-vous ? Et l'alcool, le sport ?"},
 ]
 
 const DEFAULT_ANSWERS := {
@@ -26,46 +26,27 @@ const DEFAULT_ANSWERS := {
 	"antecedents": "Non, rien de spécial.",
 	"traitements": "Non, aucun traitement.",
 	"allergies": "Pas que je sache.",
-	"mode_vie": "Je ne fume pas, un verre de temps en temps.",
+	"mode_vie": "Je ne fume pas. Un verre de temps en temps, c'est tout.",
 }
 
-# --- Examens ------------------------------------------------------------------
-# `table` : l'examen se fait sur la table d'examen (le patient s'y installe).
-
-const EXAMS := [
-	{"id": "constantes", "name": "Constantes vitales", "detail": "TA · FC · T° · SpO₂ · FR", "time": 2, "kind": "clinique", "table": false},
-	{"id": "cardio", "name": "Auscultation cardiaque", "detail": "Stéthoscope", "time": 1, "kind": "clinique", "table": true},
-	{"id": "pulmo", "name": "Auscultation pulmonaire", "detail": "Stéthoscope", "time": 1, "kind": "clinique", "table": true},
-	{"id": "orl", "name": "Examen de la gorge", "detail": "Abaisse-langue · lampe", "time": 1, "kind": "clinique", "table": false},
-	{"id": "otoscopie", "name": "Otoscopie", "detail": "Tympans", "time": 1, "kind": "clinique", "table": false},
-	{"id": "peau", "name": "Peau et ganglions", "detail": "Inspection · palpation", "time": 1, "kind": "clinique", "table": false},
-	{"id": "abdomen", "name": "Palpation abdominale", "detail": "Allongé", "time": 2, "kind": "clinique", "table": true},
-	{"id": "neuro", "name": "Examen neurologique", "detail": "Force · sensibilité · réflexes", "time": 2, "kind": "clinique", "table": true},
-	{"id": "locomoteur", "name": "Examen ostéo-articulaire", "detail": "Rachis · membres", "time": 2, "kind": "clinique", "table": true},
-	{"id": "tdr", "name": "TROD angine", "detail": "Streptocoque A · 5 min", "time": 3, "kind": "test", "table": false},
-	{"id": "bu", "name": "Bandelette urinaire", "detail": "Leucocytes · nitrites", "time": 2, "kind": "test", "table": false},
-	{"id": "glycemie", "name": "Glycémie capillaire", "detail": "Dextro", "time": 1, "kind": "test", "table": false},
-	{"id": "dep", "name": "Débit expiratoire de pointe", "detail": "Peak-flow", "time": 2, "kind": "test", "table": false},
-	{"id": "ecg", "name": "ECG 12 dérivations", "detail": "Électrocardiogramme", "time": 5, "kind": "test", "table": true},
-]
-
-const DEFAULT_FINDINGS := {
-	"cardio": "Bruits du cœur réguliers, pas de souffle audible.",
-	"pulmo": "Murmure vésiculaire symétrique, pas de bruit surajouté.",
-	"orl": "Pharynx et amygdales d'aspect normal.",
-	"otoscopie": "Tympans gris nacrés, bien visibles des deux côtés.",
-	"peau": "Pas de lésion cutanée. Pas d'adénopathie palpable.",
-	"abdomen": "Abdomen souple, indolore, pas de masse palpable.",
-	"neuro": "Force, sensibilité et réflexes normaux et symétriques.",
-	"locomoteur": "Mobilité articulaire normale, pas de douleur provoquée.",
-	"tdr": "Négatif.",
-	"bu": "Négative (leucocytes −, nitrites −, sang −, glucose −).",
-	"glycemie": "0,98 g/L.",
-	"dep": "Dans les normes pour l'âge et la taille.",
-	"ecg": "Rythme sinusal régulier, pas de trouble de la repolarisation.",
+## Répliques génériques des patients (enregistrées pour chaque voix).
+const GENERIC := {
+	"hello": "Bonjour docteur.",
+	"ok": "D'accord, docteur.",
+	"table": "D'accord, je m'installe sur la table.",
+	"lie": "Je m'allonge, d'accord.",
+	"chair": "Je me rassieds sur la chaise.",
+	"pain": "Aïe ! Là, ça me fait mal.",
+	"cold": "Ouh, c'est froid !",
+	"aah": "Aaaaaah…",
+	"blow": "Je souffle fort, c'est ça ?",
+	"sample": "D'accord, je reviens tout de suite.",
+	"prick": "Aïe, ça pique un peu.",
+	"bye": "Merci beaucoup docteur. Au revoir !",
+	"follow": "J'arrive, docteur.",
+	"stand": "Je me lève.",
+	"which": "Oui ?",
 }
-
-const DEFAULT_VITALS := {"ta": "124/78", "fc": 74, "temp": 36.8, "spo2": 98, "fr": 15}
 
 # --- Diagnostics ----------------------------------------------------------------
 
@@ -117,72 +98,113 @@ const DIAGNOSES := {
 }
 
 # --- Prescriptions et orientations ------------------------------------------------
+# Chaque entrée : libellé, ligne d'ordonnance, catégorie (rx / bio / orientation / conseil).
 
 const TREATMENTS := {
-	"paracetamol": "Paracétamol",
-	"ains": "Anti-inflammatoire (ibuprofène)",
-	"amoxicilline": "Amoxicilline",
-	"fluoroquinolone": "Ciprofloxacine (fluoroquinolone)",
-	"fosfomycine": "Fosfomycine — dose unique",
-	"corticoides": "Corticoïdes par voie orale",
-	"lavage_nez": "Lavages de nez au sérum physiologique",
-	"gouttes_oreille": "Gouttes auriculaires antibiotiques",
-	"rester_actif": "Conseil : rester actif, éviter le repos au lit",
-	"repos_lit": "Repos strict au lit 1 semaine",
-	"radio_rachis": "Radiographie du rachis lombaire",
-	"radio_cheville": "Radiographie de la cheville",
-	"radio_thorax": "Radiographie du thorax",
-	"kine": "Séances de kinésithérapie",
-	"arret_travail": "Arrêt de travail court",
-	"hygiene_vie": "Règles hygiéno-diététiques",
-	"intensifier_hta": "Ajouter un IEC ou un ARA2 (bithérapie)",
-	"renouveler_seul": "Renouveler l'ordonnance à l'identique",
-	"bilan_bio": "Bilan biologique de suivi",
-	"urgences": "Adresser aux urgences par ses propres moyens",
-	"samu": "Appeler le SAMU (15) immédiatement",
-	"aspirine": "Aspirine (en lien avec le SAMU)",
-	"ipp": "Inhibiteur de la pompe à protons",
-	"anxiolytique": "Anxiolytique",
-	"ecbu": "ECBU (examen cytobactériologique des urines)",
-	"hydratation": "Hydratation abondante",
-	"salbutamol": "Salbutamol inhalé (bronchodilatateur)",
-	"traitement_fond": "Corticoïde inhalé (traitement de fond)",
-	"glace_repos": "Glace, repos relatif, compression, surélévation",
-	"attelle": "Attelle / chevillère de maintien",
-	"platre": "Plâtre 6 semaines",
-	"isglt2": "Ajouter un iSGLT2 ou un aGLP-1",
-	"insuline": "Débuter une insuline",
-	"arret_metformine": "Arrêter la metformine",
-	"pieds": "Examen des pieds et éducation podologique",
-	"sro": "Soluté de réhydratation orale",
-	"antibiotique_gea": "Antibiotique (amoxicilline)",
-	"reevaluation": "Réévaluation à 48–72 h",
-	"hospitalisation": "Hospitalisation",
-	"valaciclovir": "Valaciclovir (antiviral) 7 jours",
-	"creme": "Crème hydratante",
-	"triptan": "Triptan",
-	"opioides": "Codéine / tramadol (opioïdes)",
-	"scanner": "Scanner cérébral en urgence",
-	"surveillance": "Consignes de surveillance (reconsulter si aggravation)",
+	"paracetamol": ["Paracétamol", "Paracétamol 1 g, jusqu'à 3 fois par jour si douleur ou fièvre", "rx"],
+	"ains": ["Ibuprofène (anti-inflammatoire)", "Ibuprofène 400 mg, 3 fois par jour au cours des repas, 3 jours", "rx"],
+	"amoxicilline": ["Amoxicilline", "Amoxicilline 1 g matin et soir, 6 jours", "rx"],
+	"fluoroquinolone": ["Ciprofloxacine (fluoroquinolone)", "Ciprofloxacine 500 mg matin et soir, 5 jours", "rx"],
+	"fosfomycine": ["Fosfomycine-trométamol", "Fosfomycine-trométamol 3 g, un sachet en prise unique", "rx"],
+	"corticoides": ["Corticoïdes par voie orale", "Prednisolone 40 mg le matin, 5 jours", "rx"],
+	"lavage_nez": ["Lavages de nez", "Sérum physiologique : lavages de nez plusieurs fois par jour", "rx"],
+	"gouttes_oreille": ["Gouttes auriculaires antibiotiques", "Gouttes auriculaires antibiotiques, 2 fois par jour", "rx"],
+	"rester_actif": ["Conseil : rester actif", "Maintien des activités habituelles, éviter le repos au lit", "conseil"],
+	"repos_lit": ["Repos strict au lit", "Repos strict au lit pendant une semaine", "conseil"],
+	"radio_rachis": ["Radiographie lombaire", "Radiographie du rachis lombaire face et profil", "bio"],
+	"radio_cheville": ["Radiographie de cheville", "Radiographie de la cheville droite", "bio"],
+	"radio_thorax": ["Radiographie thoracique", "Radiographie thoracique de face", "bio"],
+	"kine": ["Kinésithérapie", "10 séances de kinésithérapie", "rx"],
+	"arret_travail": ["Arrêt de travail court", "Arrêt de travail de 3 jours", "conseil"],
+	"hygiene_vie": ["Règles hygiéno-diététiques", "Réduction du sel, activité physique régulière, alimentation équilibrée", "conseil"],
+	"intensifier_hta": ["Ajouter un IEC ou un ARA2", "Ramipril 2,5 mg le matin (en plus de l'amlodipine)", "rx"],
+	"renouveler_seul": ["Renouveler à l'identique", "Renouvellement du traitement habituel à l'identique", "rx"],
+	"bilan_bio": ["Bilan biologique", "Créatinine, kaliémie, glycémie à jeun, bilan lipidique", "bio"],
+	"urgences": ["Urgences par ses propres moyens", "Se rendre aux urgences par ses propres moyens", "orientation"],
+	"samu": ["Appeler le SAMU (15)", "Appel du SAMU – Centre 15", "orientation"],
+	"aspirine": ["Aspirine (avec le SAMU)", "Aspirine 250 mg, sur avis du médecin régulateur", "rx"],
+	"ipp": ["Inhibiteur de la pompe à protons", "Oméprazole 20 mg le matin, 14 jours", "rx"],
+	"anxiolytique": ["Anxiolytique", "Hydroxyzine 25 mg le soir", "rx"],
+	"ecbu": ["ECBU", "Examen cytobactériologique des urines", "bio"],
+	"hydratation": ["Hydratation abondante", "Boire au moins 1,5 L d'eau par jour", "conseil"],
+	"salbutamol": ["Salbutamol inhalé", "Salbutamol 100 µg : 2 bouffées si gêne, jusqu'à 4 fois par jour", "rx"],
+	"traitement_fond": ["Corticoïde inhalé (fond)", "Béclométasone 250 µg : 1 bouffée matin et soir (traitement de fond)", "rx"],
+	"glace_repos": ["Glace, repos, compression, surélévation", "Glaçage 20 min 3 fois par jour, repos relatif, compression, jambe surélevée", "conseil"],
+	"attelle": ["Chevillère de maintien", "Chevillère de contention, 3 semaines", "rx"],
+	"platre": ["Plâtre 6 semaines", "Immobilisation plâtrée 6 semaines", "rx"],
+	"isglt2": ["Ajouter un iSGLT2 ou un aGLP-1", "Dapagliflozine 10 mg le matin (en plus de la metformine)", "rx"],
+	"insuline": ["Débuter une insuline", "Insuline glargine 10 UI le soir", "rx"],
+	"arret_metformine": ["Arrêter la metformine", "Arrêt de la metformine", "rx"],
+	"pieds": ["Éducation podologique", "Examen des pieds à chaque consultation, chaussures adaptées", "conseil"],
+	"sro": ["Soluté de réhydratation orale", "Soluté de réhydratation orale, à volonté", "rx"],
+	"antibiotique_gea": ["Antibiotique (amoxicilline)", "Amoxicilline 1 g matin et soir, 5 jours", "rx"],
+	"reevaluation": ["Réévaluation à 48–72 h", "Consultation de réévaluation dans 48 à 72 heures", "conseil"],
+	"hospitalisation": ["Hospitalisation", "Hospitalisation en service de médecine", "orientation"],
+	"valaciclovir": ["Valaciclovir (antiviral)", "Valaciclovir 1 g 3 fois par jour, 7 jours", "rx"],
+	"creme": ["Crème hydratante", "Crème émolliente sur les lésions", "rx"],
+	"triptan": ["Triptan", "Sumatriptan 50 mg dès le début de la crise", "rx"],
+	"opioides": ["Codéine / tramadol", "Tramadol 50 mg, jusqu'à 3 fois par jour", "rx"],
+	"scanner": ["Scanner cérébral en urgence", "Scanner cérébral en urgence", "bio"],
+	"surveillance": ["Consignes de surveillance", "Reconsulter en cas d'aggravation ou de fièvre persistante", "conseil"],
+}
+
+# --- Personnages hors patients ----------------------------------------------------------
+
+const CAST := {
+	"camille": {"name": "Camille", "avatar": "camille_secretaire", "gender": "f", "voice": "siwis", "pitch": 0.6},
+	"smur_medecin": {"name": "Dr Lucas (SMUR)", "avatar": "smur_medecin", "gender": "m", "voice": "gilles", "pitch": -0.5},
+	"smur_infirmiere": {"name": "Infirmière du SMUR", "avatar": "smur_infirmiere", "gender": "f", "voice": "siwis", "pitch": -0.8},
+	"regulateur": {"name": "Médecin régulateur du SAMU", "avatar": "", "gender": "m", "voice": "mls", "pitch": -1.0},
+	"marchand": {"name": "Dr Hélène Marchand", "avatar": "helene_marchand", "gender": "f", "voice": "siwis", "pitch": -2.2},
+}
+
+## Répliques des personnages hors patients.
+const LINES := {
+	"camille": {
+		"morning": "Bonjour docteur ! L'agenda du jour est sur votre ordinateur.",
+		"next": "Votre patient suivant est en salle d'attente.",
+		"done": "C'est terminé pour ce matin ! Bonne pause, docteur.",
+		"urgent": "Docteur ! Un monsieur se plaint d'une douleur dans la poitrine, il est très pâle !",
+		"walk_in": "Docteur, un patient se présente sans rendez-vous.",
+		"none": "Il n'y a personne en salle d'attente pour le moment.",
+		"call": "Je fais entrer le patient suivant.",
+		"busy": "Vous avez déjà un patient dans votre cabinet, docteur.",
+		"hello": "Oui, docteur ?",
+		"arrival_m": "Votre patient de rendez-vous est arrivé.",
+		"arrival_f": "Votre patiente de rendez-vous est arrivée.",
+	},
+	"regulateur": {
+		"answer": "SAMU, centre 15, j'écoute.",
+		"ok": "Bien reçu. J'engage le SMUR immédiatement, ils seront chez vous dans une dizaine de minutes. Donnez-lui de l'aspirine s'il n'est pas allergique, et restez auprès de lui.",
+	},
+	"smur_medecin": {
+		"hello": "Bonjour ! SMUR. Où est le patient ?",
+		"take": "On s'occupe de lui. Bon réflexe, docteur : direction la salle de coronarographie.",
+	},
+	"marchand": {
+		"hello": "Alors, mon cher confrère ? Camille m'a dit le plus grand bien de vous.",
+		"proud": "Mes patients sont entre de bonnes mains. Je peux enfin profiter de ma retraite !",
+	},
 }
 
 # --- Dossiers patients --------------------------------------------------------------
 # treatment.good : attendu (bonus, malus si oublié)
-# treatment.ok   : acceptable (neutre ou petit bonus)
-# treatment.bad  : inadapté / dangereux (malus)
+# treatment.ok   : acceptable
+# treatment.bad  : inadapté ou dangereux (malus)
 # treatment.critical : oubli = erreur grave (urgence vitale)
+# key_exams : examens utiles ("a|b" = l'un ou l'autre)
 
 const CASES := {
 	"rhino": {
 		"patient": {"name": "Lucas Bernard", "age": 28, "sex": "M", "job": "Graphiste",
-			"look": {"skin": 1, "hair": "short", "hair_color": Color(0.22, 0.14, 0.08), "top": Color(0.18, 0.32, 0.55), "bottom": Color(0.16, 0.17, 0.2)}},
+			"avatar": "lucas_bernard", "voice": "gilles", "pitch": 0.6, "cough": true},
 		"motif": "Nez qui coule, gorge qui gratte",
 		"history": "Aucun antécédent notable.",
 		"greeting": "Bonjour docteur. Je crois que j'ai attrapé un rhume, mais je préfère vérifier.",
 		"answers": {
 			"debut": "Ça a commencé il y a trois jours.",
-			"description": "J'ai le nez bouché, ça coule clair, la gorge qui gratte un peu. Je suis un peu fatigué.",
-			"fievre": "Un peu, 37,9 °C hier soir. Aujourd'hui ça va mieux.",
+			"description": "J'ai le nez bouché, ça coule clair, et la gorge qui gratte un peu. Je suis un peu fatigué.",
+			"fievre": "Un peu, trente-sept neuf hier soir. Aujourd'hui ça va mieux.",
 			"autres": "Je tousse un peu le matin, c'est tout.",
 		},
 		"extra_questions": [
@@ -190,9 +212,11 @@ const CASES := {
 		],
 		"vitals": {"temp": 37.6},
 		"findings": {
-			"orl": "Pharynx légèrement érythémateux, sans exsudat. Rhinorrhée claire. Amygdales normales.",
-			"peau": "Petites adénopathies cervicales souples, indolores.",
+			"orl": "Pharynx légèrement rouge, sans exsudat. Rhinorrhée claire. Amygdales normales.",
+			"ganglions": "Petites adénopathies cervicales souples, mobiles et indolores.",
 		},
+		"visual": {"orl": "rouge_leger"},
+		"key_exams": ["orl", "temp", "pulmo_d|pulmo_g"],
 		"diagnosis": "rhinopharyngite",
 		"differentials": ["angine_strepto", "sinusite", "grippe"],
 		"treatment": {
@@ -205,15 +229,15 @@ const CASES := {
 	},
 	"lombalgie": {
 		"patient": {"name": "Patrick Morel", "age": 52, "sex": "M", "job": "Magasinier",
-			"look": {"skin": 0, "hair": "short", "hair_color": Color(0.45, 0.42, 0.4), "top": Color(0.42, 0.45, 0.32), "bottom": Color(0.2, 0.24, 0.32), "build": 1.15, "beard": true}},
+			"avatar": "patrick_morel", "voice": "mls", "pitch": -1.0, "walk": "walk_bruised", "mood": "pain"},
 		"motif": "Mal au dos",
 		"history": "Appendicectomie à 20 ans. Pas d'autre antécédent.",
 		"greeting": "Bonjour docteur… Aïe. Je me suis bloqué le dos hier au travail.",
 		"answers": {
-			"debut": "Hier après-midi, en soulevant un carton de 25 kilos.",
+			"debut": "Hier après-midi, en soulevant un carton de vingt-cinq kilos.",
 			"description": "Ça tire en bas du dos, des deux côtés. Ça ne descend pas dans les jambes.",
-			"autres": "Non. Pas de problème pour uriner, pas de fourmillements, j'ai bien dormi malgré tout.",
-			"traitements": "J'ai pris un doliprane hier soir, ça a un peu soulagé.",
+			"autres": "Non. Pas de problème pour uriner, pas de fourmillements.",
+			"traitements": "J'ai pris un Doliprane hier soir, ça a un peu soulagé.",
 			"mode_vie": "Je fume dix cigarettes par jour. Pas de sport, mon travail est physique.",
 		},
 		"extra_questions": [
@@ -222,9 +246,13 @@ const CASES := {
 		],
 		"vitals": {"ta": "136/84", "fc": 80},
 		"findings": {
-			"locomoteur": "Contracture des muscles paravertébraux lombaires. Raideur à la flexion. Signe de Lasègue négatif des deux côtés.",
-			"neuro": "Force, sensibilité et réflexes ostéotendineux normaux et symétriques aux membres inférieurs.",
+			"rachis": "Contracture des muscles paravertébraux lombaires, douleur à la palpation, raideur en flexion. Pas de douleur à la percussion des épineuses.",
+			"lasegue": "Signe de Lasègue négatif des deux côtés.",
+			"force": "Force et sensibilité normales aux quatre membres.",
+			"reflexes": "Réflexes rotuliens présents et symétriques.",
 		},
+		"pain": ["lumbar"],
+		"key_exams": ["rachis", "lasegue", "reflexes|force"],
 		"diagnosis": "lombalgie",
 		"differentials": ["sciatique", "colique_nephretique", "tassement"],
 		"treatment": {
@@ -236,24 +264,30 @@ const CASES := {
 		"teaching": "Lombalgie commune sans drapeau rouge : pas d'imagerie avant 6 semaines. Le maintien de l'activité accélère la guérison, le repos au lit la retarde. Antalgiques simples, AINS de courte durée possibles.",
 	},
 	"otite": {
-		"patient": {"name": "Léo Dubois", "age": 4, "sex": "M", "job": "Accompagné de sa mère",
-			"look": {"skin": 0, "hair": "short", "hair_color": Color(0.62, 0.45, 0.22), "top": Color(0.85, 0.42, 0.18), "bottom": Color(0.22, 0.3, 0.5), "height": 0.62}},
+		"patient": {"name": "Léo Dubois", "age": 8, "sex": "M", "job": "Élève de CE2",
+			"avatar": "leo_dubois", "voice": "siwis", "pitch": 4.5, "mood": "tired", "child": true},
+		"companion": {"name": "Claire Dubois", "role": "La mère", "avatar": "claire_dubois", "gender": "f", "voice": "siwis", "pitch": 0.0},
 		"motif": "Fièvre et douleur d'oreille",
 		"history": "Né à terme. Vaccinations à jour.",
 		"greeting": "(La mère) Bonjour docteur, merci de nous prendre sans rendez-vous. Il a pleuré toute la nuit en se tenant l'oreille.",
 		"answers": {
 			"debut": "(La mère) Depuis hier soir. Il avait le nez qui coulait depuis trois jours.",
-			"description": "(Léo) J'ai mal à l'oreille… (il montre l'oreille droite)",
-			"fievre": "(La mère) 38,9 °C cette nuit, malgré le paracétamol.",
-			"autres": "(La mère) Il mange moins, il est grognon.",
+			"description": "(Léo) J'ai mal à l'oreille… À droite, ça tape fort.",
+			"fievre": "(La mère) Trente-huit neuf cette nuit, malgré le paracétamol.",
+			"autres": "(La mère) Il mange moins et il est grognon.",
+			"antecedents": "(La mère) Rien de particulier. Il est né à terme et ses vaccins sont à jour.",
+			"traitements": "(La mère) Juste du paracétamol depuis hier soir.",
 			"allergies": "(La mère) Aucune allergie connue.",
-			"mode_vie": "(La mère) Il est en moyenne section de maternelle.",
+			"mode_vie": "(La mère) Il est en CE2. Personne ne fume à la maison.",
 		},
-		"vitals": {"temp": 38.7, "fc": 118, "ta": "—", "fr": 24},
+		"vitals": {"temp": 38.7, "fc": 112, "fr": 22, "ta": "100/62"},
 		"findings": {
-			"otoscopie": "Tympan droit rouge, bombé, avec perte des reliefs : aspect purulent. Tympan gauche normal.",
-			"orl": "Rhinorrhée purulente, pharynx discrètement inflammatoire.",
+			"oto_d": "Tympan droit rouge, bombé et opaque, perte des reliefs : aspect d'otite moyenne aiguë purulente.",
+			"orl": "Rhinopharynx inflammatoire, rhinorrhée purulente. Amygdales normales.",
 		},
+		"visual": {"oto_d": "purulente", "orl": "rouge_leger"},
+		"pain": ["ear_r"],
+		"key_exams": ["oto_d", "oto_g", "temp"],
 		"diagnosis": "oma",
 		"differentials": ["otite_externe", "otite_congestive", "angine_virale"],
 		"treatment": {
@@ -262,28 +296,31 @@ const CASES := {
 			"bad": ["gouttes_oreille", "corticoides", "fluoroquinolone"],
 		},
 		"options": ["amoxicilline", "paracetamol", "surveillance", "lavage_nez", "gouttes_oreille", "corticoides", "fluoroquinolone"],
-		"teaching": "OMA purulente (tympan bombé) chez un enfant de plus de 2 ans avec fièvre et otalgie marquées : amoxicilline 5 jours + antalgique. Les gouttes auriculaires ne traitent pas une otite moyenne (le tympan est fermé).",
+		"teaching": "OMA purulente (tympan rouge et bombé) chez un enfant de plus de 2 ans avec fièvre et otalgie marquées : amoxicilline 5 jours et antalgique. Les gouttes auriculaires ne traitent pas une otite moyenne : le tympan est fermé.",
 	},
 	"hta": {
-		"patient": {"name": "Monique Lefèvre", "age": 67, "sex": "F", "job": "Retraitée (institutrice)",
-			"look": {"skin": 0, "hair": "bun", "hair_color": Color(0.78, 0.76, 0.74), "top": Color(0.55, 0.22, 0.3), "bottom": Color(0.2, 0.2, 0.24), "height": 0.93}},
+		"patient": {"name": "Monique Lefèvre", "age": 66, "sex": "F", "job": "Retraitée (institutrice)",
+			"avatar": "monique_lefevre", "voice": "siwis", "pitch": -1.8, "walk": "walk_slow"},
 		"motif": "Renouvellement d'ordonnance — tension",
-		"history": "HTA depuis 5 ans sous amlodipine 5 mg. Ménopausée. Pas de diabète connu.",
-		"greeting": "Bonjour docteur. Le Dr Marchand m'a beaucoup parlé de vous ! Je viens pour mon ordonnance de tension.",
+		"history": "Hypertension depuis 5 ans sous amlodipine 5 mg. Ménopausée. Pas de diabète connu.",
+		"greeting": "Bonjour docteur. Le docteur Marchand m'a beaucoup parlé de vous ! Je viens pour mon ordonnance de tension.",
 		"answers": {
 			"debut": "La tension, ça fait cinq ans. Mais mon appareil affiche des chiffres hauts depuis deux mois.",
 			"description": "Je me sens bien. Parfois un petit mal de tête le matin.",
 			"autres": "Non, pas de douleur dans la poitrine, pas d'essoufflement.",
-			"traitements": "Amlodipine 5 mg le matin. Je ne l'oublie jamais.",
+			"traitements": "Amlodipine cinq milligrammes le matin. Je ne l'oublie jamais.",
 			"mode_vie": "Je ne fume pas. Je marche un peu. J'aime bien la charcuterie, je l'avoue.",
 		},
 		"extra_questions": [
-			{"text": "Avez-vous noté vos automesures à la maison ?", "answer": "Oui, j'ai mon carnet : en moyenne 152/92 sur la semaine, matin et soir."},
+			{"text": "Avez-vous noté vos automesures à la maison ?", "answer": "Oui, j'ai mon carnet : en moyenne cent cinquante-deux sur quatre-vingt-douze, matin et soir, sur la semaine."},
 		],
 		"vitals": {"ta": "158/94", "fc": 70},
 		"findings": {
 			"cardio": "Bruits du cœur réguliers, pas de souffle. Pouls périphériques présents.",
+			"pied_d": "Pas d'œdème de la cheville droite.",
+			"pied_g": "Pas d'œdème de la cheville gauche.",
 		},
+		"key_exams": ["ta", "cardio"],
 		"diagnosis": "hta_non_controlee",
 		"differentials": ["hta_controlee", "blouse_blanche", "hypotension_ortho"],
 		"treatment": {
@@ -292,30 +329,34 @@ const CASES := {
 			"bad": ["renouveler_seul", "urgences", "anxiolytique"],
 		},
 		"options": ["intensifier_hta", "hygiene_vie", "bilan_bio", "surveillance", "renouveler_seul", "urgences", "anxiolytique"],
-		"teaching": "Les automesures (152/92) confirment une HTA non contrôlée sous monothérapie : on passe à une bithérapie (ajout IEC ou ARA2), on renforce les règles hygiéno-diététiques (sel) et on contrôle créatinine et kaliémie.",
+		"teaching": "Les automesures (152/92) confirment une HTA non contrôlée sous monothérapie : on passe à une bithérapie (ajout d'un IEC ou d'un ARA2), on renforce les règles hygiéno-diététiques (sel) et on contrôle créatinine et kaliémie.",
 	},
 	"angine": {
 		"patient": {"name": "Inès Garcia", "age": 19, "sex": "F", "job": "Étudiante",
-			"look": {"skin": 2, "hair": "long", "hair_color": Color(0.1, 0.07, 0.05), "top": Color(0.9, 0.88, 0.84), "bottom": Color(0.18, 0.22, 0.36), "height": 0.96}},
+			"avatar": "ines_garcia", "voice": "siwis", "pitch": 1.4, "mood": "pain"},
 		"motif": "Mal de gorge, fièvre",
 		"history": "Aucun antécédent.",
-		"greeting": "Bonjour… (voix étouffée) J'ai super mal à la gorge, j'ai du mal à avaler.",
+		"greeting": "Bonjour… J'ai super mal à la gorge, j'ai du mal à avaler.",
 		"answers": {
 			"debut": "Avant-hier, d'un coup.",
 			"description": "Très mal en avalant, même la salive. Mal à la tête aussi.",
-			"fievre": "Oui, 38,8 °C ce matin.",
+			"fievre": "Oui, trente-huit huit ce matin.",
 			"autres": "Non, je ne tousse pas et je n'ai pas le nez qui coule.",
 			"allergies": "Aucune allergie.",
+			"mode_vie": "Je ne fume pas. Je fais du handball deux fois par semaine.",
 		},
 		"vitals": {"temp": 38.7, "fc": 96},
 		"findings": {
-			"orl": "Amygdales augmentées de volume, très érythémateuses, recouvertes d'un exsudat blanchâtre.",
-			"peau": "Adénopathies cervicales antérieures sensibles. Pas de rash.",
-			"tdr": "POSITIF — streptocoque du groupe A.",
+			"orl": "Amygdales augmentées de volume, très rouges, recouvertes d'un exsudat blanchâtre.",
+			"ganglions": "Adénopathies cervicales antérieures sensibles.",
+			"tdr": "TROD angine POSITIF : streptocoque du groupe A.",
 		},
+		"visual": {"orl": "exsudat", "tdr": "pos"},
+		"pain": ["neck"],
+		"key_exams": ["orl", "temp", "tdr", "ganglions"],
+		"required_exam": "tdr",
 		"diagnosis": "angine_strepto",
 		"differentials": ["angine_virale", "mononucleose", "rhinopharyngite"],
-		"required_exam": "tdr",
 		"treatment": {
 			"good": ["amoxicilline", "paracetamol"],
 			"ok": ["surveillance"],
@@ -326,22 +367,25 @@ const CASES := {
 	},
 	"cystite": {
 		"patient": {"name": "Sophie Laurent", "age": 31, "sex": "F", "job": "Infirmière scolaire",
-			"look": {"skin": 0, "hair": "long", "hair_color": Color(0.72, 0.55, 0.3), "top": Color(0.3, 0.5, 0.45), "bottom": Color(0.15, 0.15, 0.18), "height": 0.97}},
+			"avatar": "sophie_laurent", "voice": "siwis", "pitch": 0.3},
 		"motif": "Brûlures urinaires",
-		"history": "Une cystite il y a 2 ans. Pas de grossesse en cours.",
+		"history": "Une cystite il y a deux ans. Pas de grossesse en cours.",
 		"greeting": "Bonjour docteur. Je crois que c'est encore une infection urinaire…",
 		"answers": {
 			"debut": "Depuis hier matin.",
 			"description": "Ça brûle quand j'urine et j'ai envie d'y aller tout le temps.",
 			"fievre": "Non, pas de fièvre.",
 			"autres": "Pas de douleur dans le dos, pas de pertes inhabituelles.",
-			"traitements": "Pilule contraceptive. Test de grossesse négatif la semaine dernière.",
+			"traitements": "Seulement ma pilule. Mon test de grossesse de la semaine dernière était négatif.",
 		},
 		"vitals": {"temp": 36.9},
 		"findings": {
-			"bu": "Leucocytes +++, nitrites + : BU positive.",
-			"abdomen": "Discrète sensibilité sus-pubienne. Fosses lombaires indolores.",
+			"bu": "Leucocytes +++, nitrites + : bandelette positive.",
+			"abdomen": "Discrète sensibilité sus-pubienne. Abdomen souple.",
+			"rachis": "Fosses lombaires indolores à la percussion.",
 		},
+		"visual": {"bu": {"leu": 3, "nit": 1, "sang": 1, "prot": 0, "glu": 0}},
+		"key_exams": ["bu", "temp", "rachis|abdomen"],
 		"diagnosis": "cystite",
 		"differentials": ["pyelonephrite", "vaginite", "colique_nephretique"],
 		"treatment": {
@@ -350,26 +394,30 @@ const CASES := {
 			"bad": ["fluoroquinolone", "amoxicilline", "ecbu"],
 		},
 		"options": ["fosfomycine", "hydratation", "surveillance", "fluoroquinolone", "amoxicilline", "ecbu"],
-		"teaching": "Cystite simple (pas de fièvre, pas de douleur lombaire, BU positive) : fosfomycine-trométamol en dose unique. L'ECBU n'est pas nécessaire, les fluoroquinolones sont à éviter en première intention.",
+		"teaching": "Cystite simple (pas de fièvre, pas de douleur lombaire, bandelette positive) : fosfomycine-trométamol en dose unique. L'ECBU n'est pas nécessaire ; les fluoroquinolones sont à éviter en première intention.",
 	},
 	"asthme": {
 		"patient": {"name": "Thomas Petit", "age": 24, "sex": "M", "job": "Cuisinier",
-			"look": {"skin": 3, "hair": "short", "hair_color": Color(0.05, 0.04, 0.03), "top": Color(0.15, 0.15, 0.17), "bottom": Color(0.3, 0.3, 0.33)}},
+			"avatar": "thomas_petit", "voice": "gilles", "pitch": 1.2, "cough": true, "mood": "worry"},
 		"motif": "Gêne respiratoire, sifflements",
 		"history": "Asthme depuis l'enfance. Allergie aux pollens de graminées.",
-		"greeting": "Bonjour docteur. Mon asthme… ça siffle depuis deux jours. (il parle par phrases complètes)",
+		"greeting": "Bonjour docteur. Mon asthme… ça siffle depuis deux jours.",
 		"answers": {
 			"debut": "Depuis deux jours, surtout la nuit. C'est la saison des pollens.",
 			"description": "J'ai la poitrine qui serre et ça siffle. La Ventoline me soulage quelques heures.",
 			"autres": "Je tousse la nuit. Pas de fièvre, pas de crachats.",
-			"traitements": "Juste ma Ventoline quand ça ne va pas. Je l'ai prise 6 fois hier.",
+			"traitements": "Juste ma Ventoline quand ça ne va pas. Je l'ai prise six fois hier.",
 			"mode_vie": "Je ne fume pas. Les fumées de la cuisine me gênent parfois.",
 		},
-		"vitals": {"fr": 20, "spo2": 96, "fc": 98},
+		"vitals": {"fr": 20, "spo2": 96, "fc": 98, "dep": 320},
 		"findings": {
-			"pulmo": "Sibilants diffus dans les deux champs pulmonaires, expiration prolongée. Pas de tirage.",
-			"dep": "320 L/min, soit environ 60 % de la valeur théorique.",
+			"pulmo_g": "Sibilants diffus dans tout le champ pulmonaire gauche, expiration prolongée.",
+			"pulmo_d": "Sibilants diffus dans tout le champ pulmonaire droit, expiration prolongée.",
+			"respiration": "FR 20/min. Pas de tirage, parle par phrases complètes.",
+			"dep": "Débit de pointe : 320 L/min, soit environ 60 % de la valeur théorique.",
 		},
+		"sounds": {"pulmo_g": "sibilants", "pulmo_d": "sibilants", "cardio": "rapide"},
+		"key_exams": ["pulmo_d|pulmo_g", "spo2", "dep", "respiration"],
 		"diagnosis": "asthme",
 		"differentials": ["asthme_grave", "pneumopathie", "bronchite"],
 		"treatment": {
@@ -380,23 +428,62 @@ const CASES := {
 		"options": ["salbutamol", "corticoides", "traitement_fond", "surveillance", "reevaluation", "amoxicilline", "samu", "anxiolytique"],
 		"teaching": "Exacerbation modérée (phrases complètes, SpO₂ 96 %, DEP 60 %) : bronchodilatateur de courte durée, corticothérapie orale courte, et mise en place d'un traitement de fond par corticoïde inhalé. Pas d'antibiotique sans signe d'infection bactérienne.",
 	},
+	"thoracique": {
+		"patient": {"name": "Gérard Roux", "age": 61, "sex": "M", "job": "Agriculteur",
+			"avatar": "gerard_roux", "voice": "mls", "pitch": -2.0, "walk": "walk_slow", "mood": "pain", "skin": "pale"},
+		"motif": "SANS RDV — douleur dans la poitrine",
+		"history": "Diabète de type 2. Tabac : quarante paquets-années. Cholestérol non traité.",
+		"greeting": "Docteur… ça me serre dans la poitrine… Ma femme a insisté pour que je passe.",
+		"answers": {
+			"debut": "Depuis… quarante minutes environ. Au repos, en lisant le journal.",
+			"description": "Comme un étau sur la poitrine. Ça part dans le bras gauche et dans la mâchoire.",
+			"autres": "J'ai la nausée. Je transpire.",
+			"traitements": "De la metformine, pour le diabète.",
+			"mode_vie": "Je fume un paquet par jour depuis quarante ans.",
+		},
+		"vitals": {"ta": "152/90", "fc": 102, "spo2": 95, "fr": 20},
+		"findings": {
+			"cardio": "Bruits du cœur réguliers et rapides. Pas de souffle.",
+			"pulmo_g": "Pas de crépitant à gauche.",
+			"pulmo_d": "Pas de crépitant à droite.",
+			"ecg": "Sus-décalage du segment ST en DII, DIII et aVF, avec miroir en V1-V3 : infarctus inférieur en cours.",
+			"respiration": "FR 20/min. Patient pâle, en sueur.",
+		},
+		"visual": {"ecg": "st_inferieur"},
+		"sounds": {"cardio": "rapide"},
+		"urgent": true,
+		"key_exams": ["ecg", "ta", "cardio"],
+		"diagnosis": "sca",
+		"differentials": ["pericardite", "rgo", "attaque_panique"],
+		"treatment": {
+			"good": ["samu", "aspirine"],
+			"critical": ["samu"],
+			"ok": [],
+			"bad": ["urgences", "ipp", "anxiolytique", "paracetamol"],
+		},
+		"options": ["samu", "aspirine", "urgences", "ipp", "anxiolytique", "paracetamol"],
+		"teaching": "Douleur thoracique constrictive irradiant au bras et à la mâchoire chez un patient à haut risque : syndrome coronarien aigu jusqu'à preuve du contraire. Appel immédiat du 15 ; ne jamais laisser le patient partir par ses propres moyens. Chaque minute compte.",
+	},
 	"entorse": {
 		"patient": {"name": "Julie Moreau", "age": 35, "sex": "F", "job": "Comptable, coureuse amateur",
-			"look": {"skin": 1, "hair": "ponytail", "hair_color": Color(0.35, 0.2, 0.1), "top": Color(0.25, 0.65, 0.75), "bottom": Color(0.12, 0.12, 0.14)}},
+			"avatar": "julie_moreau", "voice": "siwis", "pitch": 0.5, "walk": "walk_injured"},
 		"motif": "Cheville tordue",
 		"history": "Aucun antécédent.",
 		"greeting": "Bonjour ! Je me suis tordu la cheville en courant ce matin, c'est malin…",
 		"answers": {
-			"debut": "Ce matin à 7 h, sur un trottoir.",
-			"description": "Le pied est parti vers l'intérieur. Ça a gonflé sur le côté extérieur.",
+			"debut": "Ce matin à sept heures, sur un trottoir.",
+			"description": "Le pied est parti vers l'intérieur. Ça a gonflé sur le côté extérieur de la cheville droite.",
 			"autres": "J'ai pu marcher jusqu'à chez moi en boitant.",
+			"mode_vie": "Je cours trois fois par semaine. Je ne fume pas.",
 		},
 		"extra_questions": [
 			{"text": "Avez-vous entendu un craquement ?", "answer": "Non, je ne crois pas."},
 		],
 		"findings": {
-			"locomoteur": "Œdème et douleur en avant et sous la malléole externe (ligament latéral). Pas de douleur osseuse à la palpation du bord postérieur des malléoles ni de la base du 5e métatarsien. Appui possible (4 pas). Tendon d'Achille intact.",
+			"pied_d": "Œdème et douleur en avant et sous la malléole externe (ligament latéral). Pas de douleur osseuse au bord postérieur des malléoles ni à la base du 5e métatarsien. Appui possible : quatre pas. Tendon d'Achille intact.",
 		},
+		"pain": ["foot_r"],
+		"key_exams": ["pied_d"],
 		"diagnosis": "entorse",
 		"differentials": ["fracture_cheville", "rupture_achille", "fracture_5mt"],
 		"treatment": {
@@ -407,56 +494,25 @@ const CASES := {
 		"options": ["glace_repos", "attelle", "paracetamol", "kine", "radio_cheville", "platre", "repos_lit"],
 		"teaching": "Règles d'Ottawa négatives (appui possible, pas de douleur osseuse) : la radiographie n'est pas indiquée. Protocole glace-repos-compression-surélévation, contention souple et reprise progressive de l'appui.",
 	},
-	"thoracique": {
-		"patient": {"name": "Gérard Roux", "age": 61, "sex": "M", "job": "Agriculteur",
-			"look": {"skin": 0, "hair": "bald", "hair_color": Color(0.6, 0.58, 0.55), "top": Color(0.35, 0.28, 0.22), "bottom": Color(0.24, 0.3, 0.4), "build": 1.2, "beard": true}},
-		"motif": "SANS RDV — douleur dans la poitrine",
-		"history": "Diabète de type 2. Tabac 40 paquets-années. Hypercholestérolémie non traitée.",
-		"greeting": "Docteur… ça me serre dans la poitrine… Ma femme a insisté pour que je passe. (il est pâle et en sueur)",
-		"answers": {
-			"debut": "Depuis… quarante minutes environ. Au repos, en lisant le journal.",
-			"description": "Comme un étau sur la poitrine. Ça part dans le bras gauche et la mâchoire.",
-			"autres": "J'ai la nausée. Je transpire.",
-			"traitements": "Metformine pour le diabète.",
-			"mode_vie": "Je fume un paquet par jour depuis 40 ans.",
-		},
-		"vitals": {"ta": "152/90", "fc": 102, "spo2": 95, "fr": 20},
-		"findings": {
-			"cardio": "Bruits du cœur réguliers, rapides. Pas de souffle.",
-			"pulmo": "Pas de crépitant.",
-			"ecg": "Sus-décalage du segment ST en DII, DIII et aVF, avec miroir en V1-V3 : infarctus inférieur en cours.",
-			"peau": "Pâleur, sueurs profuses.",
-		},
-		"diagnosis": "sca",
-		"differentials": ["pericardite", "rgo", "attaque_panique"],
-		"urgent": true,
-		"treatment": {
-			"good": ["samu", "aspirine"],
-			"critical": ["samu"],
-			"ok": [],
-			"bad": ["urgences", "ipp", "anxiolytique", "paracetamol"],
-		},
-		"options": ["samu", "aspirine", "urgences", "ipp", "anxiolytique", "paracetamol"],
-		"teaching": "Douleur thoracique constrictive irradiant au bras et à la mâchoire chez un patient à haut risque : syndrome coronarien aigu jusqu'à preuve du contraire. Appel immédiat du 15 ; ne jamais laisser le patient partir par ses propres moyens. Chaque minute compte.",
-	},
 	"diabete": {
 		"patient": {"name": "Nadia Benali", "age": 58, "sex": "F", "job": "Aide-soignante",
-			"look": {"skin": 2, "hair": "bun", "hair_color": Color(0.15, 0.1, 0.08), "top": Color(0.48, 0.38, 0.6), "bottom": Color(0.22, 0.2, 0.25), "build": 1.15, "height": 0.95}},
-		"motif": "Suivi diabète — résultats de prise de sang",
+			"avatar": "nadia_benali", "voice": "siwis", "pitch": -1.2},
+		"motif": "Suivi du diabète — résultats de prise de sang",
 		"history": "Diabète de type 2 depuis 6 ans. Surpoids (IMC 31). Pas de complication connue.",
 		"greeting": "Bonjour docteur, je vous apporte ma prise de sang. L'hémoglobine glyquée n'est pas bonne, je crois.",
 		"answers": {
-			"debut": "Le diabète, ça fait six ans. L'HbA1c est à 8,1 %, elle était à 7,4 % il y a six mois.",
+			"debut": "Le diabète, ça fait six ans. L'hémoglobine glyquée est à huit virgule un pour cent ; elle était à sept virgule quatre il y a six mois.",
 			"description": "Je me sens bien. Un peu plus soif ces temps-ci.",
 			"autres": "Pas de problème de pieds, pas de troubles de la vue.",
-			"traitements": "Metformine 1000 mg matin et soir.",
+			"traitements": "Metformine, mille milligrammes matin et soir.",
 			"mode_vie": "Je ne fume pas. Avec mes horaires, je mange mal et je ne fais pas de sport.",
 		},
-		"vitals": {"ta": "132/80"},
+		"vitals": {"ta": "132/80", "glyc": 1.62},
 		"findings": {
-			"glycemie": "1,62 g/L (2 h après le repas).",
-			"peau": "Pieds : pas de plaie, pas d'hyperkératose. Sensibilité au monofilament conservée.",
+			"pied_d": "Pied droit : pas de plaie, pas d'hyperkératose. Sensibilité au monofilament conservée. Pouls pédieux perçus.",
+			"pied_g": "Pied gauche : pas de plaie, pas d'hyperkératose. Sensibilité au monofilament conservée. Pouls pédieux perçus.",
 		},
+		"key_exams": ["glycemie", "pied_d|pied_g", "ta"],
 		"diagnosis": "dt2_desequilibre",
 		"differentials": ["dt2_equilibre", "hypothyroidie", "pyelonephrite"],
 		"treatment": {
@@ -469,21 +525,23 @@ const CASES := {
 	},
 	"gastro": {
 		"patient": {"name": "Emma Roussel", "age": 22, "sex": "F", "job": "Serveuse",
-			"look": {"skin": 1, "hair": "long", "hair_color": Color(0.8, 0.65, 0.38), "top": Color(0.72, 0.6, 0.4), "bottom": Color(0.25, 0.3, 0.45), "height": 0.95}},
+			"avatar": "emma_roussel", "voice": "siwis", "pitch": 1.0, "mood": "tired"},
 		"motif": "Diarrhées, vomissements",
 		"history": "Aucun antécédent.",
-		"greeting": "Bonjour… j'ai été malade toute la nuit. Toute ma coloc a eu la même chose.",
+		"greeting": "Bonjour… J'ai été malade toute la nuit. Toute ma colocation a eu la même chose.",
 		"answers": {
 			"debut": "Hier soir.",
 			"description": "J'ai vomi trois fois et j'ai la diarrhée. Des crampes au ventre.",
-			"fievre": "37,8 °C hier.",
+			"fievre": "Trente-sept huit hier soir.",
 			"autres": "Pas de sang dans les selles. J'arrive à boire un peu depuis ce matin.",
 		},
 		"vitals": {"temp": 37.7, "fc": 88, "ta": "112/70"},
 		"findings": {
-			"abdomen": "Abdomen souple, sensibilité diffuse modérée, pas de défense. Bruits hydroaériques augmentés. Fosse iliaque droite indolore.",
-			"peau": "Pas de pli cutané, muqueuses humides.",
+			"abdomen": "Abdomen souple, sensibilité diffuse modérée, sans défense. Bruits hydroaériques augmentés. Fosse iliaque droite indolore.",
+			"respiration": "FR 16/min. Muqueuses humides, pas de pli cutané.",
 		},
+		"pain": ["abdomen"],
+		"key_exams": ["abdomen", "temp", "ta"],
 		"diagnosis": "gea",
 		"differentials": ["appendicite", "toxi_infection", "colique_nephretique"],
 		"treatment": {
@@ -496,22 +554,27 @@ const CASES := {
 	},
 	"pneumopathie": {
 		"patient": {"name": "Bernard Faure", "age": 72, "sex": "M", "job": "Retraité (boulanger)",
-			"look": {"skin": 0, "hair": "short", "hair_color": Color(0.82, 0.8, 0.78), "top": Color(0.45, 0.35, 0.28), "bottom": Color(0.28, 0.28, 0.3), "height": 0.96}},
+			"avatar": "bernard_faure", "voice": "mls", "pitch": -2.6, "walk": "walk_slow", "cough": true, "mood": "tired", "skin": "flushed"},
 		"motif": "Toux et fièvre",
-		"history": "BPCO légère. Ancien fumeur (arrêt il y a 10 ans).",
-		"greeting": "Bonjour docteur. (il tousse) Ça fait trois jours que je traîne cette fièvre.",
+		"history": "BPCO légère. Ancien fumeur, arrêt il y a dix ans.",
+		"greeting": "Bonjour docteur. Ça fait trois jours que je traîne cette fièvre.",
 		"answers": {
 			"debut": "Trois jours.",
 			"description": "Je tousse et je crache jaune. Je suis essoufflé quand je monte l'escalier.",
-			"fievre": "39 °C hier soir, avec des frissons.",
+			"fievre": "Trente-neuf hier soir, avec des frissons.",
 			"autres": "Un point de côté à droite quand je respire fort. Je mange et je bois normalement.",
-			"traitements": "Un inhalateur pour la BPCO.",
+			"traitements": "Un inhalateur pour ma BPCO.",
+			"mode_vie": "J'ai arrêté de fumer il y a dix ans. Je jardine encore un peu.",
 		},
 		"vitals": {"temp": 39.1, "fc": 104, "fr": 22, "spo2": 94, "ta": "128/76"},
 		"findings": {
-			"pulmo": "Foyer de crépitants à la base droite, souffle tubaire.",
+			"pulmo_d": "Foyer de crépitants à la base droite, avec un souffle tubaire.",
+			"pulmo_g": "Murmure vésiculaire normal à gauche.",
 			"cardio": "Tachycardie régulière, pas de souffle.",
+			"respiration": "FR 22/min, légère polypnée, pas de signe de lutte.",
 		},
+		"sounds": {"pulmo_d": "crepitants", "cardio": "rapide"},
+		"key_exams": ["pulmo_d", "temp", "spo2"],
 		"diagnosis": "pneumopathie",
 		"differentials": ["bronchite", "asthme", "sca"],
 		"treatment": {
@@ -520,22 +583,25 @@ const CASES := {
 			"bad": ["corticoides", "fluoroquinolone", "antibiotique_gea"],
 		},
 		"options": ["amoxicilline", "reevaluation", "radio_thorax", "paracetamol", "surveillance", "corticoides", "fluoroquinolone"],
-		"teaching": "Pneumopathie (fièvre, crépitants en foyer) sans critère de gravité majeur : amoxicilline 1 g × 3/j et réévaluation obligatoire à 48–72 h. La radiographie confirme le diagnostic. Les fluoroquinolones ne sont pas un traitement de première intention.",
+		"teaching": "Pneumopathie (fièvre, crépitants en foyer) sans critère de gravité majeur : amoxicilline 1 g trois fois par jour et réévaluation obligatoire à 48–72 h. La radiographie confirme le diagnostic. Les fluoroquinolones ne sont pas un traitement de première intention.",
 	},
 	"zona": {
-		"patient": {"name": "Martine Girard", "age": 70, "sex": "F", "job": "Retraitée (pharmacienne)",
-			"look": {"skin": 0, "hair": "short", "hair_color": Color(0.85, 0.83, 0.8), "top": Color(0.25, 0.42, 0.55), "bottom": Color(0.3, 0.27, 0.25), "height": 0.92}},
+		"patient": {"name": "Martine Girard", "age": 62, "sex": "F", "job": "Pharmacienne à la retraite",
+			"avatar": "martine_girard", "voice": "siwis", "pitch": -1.5, "mood": "pain"},
 		"motif": "SANS RDV — boutons douloureux",
 		"history": "Varicelle dans l'enfance. Hypothyroïdie traitée.",
-		"greeting": "Bonjour docteur, pardon de venir sans rendez-vous. J'ai des boutons qui me brûlent sur le côté.",
+		"greeting": "Bonjour docteur, pardon de venir sans rendez-vous. J'ai des boutons qui me brûlent sur le côté droit.",
 		"answers": {
 			"debut": "Les boutons sont sortis hier. Mais ça brûlait déjà depuis trois jours à cet endroit.",
 			"description": "Une brûlure, comme des décharges électriques, sur le flanc droit.",
-			"traitements": "Lévothyrox.",
+			"traitements": "Du Lévothyrox.",
 		},
 		"findings": {
-			"peau": "Vésicules groupées en bouquet sur fond érythémateux, disposées en bande sur le flanc droit (dermatome T6), s'arrêtant à la ligne médiane.",
+			"peau_d": "Vésicules groupées en bouquet sur fond rouge, disposées en bande sur le flanc droit (dermatome T6), s'arrêtant à la ligne médiane.",
 		},
+		"visual": {"peau_d": "zona"},
+		"pain": ["flank_r"],
+		"key_exams": ["peau_d"],
 		"diagnosis": "zona",
 		"differentials": ["herpes", "eczema", "sca"],
 		"treatment": {
@@ -544,16 +610,16 @@ const CASES := {
 			"bad": ["corticoides", "amoxicilline", "creme"],
 		},
 		"options": ["valaciclovir", "paracetamol", "surveillance", "corticoides", "amoxicilline", "creme"],
-		"teaching": "Zona typique (éruption vésiculeuse unilatérale d'un dermatome). Après 50 ans et dans les 72 h suivant l'éruption : valaciclovir 7 jours pour limiter les douleurs post-zostériennes, avec antalgiques adaptés.",
+		"teaching": "Zona typique (éruption vésiculeuse unilatérale d'un dermatome). Après 50 ans et dans les 72 heures suivant l'éruption : valaciclovir 7 jours pour limiter les douleurs post-zostériennes, avec des antalgiques adaptés.",
 	},
 	"migraine": {
 		"patient": {"name": "Antoine Leroy", "age": 29, "sex": "M", "job": "Développeur",
-			"look": {"skin": 1, "hair": "short", "hair_color": Color(0.3, 0.2, 0.12), "top": Color(0.2, 0.22, 0.26), "bottom": Color(0.35, 0.33, 0.3), "glasses": true}},
+			"avatar": "antoine_leroy", "voice": "gilles", "pitch": 0.0, "mood": "pain"},
 		"motif": "Mal de tête",
 		"history": "Céphalées similaires depuis l'adolescence, jamais explorées.",
-		"greeting": "Bonjour docteur. J'ai encore une de mes migraines… celle-ci ne passe pas.",
+		"greeting": "Bonjour docteur. J'ai encore une de mes migraines… et celle-ci ne passe pas.",
 		"answers": {
-			"debut": "Depuis ce matin au réveil. Ça s'est installé progressivement.",
+			"debut": "Depuis ce matin, au réveil. Ça s'est installé progressivement.",
 			"description": "Ça tape d'un seul côté, à gauche. La lumière et le bruit me gênent.",
 			"autres": "J'ai eu la nausée. Pas de troubles de la vision avant la crise.",
 			"traitements": "Du paracétamol, mais ça ne fait rien.",
@@ -564,8 +630,12 @@ const CASES := {
 		],
 		"vitals": {"ta": "128/80"},
 		"findings": {
-			"neuro": "Examen neurologique normal. Pas de raideur de nuque.",
+			"force": "Force et sensibilité normales et symétriques.",
+			"reflexes": "Réflexes ostéotendineux normaux et symétriques.",
+			"nuque": "Pas de raideur de nuque.",
+			"pupilles": "Pupilles égales et réactives. Photophobie.",
 		},
+		"key_exams": ["nuque", "pupilles|force|reflexes", "ta|temp"],
 		"diagnosis": "migraine",
 		"differentials": ["hsa", "cephalee_tension", "sinusite"],
 		"treatment": {
@@ -607,8 +677,9 @@ const DAYS := [
 	},
 	{
 		"title": "Mercredi — La visite du Dr Marchand",
-		"intro": "Le Dr Marchand a promis de passer en fin de matinée pour savoir comment vous vous en sortez.\n\nUne dernière matinée chargée vous attend. Montrez-lui que son cabinet est entre de bonnes mains.",
+		"intro": "Le Dr Marchand a promis de passer en fin de matinée pour voir comment vous vous en sortez.\n\nUne dernière matinée chargée vous attend. Montrez-lui que son cabinet est entre de bonnes mains.",
 		"start": 500,
+		"marchand_visit": true,
 		"patients": [
 			{"case": "gastro", "time": 510},
 			{"case": "pneumopathie", "time": 530},
@@ -635,24 +706,88 @@ func get_case(id: String) -> Dictionary:
 	return CASES.get(id, {})
 
 
-func exam_def(id: String) -> Dictionary:
-	for e in EXAMS:
-		if e["id"] == id:
-			return e
-	return {}
+func treatment_label(id: String) -> String:
+	return TREATMENTS.get(id, [id])[0]
 
 
-## Résultat textuel d'un examen pour un cas donné.
+func treatment_line(id: String) -> String:
+	var t: Array = TREATMENTS.get(id, [id, id, "rx"])
+	return t[1]
+
+
+func treatment_kind(id: String) -> String:
+	var t: Array = TREATMENTS.get(id, [id, id, "rx"])
+	return t[2]
+
+
+func vitals(case_data: Dictionary) -> Dictionary:
+	var v: Dictionary = ExamDB.DEFAULT_VITALS.duplicate()
+	v.merge(case_data.get("vitals", {}), true)
+	return v
+
+
+func _fmt_num(x: float, decimals: int = 1) -> String:
+	return (("%." + str(decimals) + "f") % x).replace(".", ",")
+
+
+## Résultat textuel d'un examen pour un cas.
 func exam_result(case_data: Dictionary, exam_id: String) -> String:
-	if exam_id == "constantes":
-		var v: Dictionary = DEFAULT_VITALS.duplicate()
-		v.merge(case_data.get("vitals", {}), true)
-		return "TA %s mmHg · FC %d/min · T° %.1f °C · SpO₂ %d %% · FR %d/min" % [
-			str(v["ta"]), int(v["fc"]), float(v["temp"]), int(v["spo2"]), int(v["fr"])]
+	var v := vitals(case_data)
+	match exam_id:
+		"ta":
+			return "TA %s mmHg · FC %d/min" % [str(v["ta"]), int(v["fc"])]
+		"temp":
+			return "Température %s °C" % _fmt_num(float(v["temp"]))
+		"spo2":
+			return "SpO₂ %d %% · FC %d/min" % [int(v["spo2"]), int(v["fc"])]
+		"glycemie":
+			return "Glycémie capillaire : %s g/L" % _fmt_num(float(v["glyc"]), 2)
+		"dep":
+			var f: Dictionary = case_data.get("findings", {})
+			if f.has("dep"):
+				return f["dep"]
+			return "Débit de pointe : %d L/min, normal pour l'âge et la taille." % int(v["dep"])
 	var findings: Dictionary = case_data.get("findings", {})
-	if findings.has(exam_id):
-		return findings[exam_id]
-	return DEFAULT_FINDINGS.get(exam_id, "Normal.")
+	var txt: String = findings.get(exam_id, ExamDB.DEFAULT_FINDINGS.get(exam_id, "Normal."))
+	return txt.format({"fr": int(v["fr"]), "fc": int(v["fc"])})
+
+
+func visual_state(case_data: Dictionary, exam_id: String):
+	var vis: Dictionary = case_data.get("visual", {})
+	if vis.has(exam_id):
+		return vis[exam_id]
+	return ExamDB.DEFAULT_VISUAL.get(exam_id, "normal")
+
+
+func sound_state(case_data: Dictionary, exam_id: String) -> String:
+	var s: Dictionary = case_data.get("sounds", {})
+	return s.get(exam_id, ExamDB.DEFAULT_SOUNDS.get(exam_id, "normal"))
+
+
+## Un examen est-il « anormal » pour ce cas (utile pour la mise en évidence) ?
+func exam_is_abnormal(case_data: Dictionary, exam_id: String) -> bool:
+	if exam_id in ["ta", "temp", "spo2", "glycemie", "respiration"]:
+		var v := vitals(case_data)
+		match exam_id:
+			"temp":
+				return float(v["temp"]) >= 38.0
+			"spo2":
+				return int(v["spo2"]) < 95 or int(v["fc"]) > 100
+			"glycemie":
+				return float(v["glyc"]) > 1.4
+			"respiration":
+				return int(v["fr"]) > 20
+			"ta":
+				var parts := str(v["ta"]).split("/")
+				return parts.size() == 2 and (int(parts[0]) >= 140 or int(parts[1]) >= 90)
+	var f: Dictionary = case_data.get("findings", {})
+	if not f.has(exam_id):
+		return false
+	var low := String(f[exam_id]).to_lower()
+	for ok in ["normal", "négatif", "pas de crépitant", "indolore", "pas d'œdème", "conservée"]:
+		if low.begins_with(ok) or (ok in low and not ("positif" in low or "rouge" in low or "douleur" in low)):
+			return false
+	return true
 
 
 func answer(case_data: Dictionary, question_id: String) -> String:
@@ -664,8 +799,23 @@ func answer(case_data: Dictionary, question_id: String) -> String:
 	return DEFAULT_ANSWERS.get(question_id, "Je ne sais pas.")
 
 
-## Évalue une consultation. Renvoie un dictionnaire de résultat complet.
-func evaluate(case_id: String, diagnosis: String, chosen: Array, exams_done: Array, minutes_spent: float, waited: float) -> Dictionary:
+## Sépare « (La mère) Texte » en [locuteur, texte].
+func split_speaker(text: String) -> Array:
+	if text.begins_with("(") and ") " in text:
+		var close := text.find(") ")
+		return [text.substr(1, close - 1), text.substr(close + 2)]
+	return ["", text]
+
+
+## Texte prononcé (identique pour la génération des voix et la lecture).
+func speech_text(text: String) -> String:
+	var t := String(split_speaker(text)[1])
+	t = t.replace("…", "...").replace("°C", " degrés").replace(" %", " pour cent")
+	return t.strip_edges()
+
+
+## Évalue une consultation et renvoie un résultat complet.
+func evaluate(case_id: String, diagnosis: String, chosen: Array, exams_done: Array, questions: Array, minutes_spent: float, waited: float) -> Dictionary:
 	var c := get_case(case_id)
 	var t: Dictionary = c.get("treatment", {})
 	var good: Array = t.get("good", [])
@@ -673,29 +823,57 @@ func evaluate(case_id: String, diagnosis: String, chosen: Array, exams_done: Arr
 	var bad: Array = t.get("bad", [])
 	var critical: Array = t.get("critical", [])
 	var notes: Array[String] = []
+	var praise: Array[String] = []
 
 	var diagnosis_ok: bool = diagnosis == c.get("diagnosis", "")
-	var score := 40.0 if diagnosis_ok else 0.0
+	var score := 35.0 if diagnosis_ok else 0.0
 	if not diagnosis_ok:
 		notes.append("Diagnostic attendu : %s." % DIAGNOSES.get(c.get("diagnosis", ""), "?"))
 
-	var per_good := 40.0 / maxf(1.0, good.size())
+	var per_good := 35.0 / maxf(1.0, good.size())
 	for g in good:
 		if g in chosen:
 			score += per_good
 		else:
-			notes.append("Oubli : %s." % TREATMENTS.get(g, g))
+			notes.append("Oubli : %s." % treatment_label(g))
 	for o in chosen:
 		if o in bad:
 			score -= 15.0
-			notes.append("Inadapté : %s." % TREATMENTS.get(o, o))
+			notes.append("Inadapté : %s." % treatment_label(o))
 		elif o in ok:
-			score += 2.0
+			score += 1.5
+
+	# Examens clés
+	var keys: Array = c.get("key_exams", [])
+	var key_done := 0
+	for k in keys:
+		var alts := String(k).split("|")
+		var hit := false
+		for a in alts:
+			if a in exams_done:
+				hit = true
+		if hit:
+			key_done += 1
+		else:
+			notes.append("Examen utile non réalisé : %s." % ExamDB.EXAMS.get(alts[0], {}).get("name", alts[0]).to_lower())
+	if not keys.is_empty():
+		score += 20.0 * float(key_done) / keys.size()
+		if key_done == keys.size():
+			praise.append("Examen clinique ciblé et complet.")
+	else:
+		score += 20.0
 
 	var required: String = c.get("required_exam", "")
 	if required != "" and not (required in exams_done):
 		score -= 10.0
-		notes.append("Examen clé non réalisé : %s." % exam_def(required).get("name", required))
+		notes.append("Examen indispensable non réalisé : %s." % ExamDB.EXAMS.get(required, {}).get("name", required))
+
+	var asked: int = questions.size()
+	if asked >= 4:
+		score += 5.0
+		praise.append("Interrogatoire soigneux.")
+	elif asked < 2:
+		notes.append("Interrogatoire trop succinct.")
 
 	var critical_miss := false
 	for cr in critical:
@@ -705,16 +883,14 @@ func evaluate(case_id: String, diagnosis: String, chosen: Array, exams_done: Arr
 		score = minf(score, 5.0)
 		notes.push_front("ERREUR GRAVE : urgence vitale non prise en charge.")
 
-	var thorough := clampf(float(exams_done.size()) * 2.0, 0.0, 10.0)
-	score += thorough
 	if c.get("urgent", false) and minutes_spent > 15.0:
 		score -= 10.0
 		notes.append("Prise en charge trop lente pour une urgence (%d min)." % int(minutes_spent))
 	score = clampf(score, 0.0, 100.0)
 
-	var satisfaction := 100.0 - maxf(0.0, waited - 10.0) * 2.0 - maxf(0.0, minutes_spent - 20.0) * 1.5
+	var satisfaction := 100.0 - maxf(0.0, waited - 10.0) * 1.6 - maxf(0.0, minutes_spent - 25.0) * 1.2
 	if diagnosis_ok:
-		satisfaction += 10.0
+		satisfaction += 8.0
 	satisfaction = clampf(satisfaction, 0.0, 100.0)
 
 	var grade := "A"
@@ -737,10 +913,13 @@ func evaluate(case_id: String, diagnosis: String, chosen: Array, exams_done: Arr
 		"grade": grade,
 		"satisfaction": satisfaction,
 		"notes": notes,
+		"praise": praise,
 		"teaching": c.get("teaching", ""),
 		"critical_miss": critical_miss,
 		"samu": "samu" in chosen,
 		"reputation_delta": rep,
-		"fee": Game.FEE,
+		"fee": 30.0,
 		"minutes": minutes_spent,
+		"exams": exams_done.size(),
+		"questions": asked,
 	}

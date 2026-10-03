@@ -197,6 +197,16 @@ static func get_theme() -> Theme:
 		t.set_stylebox("grabber_pressed", sb, box(Color(ACCENT, 0.6), 999, Color(0, 0, 0, 0), 0, 3, 3))
 
 	t.set_stylebox("separator", "HSeparator", box(LINE, 0, Color(0, 0, 0, 0), 0, 0, 0))
+
+	# Champs de saisie
+	t.set_font("font", "LineEdit", font("semibold"))
+	t.set_font_size("font_size", "LineEdit", 20)
+	t.set_color("font_color", "LineEdit", TEXT)
+	t.set_color("caret_color", "LineEdit", ACCENT)
+	t.set_color("selection_color", "LineEdit", Color(ACCENT, 0.35))
+	t.set_stylebox("normal", "LineEdit", box(Color(1, 1, 1, 0.06), 12, Color(1, 1, 1, 0.12), 1, 16, 10))
+	t.set_stylebox("focus", "LineEdit", box(Color(1, 1, 1, 0.0), 12, ACCENT, 2, 16, 10))
+	t.set_stylebox("read_only", "LineEdit", box(Color(1, 1, 1, 0.03), 12, Color(1, 1, 1, 0.06), 1, 16, 10))
 	t.set_constant("separation", "HSeparator", 1)
 
 	t.set_stylebox("panel", "TooltipPanel", box(PANEL_SOFT, 8, LINE, 1, 10, 6))

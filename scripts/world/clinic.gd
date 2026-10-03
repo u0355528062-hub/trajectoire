@@ -23,11 +23,17 @@ const PATIENT_SEAT := Vector3(2.5, 0, 2.5)
 const EXAM_APPROACH := Vector3(4.3, 0, 3.75)
 const EXAM_SEAT := Vector3(4.98, 0, 3.75)
 const PLAYER_SPAWN := Vector3(1.2, 0, 3.4)
+## Position du bassin d'un patient allongé sur la table d'examen.
+const EXAM_BED := Vector3(5.2, 0, 3.92)
+const ENTRANCE := Vector3(-4.0, 1.2, 6.0)
 
 var computer: Interactable
 var world_env: WorldEnvironment
 var sun: DirectionalLight3D
-var secretary: Humanoid
+var secretary: Node3D
+var _ambulance: Node3D
+var _amb_lights: Array[OmniLight3D] = []
+var _amb_t := 0.0
 var screen_title: Label
 var screen_body: Label
 var _clock_hour: Node3D
@@ -53,7 +59,70 @@ func _on_settings_changed() -> void:
 	apply_quality(int(Game.settings["quality"]))
 
 
-func _process(_delta: float) -> void:
+func ring_door() -> void:
+	Sfx.play_at("ambience/door_chime", ENTRANCE, self, -4.0)
+
+
+## Ambulance du SMUR garée devant le cabinet (gyrophares bleus).
+func show_ambulance(on: bool) -> void:
+	if not on:
+		if _ambulance:
+			_ambulance.queue_free()
+		_ambulance = null
+		return
+	if _ambulance:
+		return
+	_ambulance = Node3D.new()
+	_ambulance.position = Vector3(-6.5, 0, 12.6)
+	_ambulance.rotation_degrees.y = 90
+	add_child(_ambulance)
+	var white := Art.color_mat(Color(0.95, 0.95, 0.96), 0.25)
+	var yellow := Art.color_mat(Color(0.98, 0.78, 0.1), 0.35)
+	var red := Art.color_mat(Color(0.85, 0.1, 0.12), 0.35)
+	var glass := Art.color_mat(Color(0.08, 0.1, 0.13), 0.05, 0.6)
+	var tire := Art.color_mat(Color(0.05, 0.05, 0.05), 0.85)
+	Art.add_rbox(_ambulance, Vector3(2.1, 1.6, 4.0), Vector3(0, 1.3, -0.5), white, 0.12)
+	Art.add_rbox(_ambulance, Vector3(2.0, 1.15, 1.4), Vector3(0, 1.05, 2.15), white, 0.18)
+	Art.add_rbox(_ambulance, Vector3(1.9, 0.6, 0.06), Vector3(0, 1.45, 2.86), glass, 0.04, Vector3(-18, 0, 0))
+	Art.add_rbox(_ambulance, Vector3(2.12, 0.22, 5.36), Vector3(0, 0.95, 0.15), yellow, 0.03)
+	Art.add_rbox(_ambulance, Vector3(2.13, 0.1, 5.38), Vector3(0, 1.12, 0.15), red, 0.02)
+	for side in [-1.0, 1.0]:
+		Art.add_rbox(_ambulance, Vector3(0.05, 0.5, 0.8), Vector3(side * 1.03, 1.55, 2.05), glass, 0.03)
+		for z in [-1.7, 1.9]:
+			Art.add_mesh(_ambulance, Art.cylinder(0.38, 0.38, 0.28, 24), tire, Vector3(side * 0.95, 0.38, z), Vector3(0, 0, 90))
+			Art.add_mesh(_ambulance, Art.cylinder(0.2, 0.2, 0.3, 16), Art.mat("brushed_metal"), Vector3(side * 0.97, 0.38, z), Vector3(0, 0, 90))
+	var blue := StandardMaterial3D.new()
+	blue.albedo_color = Color(0.2, 0.4, 1.0)
+	blue.emission_enabled = true
+	blue.emission = Color(0.2, 0.45, 1.0)
+	blue.emission_energy_multiplier = 6.0
+	for x in [-0.6, 0.6]:
+		Art.add_rbox(_ambulance, Vector3(0.45, 0.14, 0.3), Vector3(x, 2.16, 1.2), blue, 0.04)
+		var l := OmniLight3D.new()
+		l.light_color = Color(0.25, 0.45, 1.0)
+		l.light_energy = 0.0
+		l.omni_range = 9.0
+		l.position = Vector3(x, 2.4, 1.2)
+		_ambulance.add_child(l)
+		_amb_lights.append(l)
+	var lbl := Label3D.new()
+	lbl.text = "SAMU 37 · SMUR"
+	lbl.font = _font
+	lbl.font_size = 64
+	lbl.pixel_size = 0.004
+	lbl.modulate = Color(0.1, 0.25, 0.6)
+	lbl.outline_size = 0
+	lbl.position = Vector3(1.07, 1.45, -0.6)
+	lbl.rotation_degrees = Vector3(0, 90, 0)
+	_ambulance.add_child(lbl)
+	Art.add_collider(_ambulance, Vector3(2.2, 2.2, 5.4), Vector3(0, 1.1, 0.2))
+
+
+func _process(delta: float) -> void:
+	if _ambulance and not _amb_lights.is_empty():
+		_amb_t += delta
+		for i in _amb_lights.size():
+			_amb_lights[i].light_energy = 3.0 if fmod(_amb_t * 3.0 + i * 0.5, 1.0) < 0.5 else 0.0
 	if _clock_hour:
 		var m := Game.minutes
 		_clock_minute.rotation.z = -fmod(m, 60.0) / 60.0 * TAU
@@ -726,13 +795,11 @@ func _build_waiting_room() -> void:
 	glow.emission_energy_multiplier = 0.6
 	Art.add_rbox(mon, Vector3(0.49, 0.29, 0.004), Vector3(0, 0.34, 0.0135), glow, 0.002)
 	_label_panel(self, Vector3(-6.9 + T * 0.5, 2.25, 3.5), Vector2(1.2, 0.22), "ACCUEIL", Color(0.1, 0.45, 0.48), Color(1, 1, 1), 0.0022, Vector3(0, 90, 0))
-	# Chaise et secrétaire
+	# Chaise de la secrétaire (Camille est un personnage animé géré par la session).
 	_office_chair(Vector3(-6.45, 0, 3.5), 90.0)
-	secretary = Humanoid.new()
-	secretary.name = "Camille"
+	secretary = Node3D.new()
+	secretary.name = "SecretarySpot"
 	add_child(secretary)
-	secretary.setup({"skin": 1, "hair": "bun", "hair_color": Color(0.42, 0.24, 0.12), "top": Color(0.86, 0.84, 0.8), "bottom": Color(0.18, 0.2, 0.26), "height": 0.97}, 4242)
-	secretary.place_seated(Vector3(-6.4, 0, 3.5), Vector3(1, 0, 0), 0.5, true)
 
 	# Affiches de prévention
 	_poster(Vector3(-3.0, 1.55, 6 - T * 0.5 - 0.01), Vector2(0.6, 0.85), "VACCINATION\nGRIPPE", "Protégez-vous,\nprotégez les autres", Color(0.12, 0.42, 0.55), Vector3(0, 180, 0))

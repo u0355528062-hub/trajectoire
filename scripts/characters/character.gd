@@ -71,6 +71,7 @@ var _lying_tween: Tween
 var _speed_scale := 1.0
 var _hip_scale := 1.0
 var _free_yaw := true
+var _head_att: BoneAttachment3D
 
 
 func setup(id: String, gender_code: String, seed_value: int = 0) -> void:
@@ -106,6 +107,7 @@ func setup(id: String, gender_code: String, seed_value: int = 0) -> void:
 	var head_att := BoneAttachment3D.new()
 	head_att.bone_name = "Bip01 Head"
 	skeleton.add_child(head_att)
+	_head_att = head_att
 	voice = AudioStreamPlayer3D.new()
 	voice.bus = "Voice"
 	voice.unit_size = 3.0
@@ -440,8 +442,9 @@ func _lie_down(info: Dictionary) -> void:
 	var end_origin := bed_pos + Vector3.UP * (bed_h + 0.11) - head_dir * hip
 	_free_yaw = false
 	_lying_tween = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	var b0 := start.basis.orthonormalized()
 	_lying_tween.tween_method(func(t: float):
-		var b := start.basis.slerp(basis_end, t)
+		var b := b0.slerp(basis_end, t).orthonormalized()
 		var o := start.origin.lerp(end_origin, t) + Vector3.UP * sin(t * PI) * 0.15
 		global_transform = Transform3D(b, o), 0.0, 1.0, 1.4)
 	_lying_tween.tween_callback(func():
@@ -458,8 +461,9 @@ func _get_up_from_lying() -> void:
 	var end_t: Transform3D = get_meta("lying_from", Transform3D(Basis(), global_position))
 	var yaw_end := end_t.basis.get_euler().y
 	_lying_tween = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	var b1 := start.basis.orthonormalized()
 	_lying_tween.tween_method(func(t: float):
-		var b := start.basis.slerp(Basis(Vector3.UP, yaw_end), t)
+		var b := b1.slerp(Basis(Vector3.UP, yaw_end), t).orthonormalized()
 		global_transform = Transform3D(b, start.origin.lerp(end_t.origin, t) + Vector3.UP * sin(t * PI) * 0.15), 0.0, 1.0, 1.2)
 	_lying_tween.tween_callback(func():
 		rotation = Vector3(0, yaw_end, 0)
@@ -635,6 +639,11 @@ func set_skin_look(kind: String) -> void:
 			"flushed":
 				mm.albedo_color = Color(1.0, 0.86, 0.84)
 		head_mesh.set_surface_override_material(s, mm)
+
+
+## Nœud qui suit la tête (cible de regard pour les autres personnages).
+func head_bone_node() -> Node3D:
+	return _head_att
 
 
 ## Position du haut de la tête (pour la caméra, les bulles…).
