@@ -151,6 +151,8 @@ func _build_ui() -> void:
 	_mode_card(right, "Chirurgie", "Bloc opératoire", false, UITheme.ACCENT_2)
 	_mode_card(right, "Sandbox", "Cabinet libre, cas aléatoires", false, Color(0.7, 0.5, 0.95))
 	UITheme.fade_in(_ui, 0.8)
+	# Navigation au clavier / manette : flèches + Entrée.
+	(_main_col.get_child(0) as Button).grab_focus.call_deferred()
 
 
 func _saved_day() -> int:
@@ -165,7 +167,7 @@ func _saved_day() -> int:
 func _menu_button(parent: Control, text: String, sub: String, cb: Callable) -> void:
 	var b := Button.new()
 	b.theme_type_variation = "MenuButtonBig"
-	b.focus_mode = Control.FOCUS_NONE
+	b.focus_mode = Control.FOCUS_ALL
 	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	b.custom_minimum_size = Vector2(440, 64 if sub != "" else 50)
 	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -229,8 +231,12 @@ func _mode_card(parent: Control, title: String, sub: String, available: bool, co
 func _show_settings() -> void:
 	_main_col.visible = false
 	_settings_col.visible = true
+	var back := _settings_col.find_children("*", "Button", true, false)
+	if not back.is_empty():
+		(back[back.size() - 1] as Button).grab_focus.call_deferred()
 
 
 func _hide_settings() -> void:
 	_settings_col.visible = false
 	_main_col.visible = true
+	(_main_col.get_child(0) as Button).grab_focus.call_deferred()

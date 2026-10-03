@@ -63,6 +63,7 @@ static func day_intro(day: int, title: String, text: String, records: Array[Pati
 	var b := UITheme.button("Commencer la journée", "PrimaryButton", on_start)
 	b.custom_minimum_size = Vector2(260, 52)
 	row.add_child(b)
+	b.grab_focus.call_deferred()
 	return root
 
 
@@ -116,6 +117,7 @@ static func day_report(day: int, results: Array[Dictionary], last: bool, on_cont
 	var b := UITheme.button("Retour au menu" if last else "Journée suivante  →", "PrimaryButton", on_continue)
 	b.custom_minimum_size = Vector2(240, 52)
 	row2.add_child(b)
+	b.grab_focus.call_deferred()
 	return root
 
 
@@ -146,6 +148,7 @@ static func pause_menu(on_resume: Callable, on_quit: Callable) -> Control:
 	var resume := UITheme.button("Reprendre", "PrimaryButton", on_resume)
 	resume.custom_minimum_size.y = 50
 	buttons.add_child(resume)
+	resume.grab_focus.call_deferred()
 	buttons.add_child(UITheme.button("Paramètres", "", func():
 		buttons.visible = false
 		settings_holder.visible = true))

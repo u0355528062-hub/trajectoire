@@ -121,7 +121,7 @@ static func get_theme() -> Theme:
 	t.set_stylebox("hover", "MenuButtonBig", box(Color(1, 1, 1, 0.07), 14, Color(ACCENT, 0.0), 0, 22, 14))
 	t.set_stylebox("pressed", "MenuButtonBig", box(Color(ACCENT, 0.18), 14, Color(0, 0, 0, 0), 0, 22, 14))
 	t.set_stylebox("disabled", "MenuButtonBig", box(Color(0, 0, 0, 0), 14, Color(0, 0, 0, 0), 0, 22, 14))
-	t.set_stylebox("focus", "MenuButtonBig", StyleBoxEmpty.new())
+	t.set_stylebox("focus", "MenuButtonBig", box(Color(0, 0, 0, 0), 14, Color(ACCENT, 0.7), 2, 22, 14))
 	t.set_color("font_disabled_color", "MenuButtonBig", Color(MUTED, 0.45))
 
 	# Option « puce » sélectionnable (examens, traitements…)
@@ -257,7 +257,7 @@ static func button(text: String, variation: String = "", cb: Callable = Callable
 	if variation != "":
 		b.theme_type_variation = variation
 	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	b.focus_mode = Control.FOCUS_NONE
+	b.focus_mode = Control.FOCUS_ALL
 	if cb.is_valid():
 		b.pressed.connect(cb)
 	return b

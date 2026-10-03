@@ -88,6 +88,9 @@ puis la référencer dans une journée de `DAYS`.
 # Joue automatiquement les 3 journées et vérifie chaque étape
 godot --headless --path . res://tests/story_test.tscn
 
+# Clique réellement sur les boutons (menu, journée, pause)
+godot --headless --path . res://tests/click_test.tscn
+
 # Captures d'écran (nécessite un affichage)
 godot --path . res://tests/screenshots.tscn -- /chemin/sortie
 ```
