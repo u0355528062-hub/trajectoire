@@ -7,6 +7,7 @@ signal equipped_changed(on: bool)
 signal ammo_changed(count: int, maximum: int)
 signal message(text: String)
 signal stage_changed(label: String, progress: float)
+signal aim_changed(on: bool)
 
 const WALK_SPEED := 1.75
 const RUN_SPEED := 5.2
@@ -27,6 +28,7 @@ var _yaw := 0.0
 var _pitch := -0.12
 var _run_t := 0.0
 var _shake := 0.0
+var aiming := false
 var _rng := RandomNumberGenerator.new()
 
 
@@ -51,6 +53,7 @@ func _ready() -> void:
 	mortar.stage_changed.connect(func(l, p): stage_changed.emit(l, p))
 	mortar.message.connect(func(t): message.emit(t))
 	mortar.fired.connect(func(): _shake = 1.0)
+	mortar.aim_point_provider = Callable(self, "_aim_point")
 
 	cam_yaw = Node3D.new()
 	cam_yaw.position.y = EYE_HEIGHT
@@ -93,6 +96,11 @@ func _register_inputs() -> void:
 			var ev := InputEventKey.new()
 			ev.physical_keycode = k # touches physiques : ZQSD (AZERTY) ou WASD
 			InputMap.action_add_event(action, ev)
+	if not InputMap.has_action("aim"):
+		InputMap.add_action("aim")
+		var rb := InputEventMouseButton.new()
+		rb.button_index = MOUSE_BUTTON_RIGHT
+		InputMap.action_add_event("aim", rb)
 	if not InputMap.has_action("fire"):
 		InputMap.add_action("fire")
 		var mb := InputEventMouseButton.new()
@@ -134,9 +142,15 @@ func _physics_process(delta: float) -> void:
 	var wants_run := Input.is_action_pressed("run") and iv.y <= 0.3 and iv.length() > 0.1
 	_run_t = move_toward(_run_t, 1.0 if wants_run else 0.0, delta * 4.0)
 	var target_speed := lerpf(WALK_SPEED, RUN_SPEED, _run_t)
-	if mortar.busy:
-		target_speed = minf(target_speed, WALK_SPEED * 0.6)
+	if mortar.busy or aiming:
+		target_speed = minf(target_speed, WALK_SPEED * 0.55)
+		_run_t = 0.0
 
+	var want_aim := mortar.equipped and Input.is_action_pressed("aim") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	if want_aim != aiming:
+		aiming = want_aim
+		aim_changed.emit(aiming)
+		mortar.set_aim(aiming)
 	cam_yaw.rotation.y = _yaw
 	var basis_yaw := Basis(Vector3.UP, _yaw)
 	var wish := basis_yaw * Vector3(iv.x, 0.0, iv.y)
@@ -172,18 +186,32 @@ func _physics_process(delta: float) -> void:
 	_update_camera(delta)
 
 
+func _aim_point() -> Vector3:
+	return camera.global_position + (-camera.global_basis.z) * 60.0
+
+
 func _update_camera(delta: float) -> void:
 	_fp_blend = move_toward(_fp_blend, 1.0 if first_person else 0.0, delta * 6.0)
 	var e := _fp_blend * _fp_blend * (3.0 - 2.0 * _fp_blend)
+	var k := clampf(mortar.aim_t, 0.0, 1.0)
+	k = k * k * (3.0 - 2.0 * k)
 	cam_pitch.rotation.x = _pitch
-	spring.spring_length = lerpf(3.1, 0.0, e)
-	spring.position.x = lerpf(0.55, 0.0, e)
+	spring.spring_length = lerpf(lerpf(3.1, 1.75, k), 0.0, e)
+	spring.position.x = lerpf(lerpf(0.55, 0.62, k), 0.0, e)
 	cam_pitch.position.z = lerpf(0.0, -0.10, e)
-	cam_yaw.position.y = EYE_HEIGHT + 0.0 * e
-	# le champ de vision s'ouvre un peu en courant
-	camera.fov = lerpf(camera.fov, 72.0 + 8.0 * _run_t, minf(1.0, delta * 5.0))
-	# la tête n'est visible que depuis l'extérieur
+	cam_yaw.position.y = EYE_HEIGHT
+	# champ de vision : s'ouvre en courant, se resserre en visant
+	var fov_target := lerpf(72.0 + 8.0 * _run_t, 46.0, k)
+	camera.fov = lerpf(camera.fov, fov_target, minf(1.0, delta * 7.0))
 	camera.cull_mask = 1 if e > 0.5 else 0xFFFFF
+
+	# tremblement de la visée à la main (très léger) : respiration + tremor
+	var t := Time.get_ticks_msec() / 1000.0
+	var sway := Vector3(
+		sin(t * 1.7) * 0.0016 + sin(t * 4.3 + 1.0) * 0.0009 + sin(t * 13.0) * 0.0004,
+		sin(t * 1.3 + 2.0) * 0.0019 + sin(t * 3.7) * 0.0009 + sin(t * 11.0 + 1.0) * 0.0004,
+		sin(t * 0.9) * 0.0011) * k
+	camera.rotation = sway
 
 	_shake = move_toward(_shake, 0.0, delta * 3.5)
 	var s := _shake * _shake * 0.02

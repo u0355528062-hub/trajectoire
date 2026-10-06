@@ -20,6 +20,10 @@ var _crosshair: Control
 var _view_chip: Label
 var _help: PanelContainer
 var _preview_pivot: Node3D
+var _prompt_row: HBoxContainer
+var _post: ColorRect
+var _reticle: Control
+var _aim_tween: Tween
 var _ammo := 6
 var _max := 6
 var _selected := true
@@ -64,6 +68,19 @@ class Cross extends Control:
 		for a in 4:
 			var d := Vector2.from_angle(a * PI * 0.5)
 			draw_line(c + d * 12.0, c + d * 17.0, Color(1, 1, 1, 0.5), 1.4, true)
+
+
+class Reticle extends Control:
+	func _draw() -> void:
+		var c := size * 0.5
+		var col := Color(1, 1, 1, 0.9)
+		draw_arc(c, 17.0, 0.0, TAU, 48, Color(1, 1, 1, 0.38), 1.2, true)
+		for a in 4:
+			var d := Vector2.from_angle(a * PI * 0.5 + PI * 0.25)
+			draw_line(c + d * 17.0, c + d * 23.0, col, 1.4, true)
+			var e := Vector2.from_angle(a * PI * 0.5)
+			draw_line(c + e * 4.0, c + e * 9.0, Color(1, 1, 1, 0.8), 1.2, true)
+		draw_circle(c, 1.6, Color(1.0, 0.82, 0.45, 1.0))
 
 
 func _style(bg: Color, radius := 16, border := Color(1, 1, 1, 0.08), bw := 1, margin := 12.0) -> StyleBoxFlat:
@@ -122,6 +139,7 @@ func bind(player: Player) -> void:
 	player.message.connect(_toast_show)
 	player.view_changed.connect(_on_view)
 	player.stage_changed.connect(_on_stage)
+	player.aim_changed.connect(_on_aim)
 	_on_equipped(player.mortar.equipped)
 
 
@@ -131,6 +149,39 @@ func _ready() -> void:
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
+
+	# flou périphérique + aberration chromatique + vignettage, actifs quand on vise
+	var post_layer := CanvasLayer.new()
+	post_layer.layer = 5
+	add_child(post_layer)
+	_post = ColorRect.new()
+	_post.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_post.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var psh := Shader.new()
+	psh.code = """shader_type canvas_item;
+uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap, repeat_disable;
+uniform float amount : hint_range(0.0, 1.0) = 0.0;
+void fragment() {
+	vec2 uv = SCREEN_UV;
+	vec2 d = uv - vec2(0.5);
+	float aspect = SCREEN_PIXEL_SIZE.y / SCREEN_PIXEL_SIZE.x;
+	float r = length(d * vec2(aspect, 1.0));
+	float edge = smoothstep(0.34, 1.0, r) * amount;
+	float lod = edge * 2.4;
+	vec2 ca = d * 0.006 * edge;
+	vec3 col;
+	col.r = textureLod(screen_tex, uv + ca, lod).r;
+	col.g = textureLod(screen_tex, uv, lod).g;
+	col.b = textureLod(screen_tex, uv - ca, lod).b;
+	col *= 1.0 - smoothstep(0.35, 1.0, r) * 0.45 * amount;
+	col = mix(col, col * col * (3.0 - 2.0 * col), 0.18 * amount);
+	COLOR = vec4(col, 1.0);
+}"""
+	var pm := ShaderMaterial.new()
+	pm.shader = psh
+	_post.material = pm
+	_post.visible = false
+	post_layer.add_child(_post)
 
 	# vignettage léger
 	var vig := ColorRect.new()
@@ -148,13 +199,14 @@ void fragment() {
 	vig.material = sm
 	root.add_child(vig)
 
-	_crosshair = Cross.new()
-	_crosshair.set_anchors_preset(Control.PRESET_CENTER)
-	_crosshair.size = Vector2(44, 44)
-	_crosshair.position = Vector2(-22, -22)
-	_crosshair.visible = false
-	_crosshair.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(_crosshair)
+	_reticle = Reticle.new()
+	_reticle.set_anchors_preset(Control.PRESET_CENTER)
+	_reticle.size = Vector2(80, 80)
+	_reticle.position = Vector2(-40, -40)
+	_reticle.modulate.a = 0.0
+	_reticle.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_reticle)
+	_crosshair = Control.new()
 
 	# ---- barre du bas
 	var bottom := VBoxContainer.new()
@@ -205,9 +257,9 @@ void fragment() {
 	svc.add_child(vp)
 	var pcam := Camera3D.new()
 	pcam.fov = 26
-	pcam.position = Vector3(0, 0.27, 1.0)
+	pcam.position = Vector3(0, 0.2, 0.9)
 	vp.add_child(pcam)
-	pcam.look_at_from_position(Vector3(0, 0.3, 0.92), Vector3(0, 0.25, 0))
+	pcam.look_at_from_position(Vector3(0, 0.2, 0.78), Vector3(0, 0.15, 0))
 	var key := DirectionalLight3D.new()
 	key.rotation_degrees = Vector3(-30, 35, 0)
 	key.light_energy = 1.6
@@ -286,7 +338,8 @@ void fragment() {
 	pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	pc.add_child(_prompt)
 	bottom.add_child(pc)
-	_prompt.add_child(_key_row(["CLIC GAUCHE"], "Tirer"))
+	_prompt_row = _key_row(["CLIC DROIT"], "Maintenir pour viser")
+	_prompt.add_child(_prompt_row)
 	bottom.move_child(pc, 1)
 
 	# ---- aide (haut gauche)
@@ -305,6 +358,8 @@ void fragment() {
 	hv.add_child(_key_row(["Z", "Q", "S", "D"], "Marcher"))
 	hv.add_child(_key_row(["MAJ"], "Courir"))
 	hv.add_child(_key_row(["ESPACE"], "Sauter"))
+	hv.add_child(_key_row(["CLIC DROIT"], "Viser (obligatoire pour tirer)"))
+	hv.add_child(_key_row(["CLIC GAUCHE"], "Tirer"))
 	hv.add_child(_key_row(["V"], "Vue 1re / 3e personne"))
 	hv.add_child(_key_row(["1"], "Mortier"))
 	hv.add_child(_key_row(["R"], "Recharger (test)"))
@@ -375,8 +430,24 @@ func _on_stage(label: String, progress: float) -> void:
 	_bar.modulate.a = 1.0 if label != "" else 0.0
 
 
+func _on_aim(on: bool) -> void:
+	if _aim_tween:
+		_aim_tween.kill()
+	if on:
+		_post.visible = true
+		_prompt_row.get_child(0).get_child(0).text = "CLIC GAUCHE"
+		_prompt_row.get_child(1).text = "Tirer"
+	else:
+		_prompt_row.get_child(0).get_child(0).text = "CLIC DROIT"
+		_prompt_row.get_child(1).text = "Maintenir pour viser"
+	_aim_tween = create_tween().set_parallel(true)
+	_aim_tween.tween_method(func(v): (_post.material as ShaderMaterial).set_shader_parameter("amount", v), 0.0 if on else 1.0, 1.0 if on else 0.0, 0.35)
+	_aim_tween.tween_property(_reticle, "modulate:a", 1.0 if on else 0.0, 0.25)
+	if not on:
+		_aim_tween.chain().tween_callback(func(): _post.visible = false)
+
+
 func _on_view(first_person: bool) -> void:
-	_crosshair.visible = first_person
 	_view_chip.text = "PREMIÈRE PERSONNE" if first_person else "TROISIÈME PERSONNE"
 
 

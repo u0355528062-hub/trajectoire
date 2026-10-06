@@ -130,6 +130,10 @@ func chest_xf() -> Transform3D:
 	return skeleton.global_transform * skeleton.get_bone_global_pose(bone["spine02"])
 
 
+func shoulder_world(side: String) -> Vector3:
+	return skeleton.global_transform * _gp("upperarm01_" + side)
+
+
 func kick_back(amount := 1.0) -> void:
 	kick = maxf(kick, amount)
 
@@ -280,7 +284,7 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 		if bone.has(toe):
 			_local(toe, Quaternion.IDENTITY)
 
-	# --- bras
+	# --- bras : animation libre (FK), puis IK pondérée si le mortier les guide
 	var targets: Array = [null, null]
 	if hand_provider.is_valid():
 		targets = hand_provider.call()
@@ -293,30 +297,40 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 		var lo := "lowerarm01_" + side
 		var wr := "wrist_" + side
 		var cl := "clavicle_" + side
-		if targets[idx] != null:
-			var tg: Dictionary = targets[idx]
-			var f_w: Vector3 = _dir_to_skel(tg["f"]).normalized()
-			var p_w: Vector3 = _dir_to_skel(tg["p"]).normalized()
-			var palm_pos := _to_skel(tg["pos"])
-			var wrist := palm_pos - f_w * PALM_TO_WRIST - p_w * 0.012
-			_local(cl, Quaternion.IDENTITY)
-			var pole := Vector3(0.5 * sgn, -1.0, -0.45)
-			_solve_limb(up, lo, wr, wrist, pole)
-			# orientation de la main : repère de repos -> repère cible
-			var br := _frame(hand_f[side], palm_n[side])
-			var bt := _frame(f_w, p_w)
-			_global(wr, (bt * br.inverse()).get_rotation_quaternion())
-			_curl_fingers(side, tg.get("curl", 0.9))
-		else:
-			var ph := fposmod(phase + (0.5 if is_l else 0.0), 1.0)
-			var sw := -sin(TAU * ph) * swing
-			var adduct := 0.5 + 0.05 * breath * (1.0 - w) - 0.35 * air
-			_local(cl, Quaternion.IDENTITY)
-			_local(up, Quaternion(Vector3.BACK, -sgn * adduct) * Quaternion(Vector3.RIGHT, sw - 0.5 * air))
-			var flex := 0.14 - (0.1 * w + 0.95 * run_t * w) - 0.4 * air
-			_local(lo, Quaternion(Vector3.RIGHT, flex))
-			_local(wr, Quaternion.IDENTITY)
-			_curl_fingers(side, 0.35 + 0.2 * run_t)
+		var ph := fposmod(phase + (0.5 if is_l else 0.0), 1.0)
+		var sw := -sin(TAU * ph) * swing
+		var adduct := 0.5 + 0.05 * breath * (1.0 - w) - 0.35 * air
+		_local(cl, Quaternion.IDENTITY)
+		_local(up, Quaternion(Vector3.BACK, -sgn * adduct) * Quaternion(Vector3.RIGHT, sw - 0.5 * air))
+		var flex := 0.14 - (0.1 * w + 0.95 * run_t * w) - 0.4 * air
+		_local(lo, Quaternion(Vector3.RIGHT, flex))
+		_local(wr, Quaternion.IDENTITY)
+		var fk_curl := 0.35 + 0.2 * run_t
+		_curl_fingers(side, fk_curl)
+		if targets[idx] == null:
+			continue
+		var tg: Dictionary = targets[idx]
+		var wt: float = tg.get("w", 1.0)
+		if wt <= 0.001:
+			continue
+		var ids := [up, lo, wr]
+		var fk_q: Array[Quaternion] = []
+		for n in ids:
+			fk_q.append(skeleton.get_bone_pose_rotation(bone[n]))
+		var f_w: Vector3 = _dir_to_skel(tg["f"]).normalized()
+		var p_w: Vector3 = _dir_to_skel(tg["p"]).normalized()
+		var palm_pos := _to_skel(tg["pos"])
+		var wrist := palm_pos - f_w * PALM_TO_WRIST - p_w * 0.012
+		var pole := Vector3(0.5 * sgn, -1.0, -0.45)
+		_solve_limb(up, lo, wr, wrist, pole)
+		var br := _frame(hand_f[side], palm_n[side])
+		var bt := _frame(f_w, p_w)
+		_global(wr, (bt * br.inverse()).get_rotation_quaternion())
+		if wt < 0.999:
+			for i in 3:
+				var ik_q := skeleton.get_bone_pose_rotation(bone[ids[i]])
+				skeleton.set_bone_pose_rotation(bone[ids[i]], fk_q[i].slerp(ik_q, wt))
+		_curl_fingers(side, lerpf(fk_curl, tg.get("curl", 0.9), wt))
 
 
 func _frame(f: Vector3, p: Vector3) -> Basis:

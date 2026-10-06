@@ -107,10 +107,12 @@ func _physics_process(delta: float) -> void:
 	if _done:
 		return
 	age += delta
-	velocity.y -= GRAVITY * delta
+	# propulseur : gravité réduite au début pour que les tirs obliques aillent loin
+	var g := GRAVITY * (0.25 if age < 1.6 else 1.0)
+	velocity.y -= g * delta
 	velocity *= 1.0 - 0.12 * delta
 	global_position += velocity * delta
-	if age >= fuse or velocity.y < -2.0:
+	if age >= fuse or (age > 0.4 and global_position.y < 1.0):
 		_burst()
 
 
@@ -231,10 +233,10 @@ func _burst() -> void:
 	flash.explosiveness = 1.0
 	var fm := ParticleProcessMaterial.new()
 	fm.gravity = Vector3.ZERO
-	fm.scale_min = 11.0
-	fm.scale_max = 11.0
+	fm.scale_min = 7.0
+	fm.scale_max = 7.0
 	fm.scale_curve = _curve([0.3, 1.0, 0.0])
-	fm.color_ramp = _ramp([c.lightened(0.5), Color(c.r, c.g, c.b, 0.5), Color(c.r, c.g, c.b, 0)])
+	fm.color_ramp = _ramp([c.lightened(0.5), Color(c.r, c.g, c.b, 0.3), Color(c.r, c.g, c.b, 0)])
 	flash.process_material = fm
 	var fq := QuadMesh.new()
 	fq.size = Vector2(1, 1)

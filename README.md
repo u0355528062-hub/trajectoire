@@ -11,7 +11,8 @@ Ouvrir le dossier dans Godot 4.4+ et lancer (F5). Au premier lancement, laisser 
 | Espace | Sauter |
 | V | Vue 1re / 3e personne |
 | 1 | Sortir / ranger le mortier |
-| Clic gauche | Tirer (6 obus : prise, allumage, chargement, départ) |
+| Clic droit (maintenu) | Viser : bras tendu, réticule, flou périphérique, léger tremblement |
+| Clic gauche (en visant) | Tirer (6 obus : on ramène le tube, allumage au briquet, on retend, départ) |
 | R | Recharger les 6 obus (test) |
 | H | Masquer l'aide |
 | Échap | Libérer la souris |
