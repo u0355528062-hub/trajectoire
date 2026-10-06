@@ -1,32 +1,37 @@
 class_name Mortar
 extends Node3D
-## Mortier d'artifice tenu à deux mains. 6 tirs, séquence complète :
-## prendre l'obus -> allumer la mèche -> le glisser dans le tube -> départ.
+## Mortier d'artifice tenu à deux mains (tube contre le torse). 6 tirs, séquence complète :
+## prendre l'obus à la poche -> allumer la mèche au briquet -> le glisser dans le tube -> départ.
 
 signal ammo_changed(count: int, maximum: int)
 signal message(text: String)
 signal fired
+signal stage_changed(label: String, progress: float)
 
 const MAX_AMMO := 6
-const TUBE_LEN := 0.5
-const TUBE_R := 0.045
+const TUBE_LEN := MortarModel.TUBE_LEN
+const TUBE_R := MortarModel.TUBE_R
 const LAUNCH_SPEED := 36.0
+const TILT := 0.30            # inclinaison du tube vers l'avant (rad)
+const BASE_REST := Vector3(-0.045, 0.99, 0.285) # base du tube (repère de repos du squelette)
 
 # durées de la séquence (s)
-const T_GRAB1 := 0.40   # main droite : tube -> poche
-const T_GRAB2 := 0.45   # poche -> devant la poitrine
-const T_IGNITE := 0.95  # briquet dans la main gauche
-const T_LOAD := 0.50    # vers l'embouchure
-const T_DROP := 0.28    # l'obus glisse dans le tube
-const T_RET := 0.40     # la main revient
-const T_LAUNCH_AFTER_DROP := 0.18
-const T_RECOIL := 0.55
+const T_GRAB1 := 0.55   # main droite : tube -> poche
+const T_GRAB2 := 0.50   # poche -> devant la poitrine
+const T_IGNITE := 1.10  # briquet dans la main gauche
+const T_LOAD := 0.55    # vers l'embouchure
+const T_DROP := 0.30    # l'obus glisse dans le tube
+const T_RET := 0.45     # la main revient
+const T_LAUNCH_AFTER_DROP := 0.20
+const T_RECOIL := 0.60
 
 var ammo := MAX_AMMO
 var equipped := false
 var busy := false
 var human: Human
 var model: Node3D
+var local_xf := Transform3D.IDENTITY   # tube dans le repère du torse
+var chest_rest := Vector3.ZERO
 var _t := -1.0
 var _launched := false
 var _recoil := 0.0
@@ -43,13 +48,25 @@ var _sfx_hiss: AudioStreamPlayer3D
 var _sfx_thump: AudioStreamPlayer3D
 var _sfx_click: AudioStreamPlayer3D
 var _rng := RandomNumberGenerator.new()
+var _last_stage := ""
 
 
 func _ready() -> void:
 	_rng.randomize()
-	model = Node3D.new()
+	model = MortarModel.build()
 	add_child(model)
-	_build_tube()
+	_glow = MeshInstance3D.new()
+	var gm := SphereMesh.new()
+	gm.radius = 0.03
+	gm.height = 0.06
+	_glow.mesh = gm
+	var glm := StandardMaterial3D.new()
+	glm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glm.albedo_color = Color(1.0, 0.5, 0.15) * 1.2
+	_glow.material_override = glm
+	_glow.position.y = 0.06
+	_glow.visible = false
+	model.add_child(_glow)
 	_build_shell()
 	_build_lighter()
 	_sfx_ignite = _player(&"ignite", -4.0)
@@ -69,105 +86,11 @@ func _player(sound: StringName, vol: float) -> AudioStreamPlayer3D:
 	return p
 
 
-# ---------------------------------------------------------------------- model
-
-func _build_tube() -> void:
-	var paper := StandardMaterial3D.new()
-	paper.albedo_color = Color(0.62, 0.10, 0.07)
-	paper.roughness = 0.55
-	paper.cull_mode = BaseMaterial3D.CULL_DISABLED
-	paper.clearcoat_enabled = true
-	paper.clearcoat = 0.3
-	var inner := StandardMaterial3D.new()
-	inner.albedo_color = Color(0.02, 0.02, 0.02)
-	inner.cull_mode = BaseMaterial3D.CULL_FRONT
-	inner.roughness = 1.0
-	var gold := StandardMaterial3D.new()
-	gold.albedo_color = Color(0.85, 0.62, 0.18)
-	gold.metallic = 0.9
-	gold.roughness = 0.3
-	var dark := StandardMaterial3D.new()
-	dark.albedo_color = Color(0.06, 0.06, 0.07)
-	dark.roughness = 0.5
-
-	var tube := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = TUBE_R
-	cm.bottom_radius = TUBE_R
-	cm.height = TUBE_LEN
-	cm.radial_segments = 40
-	cm.rings = 1
-	cm.cap_top = false
-	tube.mesh = cm
-	tube.material_override = paper
-	tube.position.y = TUBE_LEN * 0.5
-	model.add_child(tube)
-
-	var bore := MeshInstance3D.new()
-	var bm := CylinderMesh.new()
-	bm.top_radius = TUBE_R - 0.004
-	bm.bottom_radius = TUBE_R - 0.004
-	bm.height = TUBE_LEN - 0.01
-	bm.radial_segments = 40
-	bm.cap_top = false
-	bore.mesh = bm
-	bore.material_override = inner
-	bore.position.y = TUBE_LEN * 0.5
-	model.add_child(bore)
-
-	for y in [0.07, 0.43]:
-		var band := MeshInstance3D.new()
-		var bc := CylinderMesh.new()
-		bc.top_radius = TUBE_R + 0.002
-		bc.bottom_radius = TUBE_R + 0.002
-		bc.height = 0.022
-		bc.radial_segments = 40
-		band.mesh = bc
-		band.material_override = gold
-		band.position.y = y
-		model.add_child(band)
-
-	var rim := MeshInstance3D.new()
-	var tm := TorusMesh.new()
-	tm.inner_radius = TUBE_R - 0.004
-	tm.outer_radius = TUBE_R + 0.008
-	tm.rings = 40
-	tm.ring_segments = 8
-	rim.mesh = tm
-	rim.material_override = dark
-	rim.position.y = TUBE_LEN
-	model.add_child(rim)
-
-	var base := MeshInstance3D.new()
-	var bc2 := CylinderMesh.new()
-	bc2.top_radius = TUBE_R + 0.012
-	bc2.bottom_radius = TUBE_R + 0.03
-	bc2.height = 0.03
-	bc2.radial_segments = 40
-	base.mesh = bc2
-	base.material_override = dark
-	base.position.y = 0.0
-	model.add_child(base)
-
-	# lueur de la mèche au fond du tube
-	_glow = MeshInstance3D.new()
-	var gm := SphereMesh.new()
-	gm.radius = 0.03
-	gm.height = 0.06
-	_glow.mesh = gm
-	var glm := StandardMaterial3D.new()
-	glm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	glm.albedo_color = Color(1.0, 0.5, 0.15) * 1.2
-	_glow.material_override = glm
-	_glow.position.y = 0.2
-	_glow.visible = false
-	model.add_child(_glow)
-
-
 func _build_shell() -> void:
 	_shell = Node3D.new()
 	_shell.visible = false
 	add_child(_shell)
+	_shell.top_level = true
 	var body := MeshInstance3D.new()
 	var cm := CylinderMesh.new()
 	cm.top_radius = 0.028
@@ -251,6 +174,7 @@ func _build_lighter() -> void:
 	_lighter = Node3D.new()
 	_lighter.visible = false
 	add_child(_lighter)
+	_lighter.top_level = true
 	var body := MeshInstance3D.new()
 	var bx := BoxMesh.new()
 	bx.size = Vector3(0.022, 0.058, 0.013)
@@ -297,13 +221,14 @@ func _ramp(cols: Array) -> GradientTexture1D:
 
 # ------------------------------------------------------------------- equipment
 
+
+# ------------------------------------------------------------------- équipement
+
 func attach_to(h: Human) -> void:
 	human = h
-	h.torso.add_child(self)
-	_shell.reparent(h.torso, false)
-	_lighter.reparent(h.torso, false)
-	position = Vector3(0.12, -0.14, -0.34)
-	rotation = Vector3(-0.22, 0.0, 0.0)
+	h.add_child(self)
+	chest_rest = h.rest["spine02"]
+	local_xf = Transform3D(Basis(Vector3.RIGHT, TILT), BASE_REST - chest_rest)
 	h.hand_provider = Callable(self, "_hand_targets")
 
 
@@ -315,14 +240,14 @@ func set_equipped(on: bool) -> void:
 
 
 func axis_world() -> Vector3:
-	return (model.global_basis * Vector3.UP).normalized()
+	return (global_basis * model.basis * Vector3.UP).normalized()
 
 
 func mouth_world() -> Vector3:
-	return model.to_global(Vector3(0, TUBE_LEN, 0))
+	return (global_transform * model.transform) * Vector3(0, TUBE_LEN, 0)
 
 
-# ------------------------------------------------------------------- sequence
+# ------------------------------------------------------------------- séquence
 
 func try_fire() -> void:
 	if not equipped or busy:
@@ -350,11 +275,6 @@ func _ease(x: float) -> float:
 	return x * x * (3.0 - 2.0 * x)
 
 
-# torso-local point from a tube-local point
-func _tl(p: Vector3) -> Vector3:
-	return (transform * model.transform) * p
-
-
 func _times() -> Dictionary:
 	var a := T_GRAB1
 	var b := a + T_GRAB2
@@ -365,22 +285,40 @@ func _times() -> Dictionary:
 	return {"grab1": a, "grab2": b, "ignite": c, "load": d, "drop": e, "ret": f}
 
 
+func _stage(label: String, prog: float) -> void:
+	if label != _last_stage:
+		_last_stage = label
+	stage_changed.emit(label, prog)
+
+
 func step(delta: float) -> void:
 	_recoil = move_toward(_recoil, 0.0, delta / T_RECOIL)
 	var r := _recoil * _recoil
-	model.position = Vector3(0, 0.0, 0.06 * r)
-	model.rotation = Vector3(0.18 * r, 0, 0)
+	model.position = Vector3(0, 0.0, 0.07 * r)
+	model.rotation = Vector3(-0.2 * r, 0, 0)
 	_glow.visible = false
 	_fuse_light.light_energy = 0.0
 	_flame_light.light_energy = 0.0
 
 	if _t < 0.0:
+		if _last_stage != "":
+			_last_stage = ""
+			stage_changed.emit("", 0.0)
 		return
 	_t += delta
 	var T := _times()
+	var total: float = float(T["drop"]) + T_LAUNCH_AFTER_DROP + T_RECOIL
+	if _t < float(T["grab2"]):
+		_stage("PRÉPARATION", _t / total)
+	elif _t < float(T["ignite"]):
+		_stage("ALLUMAGE", _t / total)
+	elif _t < float(T["drop"]):
+		_stage("CHARGEMENT", _t / total)
+	else:
+		_stage("TIR", _t / total)
 
-	# --- étincelles de la mèche : allumée après le contact du briquet
-	var lit_from: float = float(T["grab2"]) + 0.45
+	# mèche allumée après le contact du briquet
+	var lit_from: float = float(T["grab2"]) + 0.55
 	var lit := _t >= lit_from
 	_fuse_tip.visible = lit and _shell.visible
 	_fuse_sparks.emitting = lit and _shell.visible
@@ -388,10 +326,7 @@ func step(delta: float) -> void:
 		_fuse_light.light_energy = 0.8 + _rng.randf() * 0.7
 	if _t >= float(T["drop"]) and _t < float(T["drop"]) + T_LAUNCH_AFTER_DROP + 0.05:
 		_glow.visible = true
-		_glow.position.y = 0.06
-		_flame_light.light_energy = 0.0
 
-	# --- le lancement
 	var launch_t: float = float(T["drop"]) + T_LAUNCH_AFTER_DROP
 	if not _launched and _t >= launch_t:
 		_launched = true
@@ -400,98 +335,141 @@ func step(delta: float) -> void:
 		_t = -1.0
 		busy = false
 
-	# visibilité de l'obus et du briquet
-	var shell_vis := _t >= float(T["grab1"]) * 0.75 and _t < float(T["drop"])
-	_shell.visible = shell_vis
+	_shell.visible = _t >= float(T["grab1"]) * 0.8 and _t < float(T["drop"]) and _t >= 0.0
 	var ign_a: float = float(T["grab2"])
 	var ign_b: float = float(T["ignite"])
 	_lighter.visible = _t > ign_a - 0.1 and _t < ign_b + 0.05
-	var flame_on := _t > ign_a + 0.25 and _t < ign_b - 0.15
+	var flame_on := _t > ign_a + 0.35 and _t < ign_b - 0.2
 	_flame.visible = flame_on
 	if flame_on:
 		_flame_light.light_energy = 0.9 + _rng.randf() * 0.5
 		_flame.scale = Vector3(1, 0.8 + _rng.randf() * 0.5, 1)
-	# sons
-	if _t >= ign_a + 0.2 and _t - delta < ign_a + 0.2:
+	if _t >= ign_a + 0.3 and _t - delta < ign_a + 0.3:
 		_sfx_ignite.play()
-	if _t >= ign_a + 0.55 and _t - delta < ign_a + 0.55:
+	if _t >= ign_a + 0.65 and _t - delta < ign_a + 0.65:
 		_sfx_hiss.play()
 
 
-func _hand_pos_r() -> Vector3:
-	var T := _times()
-	var grip := _tl(Vector3(0.05, 0.16, 0.0))
-	var pouch := Vector3(0.27, -0.12, -0.02)
-	var chest := Vector3(0.16, 0.18, -0.30)
-	var above := _tl(Vector3(0.0, TUBE_LEN + 0.12, 0.0))
-	var inside := _tl(Vector3(0.0, TUBE_LEN + 0.02, 0.0))
-	var t := _t
-	if t < T["grab1"]:
-		return grip.lerp(pouch, _ease(t / T["grab1"]))
-	if t < T["grab2"]:
-		return pouch.lerp(chest, _ease((t - T["grab1"]) / T_GRAB2))
-	if t < T["ignite"]:
-		var shake := Vector3(sin(t * 60.0), cos(t * 47.0), 0) * 0.002
-		return chest + shake
-	if t < T["load"]:
-		return chest.lerp(above, _ease((t - T["ignite"]) / T_LOAD))
-	if t < T["drop"]:
-		return above.lerp(inside, _ease((t - T["load"]) / T_DROP))
-	if t < T["ret"]:
-		return inside.lerp(grip, _ease((t - T["drop"]) / T_RET))
-	return grip
+# ---------------------------------------------------------- mains (monde)
+
+func _tube_to_world(p: Vector3) -> Vector3:
+	return (global_transform * model.transform) * p
 
 
-func _hand_pos_l() -> Vector3:
-	var T := _times()
-	var grip := _tl(Vector3(-0.05, 0.34, 0.0))
-	var chest := Vector3(0.16, 0.18, -0.30)
-	var tip := chest + Vector3(0.0, 0.11, 0.0) # bout de mèche
-	var light_pos := tip + Vector3(-0.02, -0.075, -0.015)
-	var t := _t
-	var a: float = T["grab2"]
-	var b: float = T["ignite"]
-	if t < a - 0.05:
-		return grip
-	if t < a + 0.25:
-		return grip.lerp(light_pos, _ease((t - (a - 0.05)) / 0.30))
-	if t < b - 0.15:
-		return light_pos
-	if t < b + 0.15:
-		return light_pos.lerp(grip, _ease((t - (b - 0.15)) / 0.30))
-	return grip
+func _chest(p_rest: Vector3, cx: Transform3D) -> Vector3:
+	return cx * (p_rest - chest_rest)
 
 
 func _hand_targets() -> Array:
 	if not equipped:
 		return [null, null]
-	var tor := human.torso
-	var r_local: Vector3
-	var l_local: Vector3
-	if _t < 0.0:
-		r_local = _tl(Vector3(0.05, 0.16, 0.0))
-		l_local = _tl(Vector3(-0.05, 0.34, 0.0))
-	else:
-		r_local = _hand_pos_r()
-		l_local = _hand_pos_l()
-	_update_props(r_local, l_local)
-	return [tor.to_global(r_local), tor.to_global(l_local)]
+	var cx := human.chest_xf()
+	global_transform = cx * local_xf
+	var bw := cx.basis
+	var fwd := (bw * Vector3(0, 0, 1)).normalized() # avant du personnage (repère squelette)
+	var left := (bw * Vector3(1, 0, 0)).normalized()
+	var up := (bw * Vector3(0, 1, 0)).normalized()
+	var tb := global_basis * model.basis
+	var t_fwd := (tb * Vector3(0, 0, 1)).normalized()
+	var t_left := (tb * Vector3(1, 0, 0)).normalized()
+
+	# prises : droite sur le flanc droit du tube (-x), gauche sur le flanc gauche
+	var grip_r := _tube_to_world(Vector3(-TUBE_R - 0.004, 0.17, 0.0))
+	var grip_l := _tube_to_world(Vector3(TUBE_R + 0.004, 0.37, 0.0))
+	var r_pos := grip_r
+	var l_pos := grip_l
+	var r_curl := 1.05
+	var l_curl := 1.05
+	var shell_k := false
+
+	if _t >= 0.0:
+		var T := _times()
+		var pouch := _chest(Vector3(-0.215, 0.965, 0.045), cx)
+		var hold := _chest(Vector3(-0.035, 1.27, 0.31), cx)
+		var above := _tube_to_world(Vector3(-0.052, TUBE_LEN + 0.075, 0.0))
+		var inside := _tube_to_world(Vector3(-0.052, TUBE_LEN - 0.02, 0.0))
+		var t := _t
+		if t < T["grab1"]:
+			r_pos = grip_r.lerp(pouch, _ease(t / T["grab1"]))
+			r_curl = lerpf(1.05, 0.3, _ease(t / T["grab1"]))
+		elif t < T["grab2"]:
+			r_pos = pouch.lerp(hold, _ease((t - T["grab1"]) / T_GRAB2))
+			r_curl = lerpf(0.3, 0.85, _ease((t - T["grab1"]) / T_GRAB2 * 2.0))
+		elif t < T["ignite"]:
+			r_pos = hold + Vector3(sin(t * 55.0), cos(t * 43.0), 0) * 0.0012
+			r_curl = 0.85
+		elif t < T["load"]:
+			r_pos = hold.lerp(above, _ease((t - T["ignite"]) / T_LOAD))
+			r_curl = 0.85
+		elif t < T["drop"]:
+			var k := _ease((t - T["load"]) / T_DROP)
+			r_pos = above.lerp(inside, k)
+			r_curl = lerpf(0.85, 0.3, k)
+		elif t < T["ret"]:
+			var k2 := _ease((t - T["drop"]) / T_RET)
+			r_pos = inside.lerp(grip_r, k2)
+			r_curl = lerpf(0.3, 1.05, k2)
+		# main gauche : saisit le briquet pendant l'allumage
+		var a: float = T["grab2"]
+		var b: float = T["ignite"]
+		var shell_c := hold + left * 0.05
+		var tip := shell_c + up * 0.11
+		var light_pos := tip - up * 0.05 + left * -0.0 - (-left) * 0.05 + fwd * 0.0
+		light_pos = tip - up * 0.052 - left * 0.052 * -1.0
+		if t > a - 0.1 and t < b + 0.1:
+			var kk := 1.0
+			if t < a + 0.3:
+				kk = _ease((t - (a - 0.1)) / 0.4)
+			elif t > b - 0.2:
+				kk = 1.0 - _ease((t - (b - 0.2)) / 0.3)
+			l_pos = grip_l.lerp(light_pos, kk)
+			l_curl = lerpf(1.05, 0.8, kk)
+
+	# main : paume vers le tube (droite : +x gauche du perso ; gauche : -x)
+	var f_r := t_fwd
+	var p_r := t_left          # la paume droite regarde vers la gauche du perso
+	var f_l := t_fwd
+	var p_l := -t_left
+	if _t >= 0.0:
+		f_r = fwd
+		p_r = left
+		f_l = fwd
+		p_l = -left
+		var kb := 1.0
+		var T2 := _times()
+		if _t < float(T2["grab1"]) * 0.5:
+			kb = _t / (float(T2["grab1"]) * 0.5)
+		elif _t > float(T2["drop"]):
+			kb = 1.0 - _ease((_t - float(T2["drop"])) / T_RET)
+		f_r = t_fwd.lerp(fwd, kb).normalized()
+		p_r = t_left.lerp(left, kb).normalized()
+		f_l = t_fwd.lerp(fwd, kb).normalized()
+		p_l = (-t_left).lerp(-left, kb).normalized()
+	_update_props(r_pos, p_r, l_pos, p_l, up)
+	return [
+		{"pos": r_pos, "f": f_r, "p": p_r, "curl": r_curl},
+		{"pos": l_pos, "f": f_l, "p": p_l, "curl": l_curl},
+	]
 
 
-func _update_props(r_local: Vector3, l_local: Vector3) -> void:
+func _update_props(r_pos: Vector3, p_r: Vector3, l_pos: Vector3, p_l: Vector3, up: Vector3) -> void:
 	if _t < 0.0:
 		return
 	var T := _times()
+	var tb := global_basis * model.basis
 	if _shell.visible:
-		var pos := r_local
-		if _t >= float(T["load"]): # l'obus glisse dans le tube
+		var pos := r_pos + p_r * 0.05
+		var up_d := up
+		if _t >= float(T["load"]):
 			var k := _ease((_t - float(T["load"])) / T_DROP)
-			pos = _tl(Vector3(0, lerpf(TUBE_LEN + 0.12, TUBE_LEN - 0.12, k), 0))
-		_shell.position = pos
-		_shell.basis = (transform * model.transform).basis
+			var axis := _tube_to_world(Vector3(0, lerpf(TUBE_LEN + 0.075, TUBE_LEN - 0.15, k), 0))
+			pos = pos.lerp(axis, clampf(k * 2.0 + 0.0, 0.0, 1.0))
+			up_d = (tb * Vector3.UP)
+		_shell.global_position = pos
+		_shell.global_basis = Basis(Quaternion(Vector3.UP, up_d.normalized()))
 	if _lighter.visible:
-		_lighter.position = l_local
-		_lighter.basis = Basis(Vector3.BACK, 0.15)
+		_lighter.global_position = l_pos + p_l * 0.05
+		_lighter.global_basis = Basis(Quaternion(Vector3.UP, up.normalized()))
 
 
 func _launch() -> void:
@@ -521,15 +499,15 @@ func _muzzle_fx(pos: Vector3, axis: Vector3) -> void:
 	# look_at oriente -Z vers la cible ; on veut l'axe local -Z = axe du tube
 	var light := OmniLight3D.new()
 	light.light_color = Color(1.0, 0.7, 0.35)
-	light.light_energy = 2.5
-	light.omni_range = 9.0
+	light.light_energy = 1.1
+	light.omni_range = 7.0
 	root.add_child(light)
 	var tw := root.create_tween()
 	tw.tween_property(light, "light_energy", 0.0, 0.12).set_ease(Tween.EASE_OUT)
 
 	# étincelles de sortie
 	var sp := GPUParticles3D.new()
-	sp.amount = 60
+	sp.amount = 36
 	sp.lifetime = 0.7
 	sp.one_shot = true
 	sp.explosiveness = 1.0

@@ -1,99 +1,127 @@
 extends CanvasLayer
-## Interface : barre d'inventaire en verre sombre, icône du mortier dessinée en
-## vectoriel, jauge de 6 obus, messages, viseur, aide aux touches.
+## Interface : barre d'inventaire en verre sombre avec aperçu 3D du mortier, jauge de
+## 6 obus, état de la séquence de tir, touches, viseur et vignettage.
 
 const AMBER := Color(1.0, 0.72, 0.28)
-const GLASS := Color(0.05, 0.06, 0.09, 0.78)
+const GLASS := Color(0.045, 0.05, 0.075, 0.82)
+const TEXT := Color(0.93, 0.94, 0.97)
+const MUTED := Color(0.93, 0.94, 0.97, 0.55)
 
 var _slot: PanelContainer
 var _slot_style: StyleBoxFlat
-var _icon: Control
-var _pips: Control
-var _count_label: Label
-var _name_label: Label
+var _shells: ShellRow
+var _count: Label
+var _name: Label
+var _status: Label
+var _bar: ProgressBar
+var _prompt: PanelContainer
 var _toast: Label
 var _crosshair: Control
-var _view_label: Label
+var _view_chip: Label
+var _help: PanelContainer
+var _preview_pivot: Node3D
 var _ammo := 6
 var _max := 6
 var _selected := true
 var _toast_tween: Tween
+var _help_tween: Tween
 
 
-# ------------------------------------------------------------ dessin de l'icône
-class MortarIcon extends Control:
-	var dim := 0.0 # 0 = actif, 1 = grisé
-
-	func _draw() -> void:
-		var c := size * 0.5
-		var s := minf(size.x, size.y) / 100.0
-		var a := 1.0 - dim * 0.6
-		draw_set_transform(c, deg_to_rad(18.0), Vector2.ONE * s)
-		# ombre portée douce
-		draw_rect(Rect2(-14, -38, 30, 82), Color(0, 0, 0, 0.25 * a), true)
-		# tube (dégradé horizontal simulé par bandes)
-		var bands := 12
-		for i in bands:
-			var t := float(i) / (bands - 1)
-			var shade := 0.55 + 0.75 * sin(t * PI) * (1.0 - 0.35 * t)
-			var col := Color(0.78 * shade, 0.12 * shade, 0.08 * shade, a)
-			draw_rect(Rect2(-17 + i * (34.0 / bands), -42, 34.0 / bands + 0.6, 80), col, true)
-		# bandes dorées
-		for y in [-30.0, 22.0]:
-			draw_rect(Rect2(-17.5, y, 35, 6), Color(0.95, 0.72, 0.25, a), true)
-			draw_rect(Rect2(-17.5, y, 35, 1.6), Color(1, 0.95, 0.7, 0.8 * a), true)
-		# embouchure
-		draw_set_transform(c + Vector2(0, -42 * s).rotated(deg_to_rad(18.0)), deg_to_rad(18.0), Vector2(s, s * 0.32))
-		draw_circle(Vector2.ZERO, 18.5, Color(0.1, 0.1, 0.12, a))
-		draw_circle(Vector2.ZERO, 14.5, Color(0.0, 0.0, 0.0, a))
-		# pied
-		draw_set_transform(c + Vector2(0, 38 * s).rotated(deg_to_rad(18.0)), deg_to_rad(18.0), Vector2(s, s * 0.32))
-		draw_circle(Vector2.ZERO, 22, Color(0.12, 0.12, 0.14, a))
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-		# étincelles
-		if dim < 0.5:
-			var tip := c + Vector2(0, -42 * s).rotated(deg_to_rad(18.0)) + Vector2(0, -6)
-			for k in 7:
-				var ang := -PI / 2.0 + (k - 3) * 0.28
-				var l := (14.0 + (k % 3) * 6.0) * s
-				draw_line(tip, tip + Vector2(cos(ang), sin(ang)) * l, Color(1.0, 0.8, 0.35, 0.85), 1.6 * s, true)
-				draw_circle(tip + Vector2(cos(ang), sin(ang)) * l, 1.8 * s, Color(1.0, 0.95, 0.7, 0.95))
-
-
-class Pips extends Control:
+# ----------------------------------------------------------------- dessins
+class ShellRow extends Control:
 	var count := 6
 	var maximum := 6
-	var pulse := 0.0 # animation lors d'un tir
+	var pulse := 0.0
 
 	func _draw() -> void:
-		var gap := 16.0
+		var gap := 24.0
 		var total := (maximum - 1) * gap
 		var x0 := size.x * 0.5 - total * 0.5
 		for i in maximum:
-			var p := Vector2(x0 + i * gap, size.y * 0.5)
-			if i < count:
-				draw_circle(p, 7.5, Color(1.0, 0.6, 0.15, 0.18))
-				draw_circle(p, 5.2, Color(1.0, 0.72, 0.28))
-				draw_circle(p + Vector2(-1.2, -1.4), 2.0, Color(1, 0.95, 0.8, 0.9))
+			var c := Vector2(x0 + i * gap, size.y * 0.5)
+			var full := i < count
+			var just_used := i == count and pulse > 0.0
+			var a := 1.0 if full else 0.28
+			var body := Rect2(c.x - 6, c.y - 8, 12, 16)
+			if full:
+				draw_rect(Rect2(body.position - Vector2(3, 3), body.size + Vector2(6, 6)), Color(1.0, 0.6, 0.15, 0.12), true)
+			draw_rect(body, Color(0.75, 0.1, 0.07, a) if full else Color(1, 1, 1, 0.08), true)
+			draw_rect(Rect2(c.x - 6, c.y - 8, 12, 4), Color(0.9, 0.68, 0.22, a), true)
+			draw_rect(Rect2(c.x - 1, c.y - 13, 2, 5), Color(0.78, 0.62, 0.35, a), true)
+			if full:
+				draw_rect(Rect2(c.x - 4, c.y - 3, 2, 9), Color(1, 1, 1, 0.28), true)
 			else:
-				var r := 5.2 + pulse * 5.0 * (1.0 if i == count else 0.0)
-				draw_arc(p, 4.6, 0.0, TAU, 20, Color(1, 1, 1, 0.22), 1.6, true)
-				if i == count and pulse > 0.0:
-					draw_arc(p, r, 0.0, TAU, 24, Color(1.0, 0.7, 0.25, pulse * 0.8), 1.8, true)
+				draw_rect(body, Color(1, 1, 1, 0.25), false, 1.0)
+			if just_used:
+				draw_circle(c + Vector2(0, -6), 4.0 + 12.0 * (1.0 - pulse), Color(1.0, 0.7, 0.25, pulse * 0.5))
 
 
 class Cross extends Control:
 	func _draw() -> void:
 		var c := size * 0.5
-		draw_circle(c, 2.6, Color(1, 1, 1, 0.85))
-		draw_arc(c, 8.0, 0.0, TAU, 32, Color(1, 1, 1, 0.35), 1.4, true)
+		draw_circle(c, 2.4, Color(1, 1, 1, 0.9))
+		draw_arc(c, 9.0, 0.0, TAU, 40, Color(1, 1, 1, 0.28), 1.3, true)
+		for a in 4:
+			var d := Vector2.from_angle(a * PI * 0.5)
+			draw_line(c + d * 12.0, c + d * 17.0, Color(1, 1, 1, 0.5), 1.4, true)
 
 
+func _style(bg: Color, radius := 16, border := Color(1, 1, 1, 0.08), bw := 1, margin := 12.0) -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = bg
+	s.set_corner_radius_all(radius)
+	s.set_border_width_all(bw)
+	s.border_color = border
+	s.set_content_margin_all(margin)
+	s.shadow_color = Color(0, 0, 0, 0.35)
+	s.shadow_size = 14
+	return s
+
+
+func _label(text: String, size: int, color := TEXT, outline := true) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", color)
+	if outline:
+		l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.55))
+		l.add_theme_constant_override("outline_size", 4)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return l
+
+
+func _keycap(text: String) -> PanelContainer:
+	var p := PanelContainer.new()
+	var s := _style(Color(1, 1, 1, 0.1), 6, Color(1, 1, 1, 0.28), 1, 5.0)
+	s.shadow_size = 0
+	s.content_margin_left = 8
+	s.content_margin_right = 8
+	s.border_width_bottom = 3
+	p.add_theme_stylebox_override("panel", s)
+	p.add_child(_label(text, 13, TEXT, false))
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return p
+
+
+func _key_row(keys: Array, action: String) -> HBoxContainer:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 5)
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for k in keys:
+		h.add_child(_keycap(k))
+	var l := _label(action, 13, MUTED, false)
+	l.custom_minimum_size.x = 0
+	h.add_child(l)
+	return h
+
+
+# ------------------------------------------------------------------- liaison
 func bind(player: Player) -> void:
 	player.equipped_changed.connect(_on_equipped)
 	player.ammo_changed.connect(_on_ammo)
 	player.message.connect(_toast_show)
 	player.view_changed.connect(_on_view)
+	player.stage_changed.connect(_on_stage)
 	_on_equipped(player.mortar.equipped)
 
 
@@ -104,170 +132,252 @@ func _ready() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
 
-	# viseur (1re personne uniquement)
+	# vignettage léger
+	var vig := ColorRect.new()
+	vig.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vig.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sh := Shader.new()
+	sh.code = """shader_type canvas_item;
+void fragment() {
+	vec2 uv = UV - 0.5;
+	float v = smoothstep(0.35, 0.95, length(uv * vec2(1.0, 0.85)));
+	COLOR = vec4(0.0, 0.0, 0.02, v * 0.5);
+}"""
+	var sm := ShaderMaterial.new()
+	sm.shader = sh
+	vig.material = sm
+	root.add_child(vig)
+
 	_crosshair = Cross.new()
 	_crosshair.set_anchors_preset(Control.PRESET_CENTER)
-	_crosshair.custom_minimum_size = Vector2(40, 40)
-	_crosshair.size = Vector2(40, 40)
-	_crosshair.position = Vector2(-20, -20)
+	_crosshair.size = Vector2(44, 44)
+	_crosshair.position = Vector2(-22, -22)
 	_crosshair.visible = false
 	_crosshair.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_crosshair)
 
-	# barre d'inventaire
-	var bar := VBoxContainer.new()
-	bar.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	bar.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	bar.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	bar.offset_bottom = -26
-	bar.alignment = BoxContainer.ALIGNMENT_END
-	bar.add_theme_constant_override("separation", 10)
-	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(bar)
+	# ---- barre du bas
+	var bottom := VBoxContainer.new()
+	bottom.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	bottom.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	bottom.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	bottom.offset_bottom = -22
+	bottom.add_theme_constant_override("separation", 10)
+	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(bottom)
 
-	_toast = Label.new()
+	_toast = _label("", 20, Color(1, 0.93, 0.8))
 	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_toast.add_theme_font_size_override("font_size", 20)
-	_toast.add_theme_color_override("font_color", Color(1, 0.93, 0.8))
-	_toast.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
-	_toast.add_theme_constant_override("outline_size", 6)
 	_toast.modulate.a = 0.0
-	bar.add_child(_toast)
+	bottom.add_child(_toast)
 
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _style(GLASS, 22, Color(1, 1, 1, 0.09), 1, 12.0))
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var center := CenterContainer.new()
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	bar.add_child(center)
-	var col := VBoxContainer.new()
-	col.add_theme_constant_override("separation", 8)
-	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	center.add_child(col)
+	center.add_child(panel)
+	bottom.add_child(center)
 
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 16)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(row)
+
+	# emplacement 1 : aperçu 3D du mortier
 	_slot = PanelContainer.new()
-	_slot.custom_minimum_size = Vector2(112, 112)
-	_slot_style = StyleBoxFlat.new()
-	_slot_style.bg_color = GLASS
-	_slot_style.set_corner_radius_all(20)
-	_slot_style.set_border_width_all(2)
-	_slot_style.border_color = AMBER
-	_slot_style.shadow_color = Color(1.0, 0.6, 0.15, 0.35)
-	_slot_style.shadow_size = 16
-	_slot_style.set_content_margin_all(8)
+	_slot.custom_minimum_size = Vector2(104, 104)
+	_slot_style = _style(Color(0.1, 0.11, 0.15, 0.9), 16, AMBER, 2, 0.0)
+	_slot_style.shadow_color = Color(1.0, 0.6, 0.15, 0.4)
+	_slot_style.shadow_size = 14
 	_slot.add_theme_stylebox_override("panel", _slot_style)
 	_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_child(_slot)
-	var holder := Control.new()
-	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_slot.add_child(holder)
-	_icon = MortarIcon.new()
-	_icon.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	holder.add_child(_icon)
+	row.add_child(_slot)
+	var svc := SubViewportContainer.new()
+	svc.stretch = true
+	svc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_slot.add_child(svc)
+	var vp := SubViewport.new()
+	vp.own_world_3d = true
+	vp.transparent_bg = true
+	vp.size = Vector2i(208, 208)
+	vp.msaa_3d = Viewport.MSAA_4X
+	svc.add_child(vp)
+	var pcam := Camera3D.new()
+	pcam.fov = 26
+	pcam.position = Vector3(0, 0.27, 1.0)
+	vp.add_child(pcam)
+	pcam.look_at_from_position(Vector3(0, 0.3, 0.92), Vector3(0, 0.25, 0))
+	var key := DirectionalLight3D.new()
+	key.rotation_degrees = Vector3(-30, 35, 0)
+	key.light_energy = 1.6
+	vp.add_child(key)
+	var rim := DirectionalLight3D.new()
+	rim.rotation_degrees = Vector3(-10, -150, 0)
+	rim.light_energy = 1.0
+	rim.light_color = Color(1.0, 0.7, 0.45)
+	vp.add_child(rim)
+	var env := Environment.new()
+	env.background_mode = Environment.BG_CLEAR_COLOR
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.5, 0.55, 0.7)
+	env.ambient_light_energy = 0.5
+	var we := WorldEnvironment.new()
+	we.environment = env
+	vp.add_child(we)
+	_preview_pivot = Node3D.new()
+	_preview_pivot.position = Vector3(0, 0.0, 0)
+	_preview_pivot.rotation = Vector3(0.0, 0.0, deg_to_rad(-16))
+	vp.add_child(_preview_pivot)
+	var mm := MortarModel.build()
+	_preview_pivot.add_child(mm)
+	mm.position = Vector3(0, 0.0, 0)
+	var kl := _label("1", 13, Color(1, 1, 1, 0.8), false)
+	kl.position = Vector2(9, 5)
+	_slot.add_child(kl)
 
-	var key := Label.new()
-	key.text = "1"
-	key.add_theme_font_size_override("font_size", 15)
-	key.add_theme_color_override("font_color", Color(1, 1, 1, 0.75))
-	key.position = Vector2(8, 2)
-	holder.add_child(key)
+	# infos : nom, obus, état
+	var info := VBoxContainer.new()
+	info.add_theme_constant_override("separation", 5)
+	info.custom_minimum_size = Vector2(232, 0)
+	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(info)
+	var top := HBoxContainer.new()
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info.add_child(top)
+	_name = _label("MORTIER D'ARTIFICE", 15, TEXT, false)
+	_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(_name)
+	_count = _label("6", 26, AMBER, false)
+	top.add_child(_count)
+	var cmax := _label(" / 6", 15, MUTED, false)
+	cmax.size_flags_vertical = Control.SIZE_SHRINK_END
+	top.add_child(cmax)
 
-	_count_label = Label.new()
-	_count_label.add_theme_font_size_override("font_size", 18)
-	_count_label.add_theme_color_override("font_color", AMBER)
-	_count_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
-	_count_label.add_theme_constant_override("outline_size", 5)
-	_count_label.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_count_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	_count_label.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	_count_label.offset_right = -4
-	_count_label.offset_bottom = -2
-	holder.add_child(_count_label)
+	_shells = ShellRow.new()
+	_shells.custom_minimum_size = Vector2(232, 32)
+	_shells.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info.add_child(_shells)
 
-	_name_label = Label.new()
-	_name_label.text = "MORTIER D'ARTIFICE"
-	_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_name_label.add_theme_font_size_override("font_size", 14)
-	_name_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.82))
-	_name_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
-	_name_label.add_theme_constant_override("outline_size", 4)
-	col.add_child(_name_label)
+	_status = _label("", 12, AMBER, false)
+	_status.custom_minimum_size.y = 16
+	info.add_child(_status)
+	_bar = ProgressBar.new()
+	_bar.custom_minimum_size = Vector2(232, 5)
+	_bar.show_percentage = false
+	_bar.max_value = 1.0
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(1, 1, 1, 0.1)
+	bg.set_corner_radius_all(3)
+	var fg := StyleBoxFlat.new()
+	fg.bg_color = AMBER
+	fg.set_corner_radius_all(3)
+	_bar.add_theme_stylebox_override("background", bg)
+	_bar.add_theme_stylebox_override("fill", fg)
+	_bar.modulate.a = 0.0
+	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info.add_child(_bar)
 
-	_pips = Pips.new()
-	_pips.custom_minimum_size = Vector2(150, 22)
-	_pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	col.add_child(_pips)
+	# invite contextuelle
+	_prompt = PanelContainer.new()
+	_prompt.add_theme_stylebox_override("panel", _style(Color(0.05, 0.05, 0.08, 0.7), 14, Color(1, 1, 1, 0.08), 1, 8.0))
+	_prompt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var pc := CenterContainer.new()
+	pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pc.add_child(_prompt)
+	bottom.add_child(pc)
+	_prompt.add_child(_key_row(["CLIC GAUCHE"], "Tirer"))
+	bottom.move_child(pc, 1)
 
-	# aide aux touches
-	var help_panel := PanelContainer.new()
-	var hs := StyleBoxFlat.new()
-	hs.bg_color = Color(0.04, 0.05, 0.08, 0.55)
-	hs.set_corner_radius_all(12)
-	hs.set_content_margin_all(12)
-	help_panel.add_theme_stylebox_override("panel", hs)
-	help_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	help_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	help_panel.offset_left = 20
-	help_panel.offset_bottom = -20
-	help_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(help_panel)
-	var help := Label.new()
-	help.text = "ZQSD  Marcher\nMaj  Courir\nEspace  Sauter\nV  Vue 1re / 3e personne\n1  Sortir / ranger le mortier\nClic gauche  Tirer\nÉchap  Libérer la souris"
-	help.add_theme_font_size_override("font_size", 13)
-	help.add_theme_color_override("font_color", Color(1, 1, 1, 0.78))
-	help_panel.add_child(help)
+	# ---- aide (haut gauche)
+	_help = PanelContainer.new()
+	_help.add_theme_stylebox_override("panel", _style(Color(0.04, 0.05, 0.08, 0.6), 16, Color(1, 1, 1, 0.07), 1, 14.0))
+	_help.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_help.offset_left = 18
+	_help.offset_top = 18
+	_help.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_help)
+	var hv := VBoxContainer.new()
+	hv.add_theme_constant_override("separation", 7)
+	hv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_help.add_child(hv)
+	hv.add_child(_label("COMMANDES", 11, MUTED, false))
+	hv.add_child(_key_row(["Z", "Q", "S", "D"], "Marcher"))
+	hv.add_child(_key_row(["MAJ"], "Courir"))
+	hv.add_child(_key_row(["ESPACE"], "Sauter"))
+	hv.add_child(_key_row(["V"], "Vue 1re / 3e personne"))
+	hv.add_child(_key_row(["1"], "Mortier"))
+	hv.add_child(_key_row(["R"], "Recharger (test)"))
+	hv.add_child(_key_row(["H"], "Masquer l'aide"))
 
-	_view_label = Label.new()
-	_view_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_view_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	_view_label.offset_right = -24
-	_view_label.offset_top = 18
-	_view_label.add_theme_font_size_override("font_size", 14)
-	_view_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.7))
-	_view_label.text = "TROISIÈME PERSONNE"
-	root.add_child(_view_label)
+	_view_chip = _label("TROISIÈME PERSONNE", 12, MUTED, false)
+	_view_chip.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_view_chip.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_view_chip.offset_right = -24
+	_view_chip.offset_top = 20
+	root.add_child(_view_chip)
 
 	_refresh()
+	_help_tween = create_tween()
+	_help_tween.tween_interval(14.0)
+	_help_tween.tween_property(_help, "modulate:a", 0.0, 1.5)
+
+
+func _process(delta: float) -> void:
+	if _preview_pivot:
+		_preview_pivot.rotate_y(delta * 0.9)
+	if _prompt:
+		var show := _selected and _ammo > 0 and _status.text == ""
+		_prompt.modulate.a = lerpf(_prompt.modulate.a, 1.0 if show else 0.0, minf(1.0, delta * 8.0))
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and event.physical_keycode == KEY_H:
+		if _help_tween:
+			_help_tween.kill()
+		_help.modulate.a = 0.0 if _help.modulate.a > 0.5 else 1.0
 
 
 func _refresh() -> void:
-	_pips.count = _ammo
-	_pips.maximum = _max
-	_pips.queue_redraw()
-	_count_label.text = "%d/%d" % [_ammo, _max]
-	(_icon as MortarIcon).dim = 0.0 if _ammo > 0 else 1.0
-	_icon.queue_redraw()
+	_shells.count = _ammo
+	_shells.maximum = _max
+	_shells.queue_redraw()
+	_count.text = str(_ammo)
+	_count.add_theme_color_override("font_color", AMBER if _ammo > 0 else Color(1, 0.4, 0.35))
 	_slot_style.border_color = AMBER if _selected else Color(1, 1, 1, 0.18)
-	_slot_style.shadow_size = 16 if _selected else 0
-	_slot.modulate = Color.WHITE if _selected else Color(1, 1, 1, 0.7)
+	_slot_style.shadow_size = 14 if _selected else 0
+	_slot.modulate = Color.WHITE if _selected else Color(1, 1, 1, 0.65)
 
 
 func _on_equipped(on: bool) -> void:
 	_selected = on
 	_refresh()
-	var tw := create_tween()
 	_slot.pivot_offset = _slot.size * 0.5
-	tw.tween_property(_slot, "scale", Vector2.ONE * (1.08 if on else 0.95), 0.08)
-	tw.tween_property(_slot, "scale", Vector2.ONE * (1.0 if on else 0.95), 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var tw := create_tween()
+	tw.tween_property(_slot, "scale", Vector2.ONE * (1.1 if on else 0.94), 0.08)
+	tw.tween_property(_slot, "scale", Vector2.ONE * (1.0 if on else 0.96), 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 func _on_ammo(count: int, maximum: int) -> void:
 	_ammo = count
 	_max = maximum
 	_refresh()
-	_pips.pulse = 1.0
+	_shells.pulse = 1.0
 	var tw := create_tween()
-	tw.tween_property(_pips, "pulse", 0.0, 0.7)
-	tw.parallel().tween_method(func(_v): _pips.queue_redraw(), 0.0, 1.0, 0.7)
-	_slot.pivot_offset = _slot.size * 0.5
-	var t2 := create_tween()
-	t2.tween_property(_slot, "scale", Vector2.ONE * 0.94, 0.05)
-	t2.tween_property(_slot, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+	tw.tween_method(func(v): _shells.pulse = v; _shells.queue_redraw(), 1.0, 0.0, 0.8)
 	if count == 0:
-		_toast_show("Dernier obus tiré")
+		_toast_show("Dernier obus")
+
+
+func _on_stage(label: String, progress: float) -> void:
+	_status.text = label
+	_bar.value = progress
+	_bar.modulate.a = 1.0 if label != "" else 0.0
 
 
 func _on_view(first_person: bool) -> void:
 	_crosshair.visible = first_person
-	_view_label.text = "PREMIÈRE PERSONNE" if first_person else "TROISIÈME PERSONNE"
+	_view_chip.text = "PREMIÈRE PERSONNE" if first_person else "TROISIÈME PERSONNE"
 
 
 func _toast_show(text: String) -> void:
@@ -276,5 +386,5 @@ func _toast_show(text: String) -> void:
 		_toast_tween.kill()
 	_toast.modulate.a = 1.0
 	_toast_tween = create_tween()
-	_toast_tween.tween_interval(1.4)
+	_toast_tween.tween_interval(1.5)
 	_toast_tween.tween_property(_toast, "modulate:a", 0.0, 0.6)

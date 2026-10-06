@@ -6,13 +6,14 @@ signal view_changed(first_person: bool)
 signal equipped_changed(on: bool)
 signal ammo_changed(count: int, maximum: int)
 signal message(text: String)
+signal stage_changed(label: String, progress: float)
 
-const WALK_SPEED := 2.0
-const RUN_SPEED := 5.6
+const WALK_SPEED := 1.75
+const RUN_SPEED := 5.2
 const JUMP_VELOCITY := 5.0
 const GRAVITY := 14.0
 const MOUSE_SENS := 0.0025
-const EYE_HEIGHT := 1.66
+const EYE_HEIGHT := 1.70
 
 var human: Human
 var mortar: Mortar
@@ -47,6 +48,7 @@ func _ready() -> void:
 	mortar = Mortar.new()
 	mortar.attach_to(human)
 	mortar.ammo_changed.connect(func(c, m): ammo_changed.emit(c, m))
+	mortar.stage_changed.connect(func(l, p): stage_changed.emit(l, p))
 	mortar.message.connect(func(t): message.emit(t))
 	mortar.fired.connect(func(): _shake = 1.0)
 
@@ -176,8 +178,8 @@ func _update_camera(delta: float) -> void:
 	cam_pitch.rotation.x = _pitch
 	spring.spring_length = lerpf(3.1, 0.0, e)
 	spring.position.x = lerpf(0.55, 0.0, e)
-	cam_pitch.position.z = lerpf(0.0, -0.13, e)
-	cam_yaw.position.y = EYE_HEIGHT - 0.03 * e
+	cam_pitch.position.z = lerpf(0.0, -0.10, e)
+	cam_yaw.position.y = EYE_HEIGHT + 0.0 * e
 	# le champ de vision s'ouvre un peu en courant
 	camera.fov = lerpf(camera.fov, 72.0 + 8.0 * _run_t, minf(1.0, delta * 5.0))
 	# la tête n'est visible que depuis l'extérieur

@@ -1,384 +1,335 @@
 class_name Human
 extends Node3D
-## Personnage humain procédural : corps lofté (sections elliptiques), visage,
-## vêtements, animation de marche/course/saut et IK 2 os pour les bras.
+## Personnage réaliste : modèle skinné (MakeHuman, CC0) généré par tools/build_character.py.
+## Matériaux, tête masquable en 1re personne, animation procédurale (IK jambes/bras).
 
-const THIGH := 0.44
-const SHIN := 0.43
-const UPPER_ARM := 0.30
-const FOREARM := 0.27
-const HIP_Y := 0.92
-const HEAD_LAYER := 2 # calque visuel masqué par la caméra 1re personne
+const MODEL_PATH := "res://assets/character/character.glb"
+const DIR := "res://assets/character/"
+const HEAD_LAYER := 2 # calque masqué par la caméra 1re personne
 
-var pelvis: Node3D
-var torso: Node3D
-var neck: Node3D
-var head: Node3D
-var thigh := [null, null]
-var knee := [null, null]
-var ankle := [null, null]
-var shoulder := [null, null]
-var elbow := [null, null]
-var torso_mesh: MeshInstance3D
+const PALM_TO_WRIST := 0.075   # centre de la paume -> articulation du poignet
+const PALM_SIGN := -1.0        # signe de la normale de paume mesurée sur le modèle
+
+var model: Node3D
+var skeleton: Skeleton3D
 var head_meshes: Array[MeshInstance3D] = []
+var hand_provider := Callable() # -> [droite, gauche] : null ou {pos, f, p, curl} en coordonnées monde
 
+var bone := {}       # nom -> index
+var rest := {}       # nom -> position de repos (espace squelette)
+var hand_f := {}     # "L"/"R" -> direction des doigts au repos
+var palm_n := {}     # "L"/"R" -> normale de paume (côté paume)
 var phase := 0.0
 var t_idle := 0.0
-var air_t := 0.0
-var kick := 0.0 # recul (0..1) ajouté au haut du corps
+var air := 0.0
+var kick := 0.0
 var look_pitch := 0.0
-
-# IK : positions monde des mains (null = animation libre)
-var hand_provider := Callable() # renvoie [main droite, main gauche] en monde, ou null
-
-
-# ---------------------------------------------------------------- mesh utils
-
-## rings : Array[Vector4(y, rx, rz, zoff)] ordonnés. Dôme automatique aux deux bouts.
-static func loft(rings_in: Array, segs := 28, dome := 0.9) -> ArrayMesh:
-	var first: Vector4 = rings_in[0]
-	var last: Vector4 = rings_in[rings_in.size() - 1]
-	var dir_first := signf(first.x - (rings_in[1] as Vector4).x)
-	var dir_last := signf(last.x - (rings_in[rings_in.size() - 2] as Vector4).x)
-	var rf := minf(first.y, first.z) * dome
-	var rl := minf(last.y, last.z) * dome
-	var rings: Array = []
-	for a in [90.0, 68.0, 38.0]:
-		var c := cos(deg_to_rad(a))
-		var s := sin(deg_to_rad(a))
-		rings.append(Vector4(first.x + dir_first * s * rf, first.y * c, first.z * c, first.w))
-	rings.append_array(rings_in)
-	for a in [38.0, 68.0, 90.0]:
-		var c := cos(deg_to_rad(a))
-		var s := sin(deg_to_rad(a))
-		rings.append(Vector4(last.x + dir_last * s * rl, last.y * c, last.z * c, last.w))
-
-	var verts := PackedVector3Array()
-	var uvs := PackedVector2Array()
-	var cols := segs + 1
-	for i in rings.size():
-		var r: Vector4 = rings[i]
-		for j in cols:
-			var ang := TAU * float(j) / float(segs)
-			verts.append(Vector3(cos(ang) * r.y, r.x, sin(ang) * r.z + r.w))
-			uvs.append(Vector2(float(j) / segs, float(i) / (rings.size() - 1)))
-	var idx := PackedInt32Array()
-	for i in rings.size() - 1:
-		for j in segs:
-			var a := i * cols + j
-			var b := a + 1
-			var c := a + cols
-			var d := c + 1
-			idx.append_array([a, b, c, b, d, c])
-	var normals := PackedVector3Array()
-	normals.resize(verts.size())
-	for t in range(0, idx.size(), 3):
-		var p0 := verts[idx[t]]
-		var fn := (verts[idx[t + 1]] - p0).cross(verts[idx[t + 2]] - p0)
-		for k in 3:
-			normals[idx[t + k]] += fn
-	for i in rings.size(): # couture
-		var m := normals[i * cols] + normals[i * cols + segs]
-		normals[i * cols] = m
-		normals[i * cols + segs] = m
-	for i in normals.size():
-		normals[i] = normals[i].normalized()
-	# Godot : face avant = sens horaire. Si les normales calculées sortent vers
-	# l'extérieur, les triangles sont anti-horaires -> on inverse l'ordre.
-	var probe := rings.size() / 2
-	var pr: Vector4 = rings[probe]
-	var outward := verts[probe * cols] - Vector3(0, pr.x, pr.w)
-	if normals[probe * cols].dot(outward) > 0.0:
-		for t in range(0, idx.size(), 3):
-			var tmp := idx[t + 1]
-			idx[t + 1] = idx[t + 2]
-			idx[t + 2] = tmp
-	else:
-		for i in normals.size():
-			normals[i] = -normals[i]
-
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_NORMAL] = normals
-	arrays[Mesh.ARRAY_TEX_UV] = uvs
-	arrays[Mesh.ARRAY_INDEX] = idx
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
+var _walk_w := 0.0
+var _lean := 0.0
 
 
-func _mi(parent: Node3D, mesh: Mesh, mat: Material, pos := Vector3.ZERO, is_head := false) -> MeshInstance3D:
-	var m := MeshInstance3D.new()
-	m.mesh = mesh
-	m.material_override = mat
-	m.position = pos
-	if is_head:
-		m.layers = HEAD_LAYER
-		head_meshes.append(m)
-	parent.add_child(m)
-	return m
+func _tex(file: String) -> Texture2D:
+	return load(DIR + file) as Texture2D
 
 
-func _node(parent: Node3D, pos := Vector3.ZERO) -> Node3D:
-	var n := Node3D.new()
-	n.position = pos
-	parent.add_child(n)
-	return n
+func _ready() -> void:
+	var scene: PackedScene = load(MODEL_PATH)
+	var inst := scene.instantiate()
+	model = Node3D.new()
+	model.name = "Model"
+	model.rotation.y = PI # le modèle regarde vers +Z ; Godot avance vers -Z
+	add_child(model)
+	model.add_child(inst)
+	skeleton = _find_skeleton(inst)
+	_apply_materials(inst)
+	_cache_bones()
 
 
-static func _mat(color: Color, rough := 0.85, extra := {}) -> StandardMaterial3D:
+func _find_skeleton(n: Node) -> Skeleton3D:
+	if n is Skeleton3D:
+		return n
+	for c in n.get_children():
+		var r := _find_skeleton(c)
+		if r:
+			return r
+	return null
+
+
+func _std(color: Color, rough: float, normal_file := "", normal_scale := 1.0, uv_scale := 1.0) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = color
 	m.roughness = rough
-	for k in extra:
-		m.set(k, extra[k])
+	if normal_file != "":
+		m.normal_enabled = true
+		m.normal_texture = _tex(normal_file)
+		m.normal_scale = normal_scale
+		m.uv1_scale = Vector3(uv_scale, uv_scale, 1.0)
 	return m
 
 
-func _sphere(r: float, scl := Vector3.ONE) -> SphereMesh:
-	var s := SphereMesh.new()
-	s.radius = r
-	s.height = r * 2.0
-	s.radial_segments = 24
-	s.rings = 12
-	return s
+func _apply_materials(root: Node) -> void:
+	var skin := StandardMaterial3D.new()
+	skin.albedo_texture = _tex("skin_albedo.png")
+	skin.roughness = 0.52
+	skin.metallic_specular = 0.45
+	skin.normal_enabled = true
+	skin.normal_texture = _tex("skin_n.png")
+	skin.normal_scale = 0.28
+	skin.subsurf_scatter_enabled = true
+	skin.subsurf_scatter_strength = 0.22
+
+	var eye := StandardMaterial3D.new()
+	eye.albedo_texture = _tex("eye_brown.png")
+	eye.albedo_color = Color(1.25, 1.25, 1.2)
+	eye.roughness = 0.22
+	eye.metallic_specular = 0.5
+
+	var hoodie := _std(Color(0.17, 0.19, 0.24), 0.96, "knit_n.png", 0.2, 6.0)
+	var jeans := _std(Color.WHITE, 0.88, "denim_n.png", 0.12, 3.0)
+	jeans.albedo_texture = _tex("denim_a.png")
+	var beanie := _std(Color(0.06, 0.06, 0.08), 1.0, "rib_n.png", 0.8, 6.0)
+	var shoes := _std(Color.WHITE, 0.62, "canvas_n.png", 0.12, 6.0)
+	shoes.vertex_color_use_as_albedo = true
+
+	var table := {
+		"Body": skin, "Head": skin, "Eyes": eye,
+		"Hoodie": hoodie, "Jeans": jeans, "Beanie": beanie, "Shoes": shoes,
+	}
+	for mi in _meshes(root):
+		var nm := String(mi.name)
+		if table.has(nm):
+			mi.material_override = table[nm]
+		if nm in ["Head", "Eyes", "Beanie"]:
+			mi.layers = HEAD_LAYER
+			head_meshes.append(mi)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		mi.extra_cull_margin = 1.0
 
 
-# ---------------------------------------------------------------------- build
 
-func _ready() -> void:
-	var skin := _mat(Color(0.90, 0.70, 0.58), 0.5, {
-		"subsurf_scatter_enabled": true, "subsurf_scatter_strength": 0.35,
-		"rim_enabled": true, "rim": 0.15, "rim_tint": 0.5})
-	var hoodie := _mat(Color(0.20, 0.22, 0.27), 0.95, {"rim_enabled": true, "rim": 0.25, "rim_tint": 0.3})
-	var pants := _mat(Color(0.13, 0.16, 0.26), 0.88)
-	var shoe := _mat(Color(0.10, 0.10, 0.11), 0.6)
-	var sole := _mat(Color(0.92, 0.92, 0.9), 0.5)
-	var beanie := _mat(Color(0.10, 0.10, 0.12), 1.0)
-	var eye_white := _mat(Color(0.95, 0.95, 0.93), 0.2)
-	var iris := _mat(Color(0.18, 0.12, 0.08), 0.15)
-	var lips := _mat(Color(0.62, 0.30, 0.28), 0.4)
-	var brow := _mat(Color(0.12, 0.08, 0.06), 0.9)
+# ----------------------------------------------------------------- squelette
 
-	pelvis = _node(self, Vector3(0, HIP_Y, 0))
-	# bassin / pantalon
-	_mi(pelvis, loft([
-		Vector4(-0.10, 0.145, 0.100, 0.0),
-		Vector4(0.0, 0.158, 0.108, 0.0),
-		Vector4(0.10, 0.146, 0.100, 0.0)]), pants)
-
-	torso = _node(pelvis, Vector3(0, 0.10, 0))
-	torso_mesh = _mi(torso, loft([
-		Vector4(-0.20, 0.162, 0.108, 0.0),
-		Vector4(-0.12, 0.150, 0.100, 0.0),
-		Vector4(0.0, 0.138, 0.095, 0.0),
-		Vector4(0.14, 0.150, 0.102, -0.004),
-		Vector4(0.28, 0.175, 0.114, -0.010),
-		Vector4(0.38, 0.195, 0.108, -0.004),
-		Vector4(0.45, 0.150, 0.092, 0.0),
-		Vector4(0.50, 0.080, 0.070, 0.0)]), hoodie)
-	# capuche baissée autour du cou
-	_mi(torso, loft([
-		Vector4(0.44, 0.125, 0.112, 0.012),
-		Vector4(0.50, 0.108, 0.105, 0.016),
-		Vector4(0.57, 0.090, 0.088, 0.012)]), hoodie)
-
-	neck = _node(torso, Vector3(0, 0.50, 0))
-	_mi(neck, loft([
-		Vector4(-0.02, 0.052, 0.054, 0.0),
-		Vector4(0.10, 0.046, 0.048, -0.004)]), skin, Vector3.ZERO, true)
-	head = _node(neck, Vector3(0, 0.14, -0.005))
-	_build_head(head, skin, beanie, eye_white, iris, lips, brow)
-
-	for side in 2:
-		var sx := 1.0 if side == 0 else -1.0 # 0 = droite (+x), 1 = gauche (-x)
-		# jambe
-		thigh[side] = _node(pelvis, Vector3(0.088 * sx, 0.0, 0.0))
-		_mi(thigh[side], loft([
-			Vector4(0.0, 0.086, 0.090, 0.004),
-			Vector4(-0.10, 0.082, 0.088, 0.004),
-			Vector4(-0.24, 0.068, 0.076, 0.0),
-			Vector4(-0.36, 0.056, 0.064, 0.0),
-			Vector4(-0.44, 0.051, 0.056, 0.0)]), pants)
-		knee[side] = _node(thigh[side], Vector3(0, -THIGH, 0))
-		_mi(knee[side], loft([
-			Vector4(0.0, 0.051, 0.056, 0.0),
-			Vector4(-0.08, 0.056, 0.064, 0.008),
-			Vector4(-0.18, 0.058, 0.068, 0.014),
-			Vector4(-0.30, 0.044, 0.050, 0.008),
-			Vector4(-0.43, 0.034, 0.036, 0.0)]), pants)
-		ankle[side] = _node(knee[side], Vector3(0, -SHIN, 0))
-		var foot := MeshInstance3D.new()
-		foot.mesh = loft([
-			Vector4(-0.075, 0.034, 0.036, 0.0),
-			Vector4(0.0, 0.042, 0.046, 0.0),
-			Vector4(0.10, 0.047, 0.040, 0.0),
-			Vector4(0.19, 0.047, 0.030, 0.0),
-			Vector4(0.255, 0.032, 0.022, 0.0)], 20, 0.8)
-		foot.material_override = shoe
-		foot.rotation = Vector3(-PI / 2.0, 0, 0)
-		foot.position = Vector3(0, -0.012, 0)
-		ankle[side].add_child(foot)
-		var sole_m := MeshInstance3D.new()
-		var bx := BoxMesh.new()
-		bx.size = Vector3(0.095, 0.024, 0.335)
-		sole_m.mesh = bx
-		sole_m.material_override = sole
-		sole_m.position = Vector3(0, -0.048, -0.093)
-		ankle[side].add_child(sole_m)
-		# bras
-		shoulder[side] = _node(torso, Vector3(0.205 * sx, 0.395, 0.0))
-		_mi(shoulder[side], _sphere(0.062), hoodie)
-		_mi(shoulder[side], loft([
-			Vector4(0.0, 0.060, 0.060, 0.0),
-			Vector4(-0.10, 0.055, 0.056, 0.0),
-			Vector4(-0.22, 0.047, 0.048, 0.0),
-			Vector4(-UPPER_ARM, 0.043, 0.044, 0.0)]), hoodie)
-		elbow[side] = _node(shoulder[side], Vector3(0, -UPPER_ARM, 0))
-		_mi(elbow[side], loft([
-			Vector4(0.0, 0.043, 0.044, 0.0),
-			Vector4(-0.12, 0.040, 0.041, 0.0),
-			Vector4(-FOREARM, 0.034, 0.034, 0.0)]), hoodie)
-		var hand := _node(elbow[side], Vector3(0, -FOREARM, 0))
-		_mi(hand, loft([
-			Vector4(0.012, 0.027, 0.020, 0.0),
-			Vector4(-0.03, 0.037, 0.018, 0.0),
-			Vector4(-0.08, 0.039, 0.016, 0.0),
-			Vector4(-0.125, 0.030, 0.013, 0.0)], 18, 0.9), skin)
-		# pouce
-		var th := _mi(hand, _sphere(0.014), skin, Vector3(-0.03 * sx, -0.045, -0.014))
-		th.scale = Vector3(1, 2.2, 1)
+func _cache_bones() -> void:
+	for i in skeleton.get_bone_count():
+		var n := skeleton.get_bone_name(i)
+		bone[n] = i
+		rest[n] = skeleton.get_bone_global_rest(i).origin
+	var f := FileAccess.open(DIR + "rig.json", FileAccess.READ)
+	var info: Dictionary = JSON.parse_string(f.get_as_text())
+	for side: String in ["L", "R"]:
+		var ff := Vector3(info["hand_f_" + side][0], info["hand_f_" + side][1], info["hand_f_" + side][2])
+		var pp := Vector3(info["palm_n_" + side][0], info["palm_n_" + side][1], info["palm_n_" + side][2])
+		if side == "R": # la mesure PCA n'est fiable que sur L : on symétrise
+			ff = Vector3(-info["hand_f_L"][0], info["hand_f_L"][1], info["hand_f_L"][2])
+			pp = Vector3(-info["palm_n_L"][0], info["palm_n_L"][1], info["palm_n_L"][2])
+		hand_f[side] = ff.normalized()
+		palm_n[side] = (pp * PALM_SIGN).normalized()
 
 
-func _build_head(h: Node3D, skin: Material, beanie: Material, eye_white: Material, iris: Material, lips: Material, brow: Material) -> void:
-	# crâne / visage (le visage regarde vers -Z)
-	_mi(h, loft([
-		Vector4(-0.130, 0.030, 0.042, -0.046),
-		Vector4(-0.100, 0.066, 0.070, -0.030),
-		Vector4(-0.050, 0.085, 0.090, -0.012),
-		Vector4(0.000, 0.094, 0.100, 0.000),
-		Vector4(0.050, 0.096, 0.104, 0.004),
-		Vector4(0.090, 0.082, 0.098, 0.006),
-		Vector4(0.125, 0.055, 0.075, 0.006)], 32), skin, Vector3.ZERO, true)
-	# bonnet
-	_mi(h, loft([
-		Vector4(0.030, 0.094, 0.109, 0.005),
-		Vector4(0.070, 0.093, 0.107, 0.006),
-		Vector4(0.110, 0.078, 0.092, 0.006),
-		Vector4(0.150, 0.045, 0.058, 0.006)], 32), beanie, Vector3.ZERO, true)
-	var bn := TorusMesh.new()
-	bn.inner_radius = 0.094
-	bn.outer_radius = 0.108
-	var cuff := _mi(h, bn, beanie, Vector3(0, 0.032, 0.006), true)
-	cuff.scale = Vector3(1.0, 0.55, 1.12)
-	# yeux
-	for sx in [-1.0, 1.0]:
-		var eye := _mi(h, _sphere(0.0150), eye_white, Vector3(0.036 * sx, 0.012, -0.088), true)
-		eye.scale = Vector3(1.15, 0.8, 0.8)
-		var ir := _mi(h, _sphere(0.0085), iris, Vector3(0.036 * sx, 0.012, -0.0995), true)
-		ir.scale = Vector3(1, 1, 0.5)
-		var b := _mi(h, _sphere(0.02), brow, Vector3(0.034 * sx, 0.036, -0.088), true)
-		b.scale = Vector3(1.5, 0.28, 0.5)
-		b.rotation.z = -0.12 * sx
-		var ear := _mi(h, _sphere(0.021), skin, Vector3(0.089 * sx, -0.005, 0.01), true)
-		ear.scale = Vector3(0.45, 1.25, 0.85)
-	var nose := _mi(h, _sphere(0.014), skin, Vector3(0, -0.022, -0.099), true)
-	nose.scale = Vector3(0.85, 1.3, 1.1)
-	var mouth := _mi(h, _sphere(0.02), lips, Vector3(0, -0.063, -0.083), true)
-	mouth.scale = Vector3(1.35, 0.3, 0.5)
+func chest_xf() -> Transform3D:
+	return skeleton.global_transform * skeleton.get_bone_global_pose(bone["spine02"])
 
-
-# -------------------------------------------------------------------- animate
 
 func kick_back(amount := 1.0) -> void:
 	kick = maxf(kick, amount)
 
 
-## speed : vitesse horizontale (m/s) ; run_t : 0 marche -> 1 course
+func _gq(n: String) -> Quaternion:
+	return skeleton.get_bone_global_pose(bone[n]).basis.get_rotation_quaternion()
+
+
+func _gp(n: String) -> Vector3:
+	return skeleton.get_bone_global_pose(bone[n]).origin
+
+
+func _parent_of(n: String) -> String:
+	return skeleton.get_bone_name(skeleton.get_bone_parent(bone[n]))
+
+
+## Fixe la rotation locale d'un os (repère de repos = repère monde du squelette)
+func _local(n: String, q: Quaternion) -> void:
+	skeleton.set_bone_pose_rotation(bone[n], q)
+
+
+## Oriente un os (rotation globale `q`) : convertit en rotation locale selon le parent courant
+func _global(n: String, q: Quaternion) -> void:
+	var p := _parent_of(n)
+	skeleton.set_bone_pose_rotation(bone[n], _gq(p).inverse() * q)
+
+
+## Fait pointer l'os `n`, dont la direction de repos est rest_dir, vers new_dir
+func _aim(n: String, rest_dir: Vector3, new_dir: Vector3) -> void:
+	_global(n, Quaternion(rest_dir.normalized(), new_dir.normalized()))
+
+
+func _to_skel(p: Vector3) -> Vector3:
+	return skeleton.global_transform.affine_inverse() * p
+
+
+func _dir_to_skel(d: Vector3) -> Vector3:
+	return skeleton.global_transform.basis.inverse() * d
+
+
+## IK 2 os : renvoie la position du coude/genou
+func _mid_joint(a: Vector3, target: Vector3, l1: float, l2: float, pole: Vector3) -> Array:
+	var to := target - a
+	var d := clampf(to.length(), 0.05, (l1 + l2) * 0.999)
+	var u := to.normalized()
+	var po := (pole - u * pole.dot(u)).normalized()
+	var x := (d * d + l1 * l1 - l2 * l2) / (2.0 * d)
+	var h := sqrt(maxf(l1 * l1 - x * x, 0.0))
+	return [a + u * x + po * h, a + u * d]
+
+
+func _solve_limb(upper: String, lower: String, end: String, target: Vector3, pole: Vector3) -> void:
+	var a := _gp(upper)
+	var l1: float = (rest[lower] - rest[upper]).length()
+	var l2: float = (rest[end] - rest[lower]).length()
+	var r := _mid_joint(a, target, l1, l2, pole)
+	var m: Vector3 = r[0]
+	var e: Vector3 = r[1]
+	_aim(upper, rest[lower] - rest[upper], m - a)
+	_aim(lower, rest[end] - rest[lower], e - m)
+
+
+func _curl_fingers(side: String, amount: float, thumb := 0.4) -> void:
+	var axis: Vector3 = hand_f[side].cross(palm_n[side]).normalized()
+	for fi in range(1, 6):
+		var k := thumb if fi == 1 else 1.0
+		var spread := 0.0
+		for seg in range(1, 4):
+			var nm := "finger%d-%d_%s" % [fi, seg, side]
+			if not bone.has(nm):
+				continue
+			var ang := amount * k * (0.9 if seg == 1 else 1.0)
+			_local(nm, Quaternion(axis, ang))
+
+
+# ------------------------------------------------------------------ animation
+
+## speed : vitesse horizontale (m/s) ; run_t : 0 marche -> 1 course ; pitch : regard vertical
 func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float, pitch: float) -> void:
+	if skeleton == null:
+		return
 	t_idle += delta
-	kick = move_toward(kick, 0.0, delta * 3.2)
+	kick = move_toward(kick, 0.0, delta * 2.6)
 	look_pitch = lerpf(look_pitch, pitch, minf(1.0, delta * 10.0))
+	air = move_toward(air, 0.0 if grounded else 1.0, delta * 7.0)
 
-	var amount := clampf(speed / 1.8, 0.0, 1.0)
-	if speed > 0.1:
-		var cycle := lerpf(1.45, 2.5, run_t)
-		phase += TAU * speed * delta / cycle
-	var amp := lerpf(0.42, 0.85, run_t) * amount
-	var knee_amp := lerpf(0.55, 1.5, run_t) * amount
+	var moving := speed > 0.15 and grounded
+	_walk_w = move_toward(_walk_w, 1.0 if moving else 0.0, delta * 6.0)
+	var period := lerpf(1.02, 0.60, run_t)
+	if moving:
+		phase = fposmod(phase + delta / period, 1.0)
+	var beta := lerpf(0.62, 0.40, run_t)       # fraction d'appui
+	var stride := speed * beta * period          # amplitude avant/arrière du pied (m)
+	var w := _walk_w
+	var breath := sin(t_idle * 1.6) * 0.5 + 0.5
 
-	if grounded:
-		air_t = move_toward(air_t, 0.0, delta * 6.0)
-	else:
-		air_t = move_toward(air_t, 1.0, delta * 8.0)
+	# --- bassin / colonne
+	var dy := -(0.02 + 0.045 * run_t) * w - 0.012 * (1.0 - w) * 0.0
+	dy += (0.012 + 0.03 * run_t) * w * (1.0 - cos(4.0 * PI * phase)) * 0.5
+	dy -= 0.1 * air
+	var root_rest: Vector3 = skeleton.get_bone_rest(bone["root"]).origin
+	skeleton.set_bone_pose_position(bone["root"], root_rest + Vector3(0, dy, 0))
+	var yaw := sin(TAU * phase) * 0.11 * w
+	var roll := cos(TAU * phase) * 0.035 * w
+	_lean = lerpf(_lean, (0.03 + 0.17 * run_t) * w + 0.05 * clampf(-vy * 0.15, 0.0, 1.0) * air, minf(1.0, delta * 6.0))
+	skeleton.set_bone_pose_rotation(bone["root"], Quaternion(Vector3.UP, yaw) * Quaternion(Vector3.BACK, roll))
+	var spine := ["spine05", "spine04", "spine03", "spine02", "spine01"]
+	for i in spine.size():
+		var share := 1.0 / spine.size()
+		var rx := _lean * share + kick * 0.05 + (breath - 0.5) * 0.004 + 0.0
+		var ry := -yaw * 1.5 * share
+		var rz := -roll * 1.2 * share
+		if i == 0:
+			rx -= 0.0
+		_local(spine[i], Quaternion(Vector3.UP, ry) * Quaternion(Vector3.RIGHT, rx) * Quaternion(Vector3.BACK, rz))
+	var hp := clampf(-look_pitch * 0.55, -0.9, 0.7)
+	for nm in ["neck01", "neck02", "neck03"]:
+		_local(nm, Quaternion(Vector3.RIGHT, hp * 0.18 - _lean * 0.12))
+	_local("head", Quaternion(Vector3.RIGHT, hp * 0.46 - _lean * 0.1))
 
-	var breath := sin(t_idle * 1.7) * 0.5 + 0.5
-	for side in 2:
-		var ph := phase + (0.0 if side == 0 else PI)
-		var s := sin(ph)
-		var c := cos(ph)
-		var th_x := -s * amp
-		var kn_x := (0.08 + maxf(0.0, c) * knee_amp + maxf(0.0, -s) * 0.12 * amount)
+	# --- jambes (IK) : appui plat, balancier en arc
+	for side: String in ["L", "R"]:
+		var is_l := side == "L"
+		var ph := fposmod(phase + (0.0 if is_l else 0.5), 1.0)
+		var foot_rest: Vector3 = rest["foot_" + side]
+		var z := 0.0
+		var lift := 0.0
+		var pitch_f := 0.0
+		if ph < beta:
+			var u := ph / beta
+			z = stride * (0.5 - u)
+			pitch_f = lerpf(0.18, -0.35, smoothstep(0.55, 1.0, u)) * (1.0 - smoothstep(0.0, 0.25, u) * 0.0)
+		else:
+			var u := (ph - beta) / (1.0 - beta)
+			var e := u * u * (3.0 - 2.0 * u)
+			z = stride * (-0.5 + e)
+			lift = sin(PI * u) * lerpf(0.09, 0.2, run_t)
+			pitch_f = lerpf(-0.35, 0.22, e)
+		var target := foot_rest + Vector3(0, lift * w, z * w)
+		var fpitch := pitch_f * w
 		# en l'air : jambes repliées
-		th_x = lerpf(th_x, -0.55 + (0.35 if side == 1 else 0.0), air_t)
-		kn_x = lerpf(kn_x, 0.95 - (0.4 if side == 1 else 0.0), air_t)
-		(thigh[side] as Node3D).rotation = Vector3(th_x, 0.0, 0.025 * (1.0 if side == 0 else -1.0))
-		(knee[side] as Node3D).rotation = Vector3(kn_x, 0, 0)
-		(ankle[side] as Node3D).rotation = Vector3(-(th_x + kn_x) * 0.85 + 0.1 * s * amount, 0, 0)
+		target += Vector3(0, 0.22 * air, (0.12 if is_l else -0.06) * air)
+		var hip_n := "upperleg01_" + side
+		var pole := Vector3(0.12 if is_l else -0.12, 0.0, 1.0)
+		_solve_limb(hip_n, "lowerleg01_" + side, "foot_" + side, target, pole)
+		_global("foot_" + side, Quaternion(Vector3.RIGHT, fpitch - 0.25 * air))
+		var toe := "toe1-1_" + side
+		if bone.has(toe):
+			_local(toe, Quaternion.IDENTITY)
 
-	# bassin & torse
-	var bob := absf(cos(phase)) * lerpf(0.018, 0.05, run_t) * amount
-	pelvis.position.y = HIP_Y - 0.012 + bob - 0.05 * air_t
-	pelvis.rotation = Vector3(0, sin(phase) * 0.10 * amount, sin(phase) * 0.03 * amount)
-	var lean := lerpf(0.04, 0.26, run_t) * amount + 0.05 * clampf(-vy * 0.2, 0.0, 1.0) * air_t
-	torso.rotation = Vector3(-lean + kick * 0.18, -sin(phase) * 0.14 * amount, -sin(phase) * 0.02 * amount)
-	torso_mesh.scale = Vector3(1.0 + breath * 0.008, 1.0 + breath * 0.012, 1.0 + breath * 0.012)
-	neck.rotation.x = lean * 0.6 - kick * 0.1
-	head.rotation.x = clampf(-look_pitch * 0.55, -0.7, 0.7) - lean * 0.3
-
-	# bras (animation libre si pas d'IK)
-	var swing := lerpf(0.55, 1.1, run_t) * amount
+	# --- bras
 	var targets: Array = [null, null]
 	if hand_provider.is_valid():
 		targets = hand_provider.call()
-	for side in 2:
-		var sh := shoulder[side] as Node3D
-		var el := elbow[side] as Node3D
-		if targets[side] != null:
-			_solve_arm(side, targets[side])
+	var swing := lerpf(0.5, 0.95, run_t) * w
+	for idx in 2:
+		var side := "R" if idx == 0 else "L"
+		var is_l := side == "L"
+		var sgn := 1.0 if is_l else -1.0
+		var up := "upperarm01_" + side
+		var lo := "lowerarm01_" + side
+		var wr := "wrist_" + side
+		var cl := "clavicle_" + side
+		if targets[idx] != null:
+			var tg: Dictionary = targets[idx]
+			var f_w: Vector3 = _dir_to_skel(tg["f"]).normalized()
+			var p_w: Vector3 = _dir_to_skel(tg["p"]).normalized()
+			var palm_pos := _to_skel(tg["pos"])
+			var wrist := palm_pos - f_w * PALM_TO_WRIST - p_w * 0.012
+			_local(cl, Quaternion.IDENTITY)
+			var pole := Vector3(0.5 * sgn, -1.0, -0.45)
+			_solve_limb(up, lo, wr, wrist, pole)
+			# orientation de la main : repère de repos -> repère cible
+			var br := _frame(hand_f[side], palm_n[side])
+			var bt := _frame(f_w, p_w)
+			_global(wr, (bt * br.inverse()).get_rotation_quaternion())
+			_curl_fingers(side, tg.get("curl", 0.9))
 		else:
-			var ph := phase + (PI if side == 0 else 0.0)
-			var sx := 1.0 if side == 0 else -1.0
-			var idle_sway := sin(t_idle * 1.3 + side) * 0.02
-			sh.rotation = Vector3(sin(ph) * swing + idle_sway + 0.07 * air_t * -1.0 - 0.9 * air_t, 0.0, sx * (0.07 + 0.06 * air_t + 0.04 * breath))
-			el.rotation = Vector3(-(0.18 + run_t * 1.0 * amount + maxf(0.0, -sin(ph)) * 0.35 * amount) - 0.5 * air_t, 0, 0)
+			var ph := fposmod(phase + (0.5 if is_l else 0.0), 1.0)
+			var sw := -sin(TAU * ph) * swing
+			var adduct := 0.5 + 0.05 * breath * (1.0 - w) - 0.35 * air
+			_local(cl, Quaternion.IDENTITY)
+			_local(up, Quaternion(Vector3.BACK, -sgn * adduct) * Quaternion(Vector3.RIGHT, sw - 0.5 * air))
+			var flex := 0.14 - (0.1 * w + 0.95 * run_t * w) - 0.4 * air
+			_local(lo, Quaternion(Vector3.RIGHT, flex))
+			_local(wr, Quaternion.IDENTITY)
+			_curl_fingers(side, 0.35 + 0.2 * run_t)
 
 
-func _aim_down(node: Node3D, dir: Vector3) -> void:
-	var y := -dir.normalized()
-	var ref := global_basis * Vector3(0, 0, -1)
-	var z := ref - y * ref.dot(y)
-	if z.length() < 0.01:
-		z = global_basis * Vector3(1, 0, 0)
-		z -= y * z.dot(y)
+func _frame(f: Vector3, p: Vector3) -> Basis:
+	var y := f.normalized()
+	var z := p - y * p.dot(y)
 	z = z.normalized()
 	var x := y.cross(z)
-	node.global_basis = Basis(x, y, z)
+	return Basis(x, y, z)
 
 
-func _solve_arm(side: int, target: Vector3) -> void:
-	var sh := shoulder[side] as Node3D
-	var el := elbow[side] as Node3D
-	var sx := 1.0 if side == 0 else -1.0
-	var s := sh.global_position
-	var to := target - s
-	var d := clampf(to.length(), 0.08, (UPPER_ARM + FOREARM) * 0.998)
-	var u := to.normalized()
-	var pole := global_basis * Vector3(sx * 0.7, -1.0, 0.35)
-	pole = (pole - u * pole.dot(u)).normalized()
-	var x := (d * d + UPPER_ARM * UPPER_ARM - FOREARM * FOREARM) / (2.0 * d)
-	var h := sqrt(maxf(UPPER_ARM * UPPER_ARM - x * x, 0.0))
-	var e := s + u * x + pole * h
-	_aim_down(sh, e - s)
-	_aim_down(el, (s + u * d) - e)
+func _meshes(n: Node, acc: Array[MeshInstance3D] = []) -> Array[MeshInstance3D]:
+	if n is MeshInstance3D:
+		acc.append(n)
+	for c in n.get_children():
+		_meshes(c, acc)
+	return acc
