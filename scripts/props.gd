@@ -129,36 +129,161 @@ static func set_phone_screen(p: Node3D, screen: String) -> void:
 			return m)
 
 
-## Mégaphone : origine = poignée, pavillon vers +Z
+## Mégaphone à main : origine = point de contact de la bouche (embout), pavillon vers +Z, poignée dessous.
+## meta "grip" = position de la paume sur la poignée.
 static func megaphone() -> Node3D:
 	var root := Node3D.new()
 	root.name = "Megaphone"
-	var white := _m("mega_white", func() -> Material: return _col(Color(0.88, 0.88, 0.86), 0.45))
-	var red := _m("mega_red", func() -> Material: return _col(Color(0.75, 0.08, 0.06), 0.5))
-	var grey := _m("mega_grey", func() -> Material: return _col(Color(0.15, 0.15, 0.16), 0.6))
-	var horn := CylinderMesh.new()
-	horn.top_radius = 0.035
-	horn.bottom_radius = 0.12
-	horn.height = 0.28
-	horn.radial_segments = 24
-	_mi(root, horn, white, Vector3(0, 0.07, 0.17), Vector3(PI / 2, 0, 0))
-	var rim := TorusMesh.new()
-	rim.inner_radius = 0.11
-	rim.outer_radius = 0.13
-	_mi(root, rim, red, Vector3(0, 0.07, 0.31), Vector3(PI / 2, 0, 0))
-	var body := CylinderMesh.new()
-	body.top_radius = 0.042
-	body.bottom_radius = 0.042
-	body.height = 0.14
-	_mi(root, body, red, Vector3(0, 0.07, -0.03), Vector3(PI / 2, 0, 0))
-	var mouth := CylinderMesh.new()
-	mouth.top_radius = 0.03
-	mouth.bottom_radius = 0.035
-	mouth.height = 0.03
-	_mi(root, mouth, grey, Vector3(0, 0.07, -0.11), Vector3(PI / 2, 0, 0))
-	var grip := BoxMesh.new()
-	grip.size = Vector3(0.03, 0.1, 0.04)
-	_mi(root, grip, grey, Vector3(0, 0.0, 0.0), Vector3(-0.25, 0, 0))
+	var white := _m("mega_white", func() -> Material:
+		var m := _col(Color(0.9, 0.9, 0.87), 0.3)
+		m.metallic_specular = 0.6
+		return m)
+	var inner := _m("mega_inner", func() -> Material: return _col(Color(0.05, 0.05, 0.055), 0.9))
+	var grey := _m("mega_grey", func() -> Material: return _col(Color(0.2, 0.21, 0.23), 0.45))
+	var rubber := _m("mega_rubber", func() -> Material: return _col(Color(0.03, 0.03, 0.035), 0.9))
+	var red := _m("mega_red", func() -> Material: return _col(Color(0.78, 0.07, 0.05), 0.4))
+	var tilt := Vector3(PI / 2.0, 0, 0)    # l'axe du solide de révolution (Y) devient l'axe du pavillon (+Z)
+	# embout caoutchouc
+	var cup := PackedVector2Array([Vector2(0.036, 0.0), Vector2(0.052, 0.0), Vector2(0.058, 0.01), Vector2(0.056, 0.03), Vector2(0.05, 0.036)])
+	_mi(root, MeshKit.lathe(cup, 24), rubber, Vector3.ZERO, tilt)
+	# corps (batterie, haut-parleur)
+	var body := PackedVector2Array([Vector2(0.05, 0.036), Vector2(0.062, 0.042), Vector2(0.066, 0.06), Vector2(0.066, 0.12), Vector2(0.064, 0.13), Vector2(0.06, 0.134)])
+	_mi(root, MeshKit.lathe(body, 28), grey, Vector3.ZERO, tilt)
+	# pavillon : profil exponentiel, face externe blanche, face interne sombre
+	var outer := PackedVector2Array()
+	var innerp := PackedVector2Array()
+	var steps := 14
+	for i in steps + 1:
+		var t := float(i) / steps
+		var r := 0.06 + 0.078 * pow(t, 1.7)
+		var y := 0.134 + 0.236 * t
+		outer.append(Vector2(r, y))
+		innerp.append(Vector2(r - 0.004, y))
+	outer.append(Vector2(0.141, 0.373))
+	outer.append(Vector2(0.137, 0.376))
+	_mi(root, MeshKit.lathe(outer, 36), white, Vector3.ZERO, tilt)
+	var inn := PackedVector2Array()
+	for i in range(innerp.size() - 1, -1, -1):
+		inn.append(innerp[i])
+	inn.append(Vector2(0.056, 0.134))
+	_mi(root, MeshKit.lathe(inn, 36), inner, Vector3.ZERO, tilt)
+	# bandes rouges du pavillon
+	for yb: float in [0.31, 0.347]:
+		var t := (yb - 0.134) / 0.236
+		var r := 0.06 + 0.078 * pow(t, 1.7)
+		var band := PackedVector2Array([Vector2(r + 0.0005, yb - 0.011), Vector2(r + 0.0012, yb - 0.01), Vector2(r + 0.0012, yb + 0.01), Vector2(r + 0.0005, yb + 0.011)])
+		_mi(root, MeshKit.lathe(band, 36), red, Vector3.ZERO, tilt)
+	# poignée pistolet + gâchette + bouton de volume
+	var grip := _mi(root, MeshKit.rbox(Vector3(0.036, 0.115, 0.05), 0.012, 2), grey, Vector3(0, -0.098, 0.088), Vector3(-0.2, 0, 0))
+	grip.name = "Grip"
+	_mi(root, MeshKit.rbox(Vector3(0.014, 0.034, 0.014), 0.004, 1), red, Vector3(0, -0.062, 0.122), Vector3(-0.2, 0, 0))
+	var knob := CylinderMesh.new()
+	knob.top_radius = 0.011
+	knob.bottom_radius = 0.012
+	knob.height = 0.012
+	_mi(root, knob, rubber, Vector3(0, 0.069, 0.075))
+	root.set_meta("grip", Vector3(0, -0.092, 0.092))
+	return root
+
+
+## Sac à dos : le côté plat (contre le dos) regarde +Z, l'extérieur -Z ; origine au centre du sac.
+static func backpack(col := Color(0.1, 0.12, 0.2)) -> Node3D:
+	var root := Node3D.new()
+	root.name = "Backpack"
+	var nyl := _m("pack" + str(col), func() -> Material:
+		var m := StandardMaterial3D.new()
+		m.albedo_color = col
+		m.roughness = 0.7
+		m.metallic_specular = 0.35
+		m.normal_enabled = true
+		m.normal_texture = load("res://assets/character/nylon_n.png")
+		m.normal_scale = 0.3
+		m.uv1_scale = Vector3(3, 3, 1)
+		return m)
+	var dark := _m("pack_dark", func() -> Material: return _col(Color(0.02, 0.02, 0.025), 0.6))
+	var metal := _m("pack_zip", func() -> Material: return _col(Color(0.65, 0.66, 0.7), 0.3, 1.0))
+	_mi(root, MeshKit.rbox(Vector3(0.3, 0.44, 0.15), 0.06, 3), nyl)
+	# poche frontale (extérieur)
+	_mi(root, MeshKit.rbox(Vector3(0.25, 0.22, 0.07), 0.03, 2), nyl, Vector3(0, -0.07, -0.1))
+	# rabat supérieur
+	var lid := _mi(root, MeshKit.rbox(Vector3(0.28, 0.13, 0.05), 0.022, 2), nyl, Vector3(0, 0.185, -0.072), Vector3(-0.25, 0, 0))
+	lid.name = "Lid"
+	# poches latérales
+	for sx: float in [-1.0, 1.0]:
+		_mi(root, MeshKit.rbox(Vector3(0.05, 0.2, 0.1), 0.02, 2), nyl, Vector3(sx * 0.165, -0.1, -0.01))
+	# fermetures éclair et poignée
+	for sx: float in [-1.0, 1.0]:
+		_mi(root, MeshKit.rbox(Vector3(0.006, 0.17, 0.004), 0.002, 1), dark, Vector3(sx * 0.08, -0.07, -0.137))
+	_mi(root, MeshKit.rbox(Vector3(0.1, 0.012, 0.012), 0.005, 1), dark, Vector3(0, 0.255, 0.0))
+	_mi(root, MeshKit.rbox(Vector3(0.018, 0.012, 0.01), 0.004, 1), metal, Vector3(0.0, 0.045, -0.139))
+	# bretelles : deux bandes qui montent vers les épaules (côté dos)
+	for sx: float in [-1.0, 1.0]:
+		_mi(root, MeshKit.rbox(Vector3(0.05, 0.4, 0.012), 0.005, 1), dark, Vector3(sx * 0.09, 0.02, 0.078))
+	return root
+
+
+## Canette 33 cl (origine au centre, axe Y). `tint` = couleur de la bande.
+static func can(tint := Color(0.75, 0.1, 0.1)) -> Node3D:
+	var root := Node3D.new()
+	root.name = "Can"
+	var body := PackedVector2Array([Vector2(0.0, 0.0), Vector2(0.024, 0.0), Vector2(0.028, 0.006), Vector2(0.033, 0.014), Vector2(0.033, 0.1), Vector2(0.028, 0.109), Vector2(0.024, 0.113), Vector2(0.0, 0.113)])
+	var paint := _m("can" + str(tint), func() -> Material:
+		var m := _col(tint, 0.3, 0.55)
+		return m)
+	_mi(root, MeshKit.lathe(body, 20), paint, Vector3(0, -0.0565, 0))
+	var silver := _m("can_ends", func() -> Material: return _col(Color(0.8, 0.82, 0.85), 0.22, 1.0))
+	var top := PackedVector2Array([Vector2(0.0, 0.1128), Vector2(0.022, 0.1128), Vector2(0.024, 0.1142)])
+	_mi(root, MeshKit.lathe(top, 16), silver, Vector3(0, -0.0565, 0))
+	_mi(root, MeshKit.rbox(Vector3(0.016, 0.003, 0.009), 0.0012, 1), silver, Vector3(0, 0.0585, 0))
+	return root
+
+
+## Bouteille d'eau (origine au centre du corps)
+static func bottle() -> Node3D:
+	var root := Node3D.new()
+	root.name = "Bottle"
+	var prof := PackedVector2Array([Vector2(0.0, 0.0), Vector2(0.026, 0.0), Vector2(0.033, 0.01), Vector2(0.034, 0.12), Vector2(0.031, 0.148), Vector2(0.016, 0.172), Vector2(0.014, 0.19), Vector2(0.0, 0.19)])
+	var plastic := _m("bottle", func() -> Material:
+		var m := StandardMaterial3D.new()
+		m.albedo_color = Color(0.72, 0.88, 0.98, 0.35)
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.roughness = 0.08
+		m.metallic_specular = 0.8
+		return m)
+	_mi(root, MeshKit.lathe(prof, 20), plastic, Vector3(0, -0.095, 0))
+	var cap := CylinderMesh.new()
+	cap.top_radius = 0.0155
+	cap.bottom_radius = 0.0155
+	cap.height = 0.02
+	_mi(root, cap, _m("bottle_cap", func() -> Material: return _col(Color(0.1, 0.35, 0.8), 0.4)), Vector3(0, 0.105, 0))
+	var water := PackedVector2Array([Vector2(0.0, 0.002), Vector2(0.025, 0.002), Vector2(0.032, 0.012), Vector2(0.033, 0.075), Vector2(0.0, 0.075)])
+	_mi(root, MeshKit.lathe(water, 18), _m("bottle_water", func() -> Material:
+		var m := StandardMaterial3D.new()
+		m.albedo_color = Color(0.7, 0.9, 1.0, 0.25)
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.roughness = 0.05
+		return m), Vector3(0, -0.093, 0))
+	return root
+
+
+## Crayon à papier (origine au milieu, axe Y)
+static func pencil() -> Node3D:
+	var root := Node3D.new()
+	root.name = "Pencil"
+	_mi(root, MeshKit.lathe(PackedVector2Array([Vector2(0.0036, -0.075), Vector2(0.0036, 0.062), Vector2(0.0018, 0.074), Vector2(0.0006, 0.089)]), 6), _m("pencil", func() -> Material: return _col(Color(0.95, 0.75, 0.1), 0.5)))
+	_mi(root, MeshKit.lathe(PackedVector2Array([Vector2(0.0, 0.0825), Vector2(0.0012, 0.0825), Vector2(0.0, 0.0896)]), 6), _m("pencil_lead", func() -> Material: return _col(Color(0.1, 0.1, 0.1), 0.5)))
+	var fer := CylinderMesh.new()
+	fer.top_radius = 0.0038
+	fer.bottom_radius = 0.0038
+	fer.height = 0.012
+	fer.radial_segments = 8
+	_mi(root, fer, _m("pencil_met", func() -> Material: return _col(Color(0.75, 0.75, 0.78), 0.3, 1.0)), Vector3(0, -0.081, 0))
+	var er := CylinderMesh.new()
+	er.top_radius = 0.0034
+	er.bottom_radius = 0.0034
+	er.height = 0.008
+	er.radial_segments = 8
+	_mi(root, er, _m("pencil_er", func() -> Material: return _col(Color(0.9, 0.5, 0.55), 0.8)), Vector3(0, -0.091, 0))
 	return root
 
 

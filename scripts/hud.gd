@@ -539,10 +539,10 @@ func _refresh() -> void:
 		_slot_styles[i].border_color = AMBER if sel else Color(1, 1, 1, 0.18)
 		_slot_styles[i].shadow_size = 14 if sel else 0
 		_slots[i].modulate = Color.WHITE if sel else Color(1, 1, 1, 0.6)
-	_name.text = ["MAINS LIBRES", "MORTIER D'ARTIFICE", "PIERRES", "BRIQUET + JOURNAL", "FUMIGÈNE"][clampi(_item, 0, 4)]
+	_name.text = ["MAINS LIBRES", "MORTIER D'ARTIFICE", "PIERRES", "BRIQUET + DÉCHETS", "FUMIGÈNE"][clampi(_item, 0, 4)]
 	_shells.visible = _item <= 1
 	_hint.visible = _item >= 2
-	_hint.text = ["", "", "Vise (clic droit) : la trajectoire s'affiche", "Allume le journal, puis jette-le dans une poubelle ouverte", "Craque-le, brandis-le (clic droit), lance-le"][clampi(_item, 0, 4)]
+	_hint.text = ["", "", "Vise (clic droit) : la trajectoire s'affiche", "Dépose le journal (ou ce que tu ramasses avec E) dans une poubelle ou par terre, puis allume", "Craque-le, brandis-le (clic droit), lance-le"][clampi(_item, 0, 4)]
 	if _cmax:
 		_cmax.text = (" / %d" % _flares_max) if _item == 4 else (" / %d" % _max if _item <= 1 else "")
 

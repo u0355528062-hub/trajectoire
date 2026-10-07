@@ -33,13 +33,11 @@ var _mat: StandardMaterial3D
 var _lid_mat: StandardMaterial3D
 var _trash: Node3D
 var _items: Array[Node3D] = []
-var _fire_a: GPUParticles3D
-var _fire_b: GPUParticles3D
-var _smoke: GPUParticles3D
-var _smoulder: GPUParticles3D
-var _embers: GPUParticles3D
-var _light: OmniLight3D
-var _snd_fire: AudioStreamPlayer3D
+var _fx: FireFx
+var tipped := false
+var _righting := false
+var _tip_axis := Vector3.ZERO
+var _tip_t := 0.0
 var _snd_roll: AudioStreamPlayer3D
 var _boost := 0.0
 var _smother_t := 0.0
@@ -53,6 +51,7 @@ var _frame_i := 0
 func _ready() -> void:
 	_seed = randf() * 100.0
 	add_to_group("bins")
+	add_to_group("fire_sources")
 	add_to_group("kickable")
 	mass = 16.0
 	collision_layer = 32
@@ -311,38 +310,14 @@ func _build_collision() -> void:
 
 
 func _build_fire() -> void:
-	var anchor := Node3D.new()
-	anchor.position = Vector3(0, 0.74, 0)
-	_model.add_child(anchor)
-	_fire_a = Fx.fire(0.42, 36, Vector3(0.17, 0.03, 0.22), 1.1)
-	anchor.add_child(_fire_a)
-	_fire_b = Fx.fire(0.28, 30, Vector3(0.2, 0.05, 0.26), 1.6)
-	_fire_b.lifetime = 1.1
-	anchor.add_child(_fire_b)
-	_embers = Fx.embers(40, Vector3(0.18, 0.05, 0.22))
-	anchor.add_child(_embers)
-	_smoke = Fx.smoke(Color(0.1, 0.1, 0.105, 0.5), 46, 7.0, 0.55, true, 1.5, 6.0)
-	_smoke.position.y = 0.55
-	anchor.add_child(_smoke)
-	_smoulder = Fx.smoke(Color(0.55, 0.55, 0.56, 0.35), 20, 5.0, 0.35, true, 0.6, 5.0)
-	_smoulder.position.y = 0.3
-	anchor.add_child(_smoulder)
-	for p in [_fire_a, _fire_b, _embers, _smoke, _smoulder]:
-		(p as GPUParticles3D).emitting = false
-	_light = OmniLight3D.new()
-	_light.light_color = Color(1.0, 0.52, 0.2)
-	_light.light_energy = 0.0
-	_light.omni_range = 9.0
-	_light.omni_attenuation = 1.15
-	_light.shadow_enabled = true
-	_light.shadow_bias = 0.08
-	_light.position = Vector3(0, 0.55, 0)
-	anchor.add_child(_light)
-	_snd_fire = AudioStreamPlayer3D.new()
-	_snd_fire.stream = AudioLib.stream("fire_loop", true)
-	_snd_fire.unit_size = 5.0
-	_snd_fire.volume_db = -60.0
-	anchor.add_child(_snd_fire)
+	_fx = FireFx.new()
+	_fx.extent = Vector3(0.17, 0.03, 0.22)
+	_fx.flame_size = 0.42
+	_fx.light_y = 0.55
+	_fx.light_range = 6.0
+	_fx.light_energy = 3.2
+	_fx.position = Vector3(0, 0.74, 0)
+	_model.add_child(_fx)
 
 
 # ------------------------------------------------------------------ interface
@@ -356,6 +331,26 @@ func top_center() -> Vector3:
 
 func fire_center() -> Vector3:
 	return _model.to_global(Vector3(0, 0.95 + 0.4 * heat, 0))
+
+
+# --- interface commune des foyers (poubelle / feu au sol) utilisée par les PNJ
+func stand_pos(from: Vector3) -> Vector3:
+	var c := global_position
+	var d := Vector3(from.x - c.x, 0, from.z - c.z)
+	d = d.normalized() if d.length() > 0.05 else Vector3(1, 0, 0)
+	return c + d * 0.98
+
+
+func hand_target() -> Vector3:
+	return top_center() + Vector3.UP * 0.04
+
+
+func can_take_items() -> bool:
+	return not tipped and not _righting and is_open()
+
+
+func feed_item(item: Node3D, from: Vector3) -> bool:
+	return deposit(item, from)
 
 
 func set_lid(open: bool) -> void:
@@ -376,7 +371,7 @@ func toggle_lid() -> void:
 
 ## Un objet (déchet, fumigène) entre-t-il par l'ouverture ?
 func try_accept(item: Node3D) -> bool:
-	if not is_open() or grabbed_by != null and _tilt > 0.2:
+	if tipped or not is_open() or grabbed_by != null and _tilt > 0.2:
 		return false
 	var l := _model.to_local(item.global_position)
 	var h := _half(clampf(l.y, Y0, Y1))
@@ -392,7 +387,7 @@ func _accept(item: Node3D) -> void:
 	if item is Burnable:
 		var b := item as Burnable
 		lit_item = b.lit
-		fuel = b.fuel * (1.0 - b.burn)
+		fuel = b.bin_fuel * (1.0 - b.burn)
 		b.in_bin = self
 		b.set_held(true)
 	elif item is Flare:
@@ -412,7 +407,7 @@ func _accept(item: Node3D) -> void:
 	AudioLib.play_at(self, "cardboard_land", top_center(), -10.0, 5.0, randf_range(0.8, 1.0))
 	if burning:
 		_boost = maxf(_boost, 0.35 + fuel * 0.4)
-		AudioLib.play_at(self, "fire_flare_up", top_center(), -2.0 + fuel * 4.0, 7.0, randf_range(0.9, 1.1))
+		_fx.flare_up_burst(-2.0 + fuel * 4.0)
 		get_tree().call_group("crowd", "on_event", "fire_flare", {"bin": self, "pos": top_center()})
 		if item is Burnable and not (item as Burnable).lit:
 			(item as Burnable).ignite.call_deferred()
@@ -428,19 +423,22 @@ func _settle(item: Node3D) -> void:
 	var dest := Vector3(clampf(l.x, -h.x + 0.12, h.x - 0.12), 0.74 + randf() * 0.06, clampf(l.z, -h.y + 0.12, h.y - 0.12))
 	var tw := item.create_tween()
 	tw.tween_property(item, "position", dest, 0.25).set_ease(Tween.EASE_IN)
+	if item is Burnable and (item as Burnable).kind == "plank":
+		# trop longue pour tenir couchée : elle s'appuie en biais et dépasse du rebord
+		var lean := Vector3(randf_range(-0.25, 0.25), randf() * TAU, (1.0 if randf() < 0.5 else -1.0) * randf_range(0.95, 1.2))
+		tw.parallel().tween_property(item, "rotation", lean, 0.25)
+		tw.parallel().tween_property(item, "position:y", 0.92, 0.25)
 
 
 func ignite() -> void:
-	if burning or contents < 0.05:
+	if burning or contents < 0.05 or tipped:
 		return
 	burning = true
 	_smother_t = 0.0
 	heat = maxf(heat, 0.12)
 	_boost = 0.5
-	for p in [_fire_a, _fire_b, _embers, _smoke]:
-		(p as GPUParticles3D).emitting = true
-	_snd_fire.play(randf() * 6.0)
-	AudioLib.play_at(self, "fire_ignite", top_center(), 2.0, 8.0)
+	_fx.start()
+	_fx.ignite_burst()
 	for it in _items:
 		if is_instance_valid(it) and it is Burnable:
 			(it as Burnable).ignite()
@@ -452,24 +450,141 @@ func extinguish() -> void:
 		return
 	burning = false
 	_out_smoke = 6.0
-	for p in [_fire_a, _fire_b, _embers]:
-		(p as GPUParticles3D).emitting = false
+	_fx.stop()
 	get_tree().call_group("crowd", "on_event", "fire_out", {"bin": self, "pos": top_center()})
 
 
-func kick(point: Vector3, dir: Vector3) -> bool:
-	if grabbed_by != null:
+## Dépôt à la main (joueur ou PNJ) : l'objet est posé près du bord intérieur ; la poubelle doit être ouverte.
+func deposit(item: Node3D, from_pos: Vector3) -> bool:
+	if tipped or not is_open():
+		return false
+	var c := top_center()
+	var d := Vector3(from_pos.x - c.x, 0, from_pos.z - c.z)
+	d = d.normalized() * 0.14 if d.length() > 0.01 else Vector3.ZERO
+	item.global_position = c + d + Vector3.UP * 0.03
+	_accept(item)
+	return true
+
+
+## Renversée d'un coup de pied : bascule dans le sens `dir`, couvercle grand ouvert, contenu répandu.
+func tip_over(dir: Vector3, power := 1.0) -> void:
+	if tipped or _righting:
+		return
+	tipped = true
+	axis_lock_angular_x = false
+	axis_lock_angular_z = false
+	linear_damp = 0.5
+	angular_damp = 0.8
+	center_of_mass = Vector3(0, 0.46, 0)
+	lid_open = true
+	_lid_vel = 0.0
+	var d := Vector3(dir.x, 0, dir.z).normalized()
+	var axis := Vector3.UP.cross(d)
+	_tip_axis = axis
+	_tip_t = 0.12 * clampf(power, 0.5, 1.2)       # le pied continue de pousser un instant
+	apply_torque_impulse(axis * 12.0 * power)
+	apply_central_impulse(d * mass * 1.0 * power + Vector3.UP * mass * 0.25)
+	sleeping = false
+	AudioLib.play_at(self, "bin_tip", global_position + Vector3.UP * 0.6, 0.0, 8.0)
+	if burning:
+		_boost = 0.8
+	get_tree().create_timer(0.3).timeout.connect(_spill.bind(d))
+	get_tree().call_group("crowd", "on_event", "vandal", {"pos": global_position, "kind": "bin", "amount": 0.8})
+
+
+func _spill(d: Vector3) -> void:
+	if not is_inside_tree():
+		return
+	var mouth := _model.to_global(Vector3(0, Y1 - 0.12, 0))
+	var scene := get_tree().current_scene
+	var was_burning := burning
+	if burning:
+		extinguish()
+	# objets déjà dans la poubelle
+	for it in _items.duplicate():
+		if not is_instance_valid(it):
+			continue
+		if it is Burnable:
+			var b := it as Burnable
+			var lit_b := b.lit
+			b.in_bin = null
+			b.lit = false
+			b.reparent(scene, true)
+			b.set_held(false)
+			b.global_position = mouth + Vector3(randf_range(-0.1, 0.1), randf_range(-0.05, 0.1), randf_range(-0.1, 0.1))
+			b.linear_velocity = d * randf_range(0.8, 2.2) + Vector3(randf_range(-0.5, 0.5), randf_range(0.3, 1.2), randf_range(-0.5, 0.5))
+			b.angular_velocity = Vector3(randf_range(-6, 6), randf_range(-6, 6), randf_range(-6, 6))
+			if lit_b or was_burning:
+				b.ignite()
+		else:
+			it.queue_free()
+	_items.clear()
+	# déchets de la poubelle qui se répandent
+	var n := clampi(int(ceil(contents * 3.0)), 2, 6)
+	for i in n:
+		var b2 := Burnable.make("paper")
+		scene.add_child(b2)
+		b2.global_position = mouth + Vector3(randf_range(-0.12, 0.12), randf_range(0.0, 0.1), randf_range(-0.12, 0.12))
+		b2.linear_velocity = d * randf_range(0.6, 2.4) + Vector3(randf_range(-0.7, 0.7), randf_range(0.2, 1.4), randf_range(-0.7, 0.7))
+		b2.angular_velocity = Vector3(randf_range(-8, 8), randf_range(-8, 8), randf_range(-8, 8))
+		if was_burning and randf() < 0.7:
+			b2.ignite()
+	contents = 0.05
+	_trash.visible = false
+	_floor_shape.set_deferred("disabled", true)
+
+
+## Se relève d'un mouvement (joueur ou PNJ) : la poubelle est redressée devant celui qui la remet debout.
+func begin_right(yaw: float, duration := 1.0) -> void:
+	if not tipped or _righting:
+		return
+	_righting = true
+	freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+	freeze = true
+	var q0 := global_transform.basis.get_rotation_quaternion()
+	var p0 := global_position
+	var q1 := Quaternion(Vector3.UP, yaw)
+	var tw := create_tween()
+	tw.tween_method(func(u: float):
+		var e := u * u * (3.0 - 2.0 * u)
+		global_transform = Transform3D(Basis(q0.slerp(q1, e)), p0.lerp(Vector3(p0.x, 0.012, p0.z), e) + Vector3(0, sin(PI * e) * 0.12, 0)), 0.0, 1.0, duration)
+	tw.tween_callback(func():
+		tipped = false
+		_righting = false
+		axis_lock_angular_x = true
+		axis_lock_angular_z = true
+		linear_damp = 2.2
+		angular_damp = 5.0
+		center_of_mass = Vector3(0, 0.3, 0)
+		freeze = false
+		linear_velocity = Vector3.ZERO
+		angular_velocity = Vector3.ZERO
+		_floor_shape.set_deferred("disabled", false)
+		AudioLib.play_at(self, "bin_hit", global_position + Vector3.UP * 0.4, -4.0, 6.0, 0.9))
+
+
+func kick(point: Vector3, dir: Vector3, power := 1.0) -> bool:
+	if grabbed_by != null or _righting:
 		return false
 	var l := to_local(point)
+	if tipped:
+		if absf(l.x) > 1.0 or absf(l.z) > 1.0 or l.y > 1.3:
+			return false
+		var d0 := Vector3(dir.x, 0, dir.z).normalized()
+		apply_central_impulse(d0 * mass * 1.6 * power)
+		_hit_sound(1.0)
+		return true
 	if absf(l.x) > BX1 + 0.45 or absf(l.z) > BZ1 + 0.45 or l.y > 1.3:
 		return false
 	var d := Vector3(dir.x, 0, dir.z).normalized()
-	apply_central_impulse(d * mass * 2.6)
-	apply_torque_impulse(Vector3.UP * randf_range(-1.0, 1.0) * mass * 0.25)
 	_hit_sound(1.0)
-	if burning:
-		_boost = maxf(_boost, 0.25)
-		_embers.restart()
+	if power >= 0.5:
+		tip_over(d, power)
+	else:
+		apply_central_impulse(d * mass * 2.6)
+		apply_torque_impulse(Vector3.UP * randf_range(-1.0, 1.0) * mass * 0.25)
+		if burning:
+			_boost = maxf(_boost, 0.25)
 	return true
 
 
@@ -500,6 +615,8 @@ func handle_world(x := 0.0) -> Vector3:
 
 
 func grab(by: Node3D) -> void:
+	if tipped:
+		return
 	grabbed_by = by
 	if by is PhysicsBody3D:
 		add_collision_exception_with(by)
@@ -547,6 +664,9 @@ func drag_to(target: Vector3, yaw: float, delta: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	var t := Time.get_ticks_msec() / 1000.0
+	if _tip_t > 0.0:
+		_tip_t -= delta
+		apply_torque(_tip_axis * 70.0)
 	# --- couvercle : ressort amorti + petit rebond en butée
 	var target := OPEN_ANGLE if lid_open else 0.0
 	var acc := (target - _lid_angle) * 60.0 - _lid_vel * 9.0
@@ -604,29 +724,17 @@ func _physics_process(delta: float) -> void:
 		heat = move_toward(heat, 0.0, delta * 0.4)
 		_boost = 0.0
 	var h := clampf(heat + _boost, 0.0, 1.6)
-	var hv := h / 1.6
-	var vis := 1.0 if _lid_angle > 0.5 else 0.0   # couvercle fermé : les flammes restent dessous
-	_fire_a.amount_ratio = clampf(h * 1.1, 0.0, 1.0) * vis
-	_fire_b.amount_ratio = clampf((h - 0.35) * 1.2, 0.0, 1.0) * vis
-	(_fire_a.process_material as ParticleProcessMaterial).scale_min = 0.55 + 0.6 * hv
-	(_fire_a.process_material as ParticleProcessMaterial).scale_max = 1.0 + 0.9 * hv
-	(_fire_b.process_material as ParticleProcessMaterial).initial_velocity_max = 0.9 + 1.4 * hv
-	_embers.amount_ratio = clampf(h, 0.0, 1.0) * vis
-	_smoke.amount_ratio = clampf(0.25 + h * 0.8, 0.0, 1.0) if burning else 0.0
-	_light.light_energy = 4.2 * h * Fx.flicker(t, _seed)
-	_light.omni_range = 6.0 + 5.0 * hv
-	if burning:
-		_snd_fire.volume_db = linear_to_db(clampf(h * 0.9, 0.001, 1.0)) - 2.0
-	elif _snd_fire.playing and heat <= 0.01:
-		_snd_fire.stop()
-	# fumée blanche quand on étouffe / après extinction
+	var vis := 1.0 if _lid_angle > 0.5 and not tipped else 0.0   # couvercle fermé : les flammes restent dessous
 	var choke := burning and not is_open() and heat > 0.01
 	_out_smoke = maxf(_out_smoke - delta, 0.0)
-	_smoulder.emitting = choke or _out_smoke > 0.0
-	_smoulder.amount_ratio = clampf(maxf(heat * 2.0, _out_smoke / 6.0), 0.1, 1.0)
+	_fx.update(h, vis, burning, maxf(heat * 2.0 if choke else 0.0, _out_smoke / 6.0))
 	# déchets qui se consument (le niveau baisse), plastique noirci
 	_trash.position.y = -0.18 * (1.0 - clampf(contents, 0.0, 1.0)) * clampf(char_amt * 3.0, 0.0, 1.0)
 	_floor_shape.position.y = 0.66 + _trash.position.y
+	if burning and _frame_i % 10 == 0:
+		for it in _items:
+			if is_instance_valid(it) and it is Burnable:
+				(it as Burnable).set_burn(clampf(char_amt * 2.2, 0.0, 1.0))
 	var c := body_color.lerp(Color(0.035, 0.03, 0.03), char_amt * 0.85)
 	_mat.albedo_color = c
 	_mat.roughness = 0.62 + 0.3 * char_amt

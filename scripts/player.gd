@@ -47,9 +47,19 @@ var _grab_bin: TrashBin
 var _grab_prev := 0
 var _e_t := -1.0
 var _e_bin: TrashBin
+var _e_pick: Burnable
 var near_bin: TrashBin
+var near_pick: Burnable
 var _call_t := -1.0
 var _call_cd := 0.0
+var _lift_obj: Node3D            # objet qu'on redresse (poubelle couchée, barrière tombée)
+var _lift_t := -1.0
+var _lift_dur := 1.4
+var _lift_cb := Callable()
+var _lift_fired := false
+var _lift_prev := 0
+var _lift_yaw := 0.0
+var _lift_grip := Vector3.ZERO
 var _aim_evt := 0.0
 var _voice: AudioStreamPlayer3D
 
@@ -88,10 +98,7 @@ func _ready() -> void:
 
 	igniter = Igniter.new()
 	igniter.attach_to(human)
-	igniter.aim_target_provider = Callable(self, "_aim_target")
-	igniter.exclude_rid = get_rid()
 	igniter.message.connect(func(t): message.emit(t))
-	igniter.thrown.connect(func(): _shake = 0.25)
 
 	flare_tool = FlareTool.new()
 	flare_tool.attach_to(human)
@@ -178,12 +185,12 @@ func _tools_busy() -> bool:
 
 
 func _busy() -> bool:
-	return _tools_busy() or human.kick_t >= 0.0 or _grab_bin != null
+	return _tools_busy() or human.kick_t >= 0.0 or _grab_bin != null or _lift_t >= 0.0
 
 
 ## 0 = mains libres, 1 = mortier, 2 = pierres, 3 = briquet + journal, 4 = fumigène
 func select_item(i: int) -> void:
-	if _tools_busy() or i == current_item:
+	if _tools_busy() or i == current_item or _lift_t >= 0.0:
 		return
 	mortar.set_equipped(i == 1)
 	thrower.set_equipped(i == 2)
@@ -262,6 +269,9 @@ func _physics_process(delta: float) -> void:
 	if _grab_bin != null:
 		target_speed = minf(target_speed, WALK_SPEED * 0.9)
 		_run_t = 0.0
+	if igniter.busy or _lift_t >= 0.0:
+		target_speed = 0.0   # les deux pieds au sol pendant qu'on dépose / allume / redresse
+		_run_t = 0.0
 	var kicking := human.kick_t >= 0.0
 	if kicking:
 		target_speed = 0.0
@@ -270,7 +280,7 @@ func _physics_process(delta: float) -> void:
 	var want_aim := current_item != 0 and Input.is_action_pressed("aim") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not kicking and _grab_bin == null
 	if want_aim != aiming:
 		aiming = want_aim
-		aim_changed.emit(aiming and current_item in [1, 2, 3])
+		aim_changed.emit(aiming and current_item in [1, 2])
 		mortar.set_aim(aiming and current_item == 1)
 		thrower.set_aim(aiming and current_item == 2)
 		igniter.set_aim(aiming and current_item == 3)
@@ -278,6 +288,13 @@ func _physics_process(delta: float) -> void:
 	cam_yaw.rotation.y = _yaw
 	var basis_yaw := Basis(Vector3.UP, _yaw)
 	var wish := basis_yaw * Vector3(iv.x, 0.0, iv.y)
+	if igniter.busy and igniter.approach_d > 0.0:
+		# se rapproche de la poubelle pour atteindre l'intérieur
+		var to := igniter.approach_pos - global_position
+		to.y = 0.0
+		if to.length() > igniter.approach_d + 0.02:
+			wish = to.normalized()
+			target_speed = 0.8
 
 	var horiz := Vector3(velocity.x, 0, velocity.z)
 	var accel := 28.0 if is_on_floor() else 7.0
@@ -299,6 +316,10 @@ func _physics_process(delta: float) -> void:
 	var target_yaw := human.rotation.y
 	if kicking:
 		target_yaw = _kick_yaw
+	elif igniter.busy and not is_nan(igniter.lock_yaw):
+		target_yaw = igniter.lock_yaw
+	elif _lift_t >= 0.0:
+		target_yaw = _lift_yaw
 	elif face_cam:
 		target_yaw = _yaw
 	elif wish.length() > 0.1:
@@ -316,6 +337,7 @@ func _physics_process(delta: float) -> void:
 
 	# --- poubelles (E : ouvrir/fermer, maintenir : déplacer) ; appel à la foule
 	_update_bins(delta)
+	_update_lift(delta)
 	_call_cd = maxf(_call_cd - delta, 0.0)
 	if _call_t >= 0.0:
 		_call_t += delta
@@ -399,23 +421,103 @@ func _update_bins(delta: float) -> void:
 			if l < best and (l < 0.9 or fwd.dot(d / maxf(l, 0.01)) > 0.2):
 				best = l
 				near_bin = bin
+	# déchet à ramasser devant soi
+	near_pick = null
+	if _grab_bin == null and not _tools_busy() and human.kick_t < 0.0:
+		near_pick = igniter.find_pickable()
+		if near_pick != null and near_bin != null:
+			var dp := (near_pick.global_position - global_position) * Vector3(1, 0, 1)
+			var db := (near_bin.global_position - global_position) * Vector3(1, 0, 1)
+			if db.length() < dp.length():
+				near_pick = null
 	if Input.is_action_just_pressed("interact") and _grab_bin == null:
 		_e_t = 0.0
 		_e_bin = near_bin
+		_e_pick = near_pick
 	if _e_t >= 0.0:
 		if Input.is_action_pressed("interact"):
 			_e_t += delta
-			if _e_t > 0.32 and _grab_bin == null and _e_bin != null and is_instance_valid(_e_bin) and not _tools_busy() and human.kick_t < 0.0:
+			if _e_t > 0.32 and _grab_bin == null and _e_bin != null and is_instance_valid(_e_bin) and not _e_bin.tipped and not _tools_busy() and human.kick_t < 0.0:
 				_start_grab(_e_bin)
 		else:
 			if _grab_bin != null:
 				_end_grab()
+			elif _e_bin != null and is_instance_valid(_e_bin) and _e_bin.tipped and _e_t <= 0.6:
+				_lift_bin(_e_bin)
+			elif _e_pick != null and is_instance_valid(_e_pick) and not _tools_busy():
+				if current_item != 3:
+					select_item(3)
+				igniter.queue_pick(_e_pick)
 			elif _e_t <= 0.32 and _e_bin != null and is_instance_valid(_e_bin):
 				_e_bin.toggle_lid()
+			elif _e_t <= 0.32 and igniter.held != null and not igniter.busy:
+				igniter.put_down()
 			_e_t = -1.0
+			_e_pick = null
 	if _grab_bin != null:
 		var fwd2 := Basis(Vector3.UP, human.rotation.y) * Vector3(0, 0, -1)
 		_grab_bin.drag_to(global_position + fwd2 * 1.22, human.rotation.y, delta)
+
+
+## Redresser une poubelle couchée : le joueur s'accroupit, l'attrape et la remet debout devant lui
+func _lift_bin(bin: TrashBin) -> void:
+	if bin._righting or not bin.tipped:
+		return
+	var yaw_b := human.rotation.y + PI * 0.0
+	start_lift(bin, func(): bin.begin_right(yaw_b, 0.85), 1.5)
+
+
+## Geste « redresser » commun (poubelle, barrière) : on s'accroupit, on attrape, on relève ; `on_lift` part à l'instant de la prise
+func start_lift(obj: Node3D, on_lift: Callable, dur := 1.4) -> void:
+	if _lift_t >= 0.0 or _tools_busy() or human.kick_t >= 0.0 or _grab_bin != null or not is_on_floor():
+		return
+	_lift_prev = current_item
+	if current_item != 0:
+		select_item(0)
+	_lift_obj = obj
+	_lift_cb = on_lift
+	_lift_dur = dur
+	_lift_t = 0.0
+	_lift_fired = false
+	var d := obj.global_position - global_position
+	d.y = 0.0
+	_lift_yaw = atan2(-d.x, -d.z)
+	_lift_grip = obj.global_position
+
+
+func _update_lift(delta: float) -> void:
+	if _lift_t < 0.0:
+		return
+	if _lift_obj == null or not is_instance_valid(_lift_obj):
+		_end_lift()
+		return
+	_lift_t += delta
+	var u := _lift_t / _lift_dur
+	if not _lift_fired and u >= 0.3:
+		_lift_fired = true
+		_lift_grip = _lift_obj.global_position
+		if _lift_cb.is_valid():
+			_lift_cb.call()
+	var bend := _smooth(u / 0.3) * (1.0 - _smooth((u - 0.45) / 0.4))
+	human.crouch = 0.62 * bend
+	human.lean_extra = 0.38 * bend
+	if u >= 1.0:
+		_end_lift()
+
+
+func _end_lift() -> void:
+	_lift_t = -1.0
+	_lift_obj = null
+	human.crouch = 0.0
+	human.lean_extra = 0.0
+	if _lift_prev != 0:
+		select_item(_lift_prev)
+	_lift_prev = 0
+
+
+func _smooth(x: float) -> float:
+	x = clampf(x, 0.0, 1.0)
+	return x * x * (3.0 - 2.0 * x)
 
 
 func _start_grab(bin: TrashBin) -> void:
@@ -457,6 +559,16 @@ func _hands() -> Array:
 		var fwd := Basis(Vector3.UP, human.rotation.y) * Vector3(0, 0, -1)
 		out = [{"pos": _grab_bin.handle_world(0.13) + Vector3.UP * 0.03, "f": fwd, "p": Vector3.DOWN, "curl": 0.95, "w": 1.0},
 			{"pos": _grab_bin.handle_world(-0.13) + Vector3.UP * 0.03, "f": fwd, "p": Vector3.DOWN, "curl": 0.95, "w": 1.0}]
+	elif _lift_t >= 0.0 and _lift_obj != null and is_instance_valid(_lift_obj):
+		var yb := Basis(Vector3.UP, human.rotation.y)
+		var fwdl: Vector3 = yb * Vector3(0, 0, -1)
+		var rgtl: Vector3 = yb * Vector3(1, 0, 0)
+		var ul := _lift_t / _lift_dur
+		var wl := _smooth(ul / 0.25) * (1.0 - _smooth((ul - 0.82) / 0.15))
+		var base := _lift_obj.global_position - fwdl * 0.3
+		var gp := base + Vector3.UP * lerpf(0.22, 0.8, _smooth((ul - 0.3) / 0.5))
+		out = [{"pos": gp + rgtl * 0.2, "f": fwdl * 0.4 - Vector3.UP * 0.9, "p": -rgtl, "curl": 0.9, "w": wl},
+			{"pos": gp - rgtl * 0.2, "f": fwdl * 0.4 - Vector3.UP * 0.9, "p": rgtl, "curl": 0.9, "w": wl}]
 	elif _call_t >= 0.0:
 		var cx := human.chest_xf()
 		var up := (cx.basis * Vector3(0, 1, 0)).normalized()
@@ -481,9 +593,7 @@ func context_prompt() -> Array:
 		2:
 			return [["CLIC GAUCHE"], "Lancer"]
 		3:
-			if not igniter.lit:
-				return [["CLIC GAUCHE"], "Allumer le journal"]
-			return [["CLIC GAUCHE"], "Lancer la torche"] if aiming else [["CLIC DROIT", "CLIC GAUCHE"], "Viser · Lancer"]
+			return igniter.prompt()
 		4:
 			if flare_tool.flare == null:
 				return [["R"], "Plus de fumigènes"]
@@ -494,9 +604,17 @@ func context_prompt() -> Array:
 
 
 func interact_prompt() -> String:
-	if _grab_bin != null or near_bin == null:
+	if _grab_bin != null or igniter.busy:
 		return ""
-	return ("Fermer" if near_bin.lid_open else "Ouvrir") + " · maintenir : déplacer"
+	if near_pick != null:
+		return "Ramasser " + Burnable.label_of(near_pick.kind)
+	if near_bin != null and near_bin.tipped:
+		return "Redresser la poubelle"
+	if near_bin != null:
+		return ("Fermer" if near_bin.lid_open else "Ouvrir") + " · maintenir : déplacer"
+	if igniter.held != null:
+		return "Poser " + igniter.held_label()
+	return ""
 
 
 func _aim_point() -> Vector3:

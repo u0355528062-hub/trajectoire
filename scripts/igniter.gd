@@ -1,42 +1,47 @@
 class_name Igniter
 extends Node3D
-## Briquet + journal roulé : clic gauche = allumer le journal (le briquet s'approche, clic,
-## flamme, le papier prend), clic droit = viser (trajectoire), clic gauche = lancer la torche.
-## Jeté dans une poubelle ouverte, il y met le feu.
+## Briquet + déchets (touche 3). Clic gauche : déposer le journal (ou le carton / la planche ramassé) dans
+## une poubelle ouverte, dans un feu, ou par terre, puis l'allumer au briquet. Le bras qui tient le briquet
+## plonge dans la poubelle ; au sol on s'accroupit. Clic droit : briquet seul. Rien n'est lancé.
 
 signal message(text: String)
-signal thrown
 
-const SPEED := 11.0
-const T_LIGHT := 1.35
-const T_WIND := 0.24
-const T_WHIP := 0.14
-const T_FOLLOW := 0.45
-const BURN_MAX := 16.0
+const REACH_BIN := 1.22
+const REACH_FIRE := 1.6
+const REACH_LIGHT := 1.4
+const REACH_PICK := 1.5
 
 var human: Human
 var equipped := false
 var busy := false
-var aim_t := 0.0
 var equip_t := 0.0
-var lit := false
-var aim_target_provider := Callable()
-var exclude_rid := RID()
+var aim_t := 0.0                 # compat. caméra : jamais de zoom avec cet outil
+var lit := false                 # flamme du briquet allumée
+var lock_yaw := NAN              # orientation imposée au corps pendant le geste
+var approach_pos := Vector3.ZERO # le joueur se rapproche de ce point (centre de la poubelle) jusqu'à approach_d
+var approach_d := 0.0
+var held: Burnable               # objet ramassé (null : journal sorti de la poche)
+var plan := {}
+var near_pick: Burnable
 
 var _aim_input := false
-var _t := -1.0          # allumage
-var _tt := -1.0         # lancer
-var _released := false
-var _burn := 0.0
-var _paper: Node3D
-var _lighter: Node3D
-var _fire: GPUParticles3D
-var _smoke: GPUParticles3D
-var _light: OmniLight3D
-var _crackle: AudioStreamPlayer3D
-var _preview: ArcPreview
-var _rng := RandomNumberGenerator.new()
+var _ph: Array = []
+var _pi := -1
+var _pt := 0.0
+var _ctx := {}
 var _fresh := 1.0
+var _lighter: Node3D
+var _paper: Node3D
+var _rng := RandomNumberGenerator.new()
+var _queued_pick: Burnable
+var _lighter_on := false
+var _crouch := 0.0
+var _lean := 0.0
+var _plan_scan := 0.0
+var _rw := 0.0                   # poids de la main droite guidée
+var _lw := 0.0
+var _released := false           # le journal a quitté la main
+var _post_on := false
 
 
 func _ready() -> void:
@@ -49,30 +54,6 @@ func _ready() -> void:
 	_lighter.top_level = true
 	_lighter.visible = false
 	add_child(_lighter)
-	_fire = Fx.fire(0.16, 22, Vector3(0.025, 0.02, 0.025), 0.75)
-	_fire.top_level = true
-	_fire.emitting = false
-	add_child(_fire)
-	_smoke = Fx.smoke(Color(0.25, 0.24, 0.23, 0.35), 14, 3.0, 0.15, true, 0.7, 5.0)
-	_smoke.top_level = true
-	_smoke.emitting = false
-	add_child(_smoke)
-	_light = OmniLight3D.new()
-	_light.light_color = Color(1.0, 0.55, 0.22)
-	_light.light_energy = 0.0
-	_light.omni_range = 5.0
-	_light.shadow_enabled = true
-	_light.top_level = true
-	add_child(_light)
-	_crackle = AudioStreamPlayer3D.new()
-	_crackle.stream = AudioLib.stream("fire_loop", true)
-	_crackle.volume_db = -18.0
-	_crackle.unit_size = 3.0
-	_crackle.pitch_scale = 1.25
-	_crackle.top_level = true
-	add_child(_crackle)
-	_preview = ArcPreview.new()
-	add_child(_preview)
 
 
 func attach_to(h: Human) -> void:
@@ -85,43 +66,419 @@ func set_equipped(on: bool) -> void:
 		return
 	equipped = on
 	if not on:
-		_preview.hide_all()
+		plan = {}
 
 
 func hide_now() -> void:
-	if lit:
-		_drop(false)
+	_abort()
 	equipped = false
 	equip_t = 0.0
-	_t = -1.0
-	_tt = -1.0
-	busy = false
+	_aim_input = false
+	lit = false
 	_paper.visible = false
 	_lighter.visible = false
-	_preview.hide_all()
+	_drop_held()
 
 
 func set_aim(on: bool) -> void:
 	_aim_input = on and equipped
 
 
-## Clic gauche : allumer, puis lancer
+func _abort() -> void:
+	busy = false
+	_pi = -1
+	_ph = []
+	_pt = 0.0
+	_ctx = {}
+	_lighter_on = false
+	_released = false
+	lock_yaw = NAN
+	approach_d = 0.0
+	_crouch = 0.0
+	_lean = 0.0
+	_apply_posture(0.0)
+
+
+func _drop_held() -> void:
+	if held != null and is_instance_valid(held) and human != null:
+		var b := held
+		held = null
+		b.reparent(get_tree().current_scene, true)
+		b.set_held(false)
+		b.global_position = human.global_position + Vector3.UP * 0.6 + Basis(Vector3.UP, human.rotation.y) * Vector3(0, 0, -0.45)
+		b.linear_velocity = Vector3.UP * 0.5
+	held = null
+
+
+func held_label() -> String:
+	return Burnable.label_of(held.kind) if held != null and is_instance_valid(held) else "le journal"
+
+
+# ------------------------------------------------------------------ cibles
+func _fwd() -> Vector3:
+	return Basis(Vector3.UP, human.rotation.y) * Vector3(0, 0, -1)
+
+
+func _ground_at(p: Vector3) -> Variant:
+	var q := PhysicsRayQueryParameters3D.create(p + Vector3.UP * 1.2, p + Vector3.DOWN * 1.0, 1)
+	var r := get_world_3d().direct_space_state.intersect_ray(q)
+	if r and (r["normal"] as Vector3).y > 0.7 and (r["position"] as Vector3).y < 0.4:
+		return r["position"]
+	return null
+
+
+## Ce que le clic gauche ferait maintenant : {type: bin|fire|light|ground, node, pos}
+func _plan() -> Dictionary:
+	var pp := human.global_position
+	var fwd := _fwd()
+	var best := 99.0
+	var out := {}
+	for b in get_tree().get_nodes_in_group("bins"):
+		var bin := b as TrashBin
+		if bin.tipped or bin.grabbed_by != null:
+			continue
+		var d := bin.global_position - pp
+		d.y = 0.0
+		var l := d.length()
+		if l < REACH_BIN and l < best and fwd.dot(d / maxf(l, 0.01)) > 0.45:
+			best = l
+			out = {"type": "bin", "node": bin}
+	if not out.is_empty():
+		return out
+	for f in get_tree().get_nodes_in_group("fires"):
+		var fire := f as FloorFire
+		if not fire.burning:
+			continue
+		var d2 := fire.global_position - pp
+		d2.y = 0.0
+		var l2 := d2.length()
+		if l2 < REACH_FIRE and l2 < best and fwd.dot(d2 / maxf(l2, 0.01)) > 0.4:
+			best = l2
+			out = {"type": "fire", "node": fire}
+	if not out.is_empty():
+		return out
+	best = REACH_LIGHT
+	for o in get_tree().get_nodes_in_group("burnables"):
+		var bu := o as Burnable
+		if bu == held or bu.held or bu.lit or bu.fire != null or bu.in_bin != null or bu._dying:
+			continue
+		var d3 := bu.global_position - pp
+		if d3.y > 0.8:
+			continue
+		d3.y = 0.0
+		var l3 := d3.length()
+		if l3 < best and fwd.dot(d3 / maxf(l3, 0.01)) > 0.35:
+			best = l3
+			out = {"type": "light", "node": bu}
+	if not out.is_empty():
+		return out
+	var gp: Variant = _ground_at(pp + fwd * 0.78)
+	if gp != null:
+		return {"type": "ground", "pos": gp}
+	return {}
+
+
+## Objet à ramasser (touche E) : le plus proche devant soi
+func find_pickable() -> Burnable:
+	if held != null or human == null:
+		return null
+	var pp := human.global_position
+	var fwd := _fwd()
+	var best := REACH_PICK
+	var out: Burnable = null
+	for o in get_tree().get_nodes_in_group("burnables"):
+		var bu := o as Burnable
+		if not bu.can_pickup():
+			continue
+		var d := bu.global_position - pp
+		if d.y > 0.9:
+			continue
+		d.y = 0.0
+		var l := d.length()
+		if l < best and (l < 0.6 or fwd.dot(d / maxf(l, 0.01)) > 0.3):
+			best = l
+			out = bu
+	return out
+
+
+func prompt() -> Array:
+	if busy:
+		return []
+	var nm := held_label()
+	match plan.get("type", ""):
+		"bin":
+			var bin: TrashBin = plan["node"]
+			if not bin.is_open():
+				return [["CLIC GAUCHE"], "Ouvrir et déposer " + nm]
+			if bin.burning:
+				return [["CLIC GAUCHE"], "Jeter %s dans le feu" % nm]
+			return [["CLIC GAUCHE"], "Déposer %s et l'allumer" % nm]
+		"fire":
+			return [["CLIC GAUCHE"], "Jeter %s dans le feu" % nm]
+		"light":
+			return [["CLIC GAUCHE"], "Allumer " + Burnable.label_of((plan["node"] as Burnable).kind)]
+		"ground":
+			return [["CLIC GAUCHE"], "Faire un feu : poser %s et l'allumer" % nm]
+	return [["CLIC DROIT"], "Briquet"]
+
+
+# ------------------------------------------------------------------ actions
 func use() -> void:
-	if not equipped or busy or equip_t < 0.6:
+	if not equipped or busy or equip_t < 0.6 or human == null:
 		return
-	if not lit:
-		busy = true
-		_t = 0.0
+	if _fresh < 0.45 and held == null:
+		return   # il sort un nouveau journal de sa poche
+	plan = _plan()
+	if plan.is_empty():
+		message.emit("Pas la place ici")
+		return
+	_ctx = plan.duplicate()
+	var dv := Vector3.ZERO
+	match plan["type"]:
+		"bin", "fire", "light":
+			var n: Node3D = plan["node"]
+			dv = n.global_position - human.global_position
+			_ctx["pos"] = n.global_position
+		"ground":
+			dv = (plan["pos"] as Vector3) - human.global_position
+	dv.y = 0.0
+	dv = dv.normalized() if dv.length() > 0.01 else _fwd()
+	_ctx["dv"] = dv
+	match plan["type"]:
+		"ground":
+			_ctx["top"] = (held.size.y if held != null else 0.07) * 0.9
+		"light":
+			_ctx["top"] = (plan["node"] as Burnable).size.y * 0.5
+	lock_yaw = atan2(-dv.x, -dv.z)
+	if plan["type"] == "bin":
+		approach_pos = (plan["node"] as Node3D).global_position
+		approach_d = 0.7
+	_ph = _phases(plan)
+	_pi = 0
+	_pt = 0.0
+	busy = true
+
+
+func _phases(p: Dictionary) -> Array:
+	var out: Array = []
+	match p["type"]:
+		"bin":
+			var bin: TrashBin = p["node"]
+			if not bin.is_open():
+				out.append(["open", 0.8])
+			out.append(["raise", 0.32])
+			if bin.burning:
+				out.append(["drop_hot", 0.75])
+			else:
+				out.append(["reach", 0.42])
+				out.append(["drop", 0.6])
+				out.append(["light", 0.9])
+			out.append(["retreat", 0.45])
+		"fire":
+			out = [["raise", 0.3], ["toss", 0.7], ["retreat", 0.35]]
+		"ground":
+			out = [["crouch", 0.6], ["place", 0.55], ["light", 1.05], ["stand", 0.6]]
+		"light":
+			out = [["crouch", 0.55], ["light", 1.05], ["stand", 0.55]]
+	return out
+
+
+## Ramassage (appelé par le joueur avec E) : s'accroupit, saisit, se relève avec l'objet
+func queue_pick(b: Burnable) -> void:
+	if b == null or not is_instance_valid(b) or busy or held != null:
+		return
+	_queued_pick = b
+
+
+func _start_pick(b: Burnable) -> void:
+	_ctx = {"type": "pick", "node": b, "pos": b.global_position}
+	var dv := b.global_position - human.global_position
+	dv.y = 0.0
+	dv = dv.normalized() if dv.length() > 0.01 else _fwd()
+	_ctx["dv"] = dv
+	_ctx["top"] = b.size.y * 0.5
+	lock_yaw = atan2(-dv.x, -dv.z)
+	b.reserved_by = self
+	_ph = [["crouch", 0.5], ["grab", 0.4], ["stand", 0.55]]
+	_pi = 0
+	_pt = 0.0
+	busy = true
+
+
+## Poser l'objet porté devant soi (sans l'allumer)
+func put_down() -> void:
+	if held == null or busy:
+		return
+	var b := held
+	held = null
+	b.reparent(get_tree().current_scene, true)
+	var fwd := _fwd()
+	b.set_held(false)
+	b.global_position = human.global_position + fwd * 0.55 + Vector3.UP * 0.5
+	b.linear_velocity = fwd * 0.6
+	AudioLib.play_at(self, "cardboard_land", b.global_position, -12.0, 4.0)
+
+
+func _advance(delta: float) -> void:
+	if _pi < 0 or _pi >= _ph.size():
+		_finish()
+		return
+	var name: String = _ph[_pi][0]
+	var dur: float = _ph[_pi][1]
+	var t0 := _pt
+	_pt += delta
+	_events(name, t0, _pt)
+	if _pt >= dur:
+		_pt -= dur
+		_phase_end(name)
+		_pi += 1
+		if _pi >= _ph.size():
+			_finish()
+
+
+func _at(t0: float, t1: float, x: float) -> bool:
+	return t0 < x and t1 >= x
+
+
+func _events(name: String, t0: float, t1: float) -> void:
+	var bin: TrashBin = _ctx["node"] if _ctx.get("type", "") == "bin" else null
+	match name:
+		"open":
+			if _at(t0, t1, 0.4) and bin != null:
+				bin.set_lid(true)
+		"drop":
+			if _at(t0, t1, 0.2):
+				_release_into_bin()
+		"drop_hot":
+			if _at(t0, t1, 0.4):
+				_release_into_bin()
+		"toss":
+			if _at(t0, t1, 0.34):
+				_release_into_fire()
+		"place":
+			if _at(t0, t1, 0.3):
+				_place_on_ground()
+		"grab":
+			if _at(t0, t1, 0.22):
+				_grab_item()
+		"light":
+			if _at(t0, t1, 0.18):
+				_lighter_on = true
+				AudioLib.play_at(self, "sfx:click", _lighter.global_position, -8.0, 3.0)
+				AudioLib.play_at(self, "sfx:ignite", _lighter.global_position, -10.0, 3.0)
+			if _at(t0, t1, 0.52):
+				_ignite_target()
+			if _at(t0, t1, 0.7):
+				_lighter_on = false
+
+
+func _phase_end(name: String) -> void:
+	if name == "light":
+		_lighter_on = false
+
+
+func _finish() -> void:
+	var was_pick: bool = _ctx.get("type", "") == "pick"
+	var b: Burnable = _ctx.get("node") if was_pick else null
+	if b != null and is_instance_valid(b) and b.reserved_by == self:
+		b.reserved_by = null
+	var consumed := _released
+	_abort()
+	if consumed:
+		_fresh = 0.0
+
+
+func _take_item() -> Burnable:
+	var scene := get_tree().current_scene
+	var b: Burnable
+	if held != null and is_instance_valid(held):
+		b = held
+		held = null
+		b.reparent(scene, true)
 	else:
-		busy = true
-		_tt = 0.0
-		_released = false
+		b = Burnable.make("news")
+		scene.add_child(b)
+		var pl := human.palm("L")
+		b.global_position = pl["pos"]
+	if human.get_parent() is PhysicsBody3D:
+		b.add_collision_exception_with(human.get_parent())
+	_paper.visible = false
+	_released = true
+	return b
 
 
-func state_label() -> String:
-	return "lit" if lit else "unlit"
+func _release_into_bin() -> void:
+	var bin: TrashBin = _ctx["node"]
+	var b := _take_item()
+	_ctx["item"] = b
+	AudioLib.play_at(self, "paper_rustle", b.global_position, -10.0, 3.0)
+	if not is_instance_valid(bin):
+		b.set_held(false)
+		return
+	var from := human.global_position
+	var dest := bin.top_center() + Vector3(0, 0.0, 0) - (_ctx["dv"] as Vector3) * 0.02
+	b.fly_to(dest, 0.2, func():
+		if is_instance_valid(bin) and is_instance_valid(b):
+			if not bin.deposit(b, from):
+				b.set_held(false))
 
 
+func _release_into_fire() -> void:
+	var fire: FloorFire = _ctx["node"]
+	var b := _take_item()
+	_ctx["item"] = b
+	AudioLib.play_at(self, "paper_rustle", b.global_position, -10.0, 3.0)
+	if not is_instance_valid(fire):
+		b.set_held(false)
+		return
+	var from := human.global_position
+	b.fly_to(fire.hand_target() + Vector3(0, 0.1, 0), 0.26, func():
+		if is_instance_valid(fire) and is_instance_valid(b):
+			if not fire.feed_item(b, from):
+				b.set_held(false))
+
+
+func _place_on_ground() -> void:
+	var gp: Vector3 = _ctx["pos"]
+	var b := _take_item()
+	_ctx["item"] = b
+	b.set_held(false)
+	b.global_position = gp + Vector3(0, b.size.y * 0.5 + 0.03, 0)
+	b.rotation = Vector3(0, _rng.randf() * TAU, 0)
+	b.linear_velocity = Vector3.ZERO
+	b.angular_velocity = Vector3.ZERO
+	AudioLib.play_at(self, "cardboard_land" if b.kind != "news" and b.kind != "paper" else "paper_rustle", gp, -12.0, 3.0)
+
+
+func _grab_item() -> void:
+	var b: Burnable = _ctx.get("node")
+	if b == null or not is_instance_valid(b) or not b.can_pickup_for(self):
+		return
+	b.set_held(true)
+	b.reparent(self, true)
+	b.top_level = true
+	held = b
+	b.reserved_by = null
+	_fresh = 1.0
+	AudioLib.play_at(self, "paper_rustle" if b.kind in ["paper", "news"] else "cardboard_land", b.global_position, -10.0, 3.0)
+
+
+func _ignite_target() -> void:
+	var b: Burnable = _ctx.get("item") if _ctx.has("item") else _ctx.get("node")
+	if _ctx.get("type", "") == "light":
+		b = _ctx["node"]
+	if b == null or not is_instance_valid(b):
+		return
+	b.ignite()
+	var bin: TrashBin = _ctx["node"] if _ctx.get("type", "") == "bin" else null
+	if bin != null and is_instance_valid(bin):
+		bin.ignite()
+		get_tree().call_group("crowd", "on_event", "player_fire", {"pos": b.global_position})
+	elif _ctx.get("type", "") in ["ground", "light"]:
+		get_tree().call_group("crowd", "on_event", "player_fire", {"pos": b.global_position})
+
+
+# ------------------------------------------------------------------ pas de temps
 func _ease(x: float) -> float:
 	x = clampf(x, 0.0, 1.0)
 	return x * x * (3.0 - 2.0 * x)
@@ -130,212 +487,310 @@ func _ease(x: float) -> float:
 func step(delta: float) -> void:
 	var t_now := Time.get_ticks_msec() / 1000.0
 	equip_t = move_toward(equip_t, 1.0 if equipped else 0.0, delta * 3.0)
-	aim_t = move_toward(aim_t, 1.0 if ((_aim_input and lit and _t < 0.0 and _tt < 0.0) or (_tt >= 0.0 and _tt < T_WIND + T_WHIP + 0.05)) else 0.0, delta * 4.0)
-	_fresh = move_toward(_fresh, 1.0, delta * 2.0)
-	# --- allumage
-	if _t >= 0.0:
-		_t += delta
-		var flame_on := _t > 0.55 and _t < T_LIGHT - 0.1
-		Props.set_lighter_lit(_lighter, flame_on, t_now)
-		if _t >= 0.55 and _t - delta < 0.55:
-			AudioLib.play_at(self, "sfx:click", _lighter.global_position, -8.0, 3.0)
-			AudioLib.play_at(self, "sfx:ignite", _lighter.global_position, -10.0, 3.0)
-		if _t >= 0.95 and not lit:
-			lit = true
-			_burn = 0.0
-			_fire.emitting = true
-			_smoke.emitting = true
-			_crackle.play()
-			AudioLib.play_at(self, "paper_rustle", _paper.global_position, -6.0, 3.0)
-		if _t >= T_LIGHT:
-			_t = -1.0
-			busy = false
-	# --- lancer
-	if _tt >= 0.0:
-		_tt += delta
-		if not _released and _tt >= T_WIND + T_WHIP:
-			_released = true
-			_release()
-		if _tt >= T_WIND + T_WHIP + T_FOLLOW:
-			_tt = -1.0
-			busy = false
-			_fresh = 0.0
-	# --- torche qui brûle
-	if lit:
-		_burn += delta
-		var k := clampf(_burn / 1.2, 0.15, 1.0) * clampf((BURN_MAX - _burn) / 2.5, 0.0, 1.0)
-		_fire.amount_ratio = k
-		_smoke.amount_ratio = 0.3 + 0.7 * k
-		_light.light_energy = 1.6 * k * Fx.flicker(t_now, 2.0)
-		_crackle.volume_db = linear_to_db(maxf(k, 0.001)) - 14.0
-		if _burn >= BURN_MAX and _tt < 0.0:
-			_drop(true)
-			message.emit("Le journal s'est consumé")
-	else:
-		_light.light_energy = 0.0
+	_fresh = move_toward(_fresh, 1.0, delta * 1.7)
+	if equipped and human != null:
+		_plan_scan -= delta
+		if not busy and _plan_scan <= 0.0:
+			_plan_scan = 0.1
+			plan = _plan()
+			near_pick = find_pickable()
+		if not busy and _queued_pick != null:
+			if is_instance_valid(_queued_pick) and _queued_pick.can_pickup() and equip_t > 0.6:
+				_start_pick(_queued_pick)
+				_queued_pick = null
+			elif not is_instance_valid(_queued_pick) or equip_t > 0.9:
+				_queued_pick = null
+		if busy:
+			_advance(delta)
+	lit = _lighter_on or (_aim_input and equipped and not busy)
+	var two := held != null and is_instance_valid(held) and held.kind in ["box", "plank"]
+	var r_need := busy or _aim_input or two
+	var l_need := busy or two or held != null or (_fresh > 0.4 and not _released)
+	_rw = move_toward(_rw, 1.0 if (r_need and equipped) else 0.0, delta * 5.0)
+	_lw = move_toward(_lw, 1.0 if (l_need and equipped) else 0.0, delta * 5.0)
 	if human:
-		var tw := 0.0
-		if _tt >= 0.0:
-			if _tt < T_WIND:
-				tw = -0.4 * _ease(_tt / T_WIND)
-			elif _tt < T_WIND + T_WHIP:
-				tw = lerpf(-0.4, 0.38, _ease((_tt - T_WIND) / T_WHIP))
-			else:
-				tw = lerpf(0.38, 0.0, _ease((_tt - T_WIND - T_WHIP) / T_FOLLOW))
-		else:
-			tw = -0.12 * _ease(aim_t)
-		human.twist = lerpf(human.twist, tw, minf(1.0, delta * 18.0))
+		_apply_posture(delta)
 	if equip_t <= 0.0 and not equipped:
 		_paper.visible = false
 		_lighter.visible = false
-		_fire.emitting = false
+	if _lighter.visible:
+		Props.set_lighter_lit(_lighter, lit, t_now)
 
 
-func _drop(burning: bool) -> void:
-	# la torche tombe (et finit de brûler par terre)
-	if burning:
-		var b := Burnable.make("paper")
-		get_tree().current_scene.add_child(b)
-		b.global_position = _paper.global_position
-		b.linear_velocity = (-human.global_basis.z) * 1.0 + Vector3.UP
-		b.ignite()
-		b.burn = 0.5
-	lit = false
-	_fire.emitting = false
-	_smoke.emitting = false
-	_crackle.stop()
-	_fresh = 0.0
+## Posture du corps selon la phase (accroupi / penché pour atteindre)
+func _apply_posture(delta: float) -> void:
+	var cr := 0.0
+	var ln := 0.0
+	if busy and _pi >= 0 and _pi < _ph.size():
+		var name: String = _ph[_pi][0]
+		var dur: float = _ph[_pi][1]
+		var u := _ease(_pt / dur)
+		match _ctx.get("type", ""):
+			"bin":
+				var opened: bool = _ph[0][0] == "open"
+				match name:
+					"open":
+						ln = 0.12 * u
+					"raise":
+						ln = lerpf(0.12 if opened else 0.0, 0.22, u)
+					"reach", "drop_hot":
+						ln = lerpf(0.22, 0.5, u)
+					"drop", "light":
+						ln = 0.5
+					"retreat":
+						ln = lerpf(0.5, 0.0, u)
+				if name in ["reach", "drop", "light"]:
+					cr = 0.3 if not _ctx["node"].burning or name == "light" else 0.14
+				elif name == "retreat":
+					cr = lerpf(0.3, 0.0, u)
+			"fire":
+				match name:
+					"raise":
+						ln = 0.2 * u
+					"toss":
+						ln = 0.28
+						cr = 0.2
+					"retreat":
+						ln = lerpf(0.28, 0.0, u)
+						cr = lerpf(0.2, 0.0, u)
+			_:
+				match name:
+					"crouch":
+						cr = 0.8 * u
+						ln = 0.18 * u
+					"place", "light", "grab":
+						cr = 0.8
+						ln = 0.18
+					"stand":
+						cr = lerpf(0.8, 0.0, u)
+						ln = lerpf(0.18, 0.0, u)
+	if delta > 0.0:
+		_crouch = move_toward(_crouch, cr, delta * 5.0)
+		_lean = move_toward(_lean, ln, delta * 3.0)
+	else:
+		_crouch = cr
+		_lean = ln
+	if busy or _crouch > 0.001 or _lean > 0.001:
+		human.crouch = _crouch
+		human.lean_extra = _lean
+		_post_on = true
+	elif _post_on:
+		human.crouch = 0.0
+		human.lean_extra = 0.0
+		_post_on = false
 
 
-func _chest(p_rest: Vector3, cx: Transform3D) -> Vector3:
-	return cx * (p_rest - human.rest["spine02"])
+# ------------------------------------------------------------------ mains
+func _hd(pos: Vector3, f: Vector3, p: Vector3, curl := 0.9, w := 1.0) -> Dictionary:
+	return {"pos": pos, "f": f.normalized(), "p": p.normalized(), "curl": curl, "w": w}
 
 
-func _target() -> Array:
-	var t: Array = [global_position + (-human.global_basis.z) * 12.0, false]
-	if aim_target_provider.is_valid():
-		t = aim_target_provider.call()
-	# visée d'une poubelle ouverte : on vise son ouverture
-	var p: Vector3 = t[0]
-	for b in get_tree().get_nodes_in_group("bins"):
-		var bin := b as TrashBin
-		var c := bin.top_center()
-		if bin.is_open() and Vector2(p.x - c.x, p.z - c.z).length() < 0.8 and p.y < c.y + 0.6:
-			return [c + Vector3.DOWN * 0.15, true]
-	return t
-
-
-## Lancer en cloche quand la cible est proche (pour tomber DANS une poubelle)
-func _solve(origin: Vector3, target: Vector3) -> Vector3:
-	var d := Vector2(target.x - origin.x, target.z - origin.z).length()
-	if d < 6.0:
-		return ArcPreview.solve(origin, target, clampf(4.2 + d * 0.9, 4.5, SPEED), true)
-	return ArcPreview.solve(origin, target, SPEED)
-
-
-func _blend(a: Dictionary, b: Dictionary, k: float) -> Dictionary:
+func _bl(a: Dictionary, b: Dictionary, k: float) -> Dictionary:
+	k = clampf(k, 0.0, 1.0)
 	return {
-		"palm": (a["palm"] as Vector3).lerp(b["palm"], k),
-		"f": (a["f"] as Vector3).slerp(b["f"], k).normalized(),
-		"p": (a["p"] as Vector3).slerp(b["p"], k).normalized(),
+		"pos": (a["pos"] as Vector3).lerp(b["pos"], k),
+		"f": ((a["f"] as Vector3).slerp(b["f"], k)).normalized(),
+		"p": ((a["p"] as Vector3).slerp(b["p"], k)).normalized(),
 		"curl": lerpf(a["curl"], b["curl"], k),
+		"w": 1.0,
 	}
+
+
+func _open_hand(a: Dictionary, k: float) -> Dictionary:
+	return _bl(a, _hd(a["pos"], a["f"], a["p"], 0.12), k)
 
 
 func _hand_targets() -> Array:
 	if equip_t <= 0.0 or human == null:
 		return [null, null]
-	var cx := human.chest_xf()
-	var up := (cx.basis * Vector3(0, 1, 0)).normalized()
-	var fwd := (cx.basis * Vector3(0, 0, 1)).normalized()
-	var left := (cx.basis * Vector3(1, 0, 0)).normalized()
-	var right := -left
-	var sh := human.shoulder_world("R")
-	var tgt: Array = _target()
-	var v0 := _solve(sh + up * 0.1, tgt[0])
-	var aim_dir := v0.normalized()
-	var drop := (1.0 - _ease(_fresh)) * 0.25
-	var carry := {"palm": _chest(Vector3(-0.21, 0.99 - drop, 0.21), cx), "f": fwd, "p": left, "curl": 0.95}
-	var held_lit := {"palm": _chest(Vector3(-0.24, 1.08, 0.27), cx), "f": (fwd + up * 0.2).normalized(), "p": left, "curl": 0.95}
-	var lighting := {"palm": _chest(Vector3(-0.1, 1.12, 0.3), cx), "f": fwd, "p": left, "curl": 0.95}
-	# armé : la torche reste dressée (pouce vers le haut, légèrement penchée en arrière)
-	var cocked := {"palm": sh + up * 0.17 - fwd * 0.11 + right * 0.07, "f": (fwd * 0.9 + up * 0.44).normalized(), "p": left, "curl": 0.95}
-	var rel := {"palm": sh + aim_dir * 0.5 + up * 0.04, "f": aim_dir, "p": left, "curl": 0.5}
-	var pose := held_lit if lit else carry
-	if _t >= 0.0:
-		var k := _ease(_t / 0.35) * (1.0 - _ease((_t - (T_LIGHT - 0.3)) / 0.3))
-		pose = _blend(carry, lighting, k) if not lit else _blend(held_lit, lighting, k)
-	pose = _blend(pose, cocked, _ease(aim_t) * 0.92)
-	if _tt >= 0.0:
-		if _tt < T_WIND:
-			pose = _blend(pose, cocked, _ease(_tt / T_WIND))
-		elif _tt < T_WIND + T_WHIP:
-			var u := _ease((_tt - T_WIND) / T_WHIP)
-			pose = _blend(cocked, rel, u)
-			pose["palm"] = (pose["palm"] as Vector3) + up * sin(PI * u) * 0.08
-		else:
-			pose = _blend(rel, carry, _ease((_tt - T_WIND - T_WHIP) / T_FOLLOW))
-	var palm: Vector3 = pose["palm"]
-	var r_dict := {"pos": palm, "f": pose["f"], "p": pose["p"], "curl": pose["curl"], "w": _ease(equip_t)}
-	# --- main gauche : briquet pendant l'allumage
-	var l_dict: Variant = null
-	_lighter.visible = _t >= 0.0 and _t < T_LIGHT - 0.05
-	if _t >= 0.0 and _t < T_LIGHT:
-		var w := _ease(_t / 0.3) * (1.0 - _ease((_t - (T_LIGHT - 0.3)) / 0.3))
-		var thumb := fwd.cross(left).normalized()   # pouce de la main droite (vers le haut)
-		var grip := palm + left * 0.03
-		var tip := grip + thumb * 0.21
-		var lp := tip - right * 0.06 - up * 0.07 + fwd * 0.01
-		var rest_l := _chest(Vector3(0.28, 0.95, 0.12), cx)
-		lp = rest_l.lerp(lp, _ease((_t - 0.1) / 0.35))
-		l_dict = {"pos": lp, "f": fwd, "p": right, "curl": 0.85, "w": w}
-	# --- placement du journal, du briquet et des flammes (repère réel de la main)
-	var in_hand := (_tt < 0.0 or _tt < T_WIND + T_WHIP) and equip_t > 0.1
-	_paper.visible = in_hand and _fresh > 0.05
-	if _paper.visible:
-		var pr := human.palm("R")
-		var th: Vector3 = pr["thumb"]
-		var g: Vector3 = (pr["pos"] as Vector3) + (pr["p"] as Vector3) * 0.03
-		_paper.global_transform = Transform3D(Props.basis_up(th, fwd), g + th * 0.04)
-		var tipw := g + th * 0.25
-		_fire.global_position = tipw
-		_smoke.global_position = tipw + Vector3.UP * 0.12
-		_light.global_position = tipw + Vector3.UP * 0.1
-		_crackle.global_position = tipw
+	var yawb := Basis(Vector3.UP, human.rotation.y)
+	var fwd: Vector3 = yawb * Vector3(0, 0, -1)
+	var rgt: Vector3 = yawb * Vector3(1, 0, 0)
+	var up := Vector3.UP
+	var s := human.arm_length() / 0.58
+	var shR := human.shoulder_world("R")
+	var shL := human.shoulder_world("L")
+	var two := held != null and is_instance_valid(held) and held.kind in ["box", "plank"]
+	var plank := two and held.kind == "plank"
+	var news := held == null and _fresh > 0.4 and not _released
+	var hw := (0.27 if plank else 0.2) + 0.02
+	var palm_dir := -up if plank else rgt
+	# --- poses de repos
+	var rest_r := _hd(shR + fwd * 0.2 * s - up * 0.42 * s - rgt * 0.04 * s, fwd * 0.7 - up * 0.5, -rgt, 0.7)
+	var rest_l := _hd(shL + fwd * 0.27 * s - up * 0.33 * s + rgt * 0.05 * s, fwd, rgt, 0.9)
+	var c2 := (shR + shL) * 0.5 + fwd * 0.36 * s - up * 0.4 * s
+	var carry_r := _hd(c2 + rgt * hw, fwd, -palm_dir if not plank else palm_dir, 0.5)
+	var carry_l := _hd(c2 - rgt * hw, fwd, palm_dir, 0.5)
+	var R: Dictionary = carry_r if two else rest_r
+	var L: Dictionary = carry_l if two else rest_l
+	var want_lighter := false
+	if _aim_input and not busy and not two:
+		R = _hd(shR + fwd * 0.3 * s - up * 0.04 * s - rgt * 0.02 * s, fwd * 0.8 + up * 0.25, -rgt, 0.85)
+		want_lighter = true
+	var type: String = _ctx.get("type", "") if busy else ""
+	if busy and _pi >= 0 and _pi < _ph.size():
+		var name: String = _ph[_pi][0]
+		var dur: float = _ph[_pi][1]
+		var u := _ease(_pt / dur)
+		var dv: Vector3 = _ctx["dv"]
+		var tpos: Vector3 = _ctx["pos"]
+		var rest_rr: Dictionary = carry_r if two else rest_r
+		var rest_ll: Dictionary = carry_l if two else rest_l
+		match type:
+			"bin":
+				var bin: TrashBin = _ctx["node"]
+				var c := bin.top_center()
+				var ov := c - dv * 0.1 * s + up * (0.27 if not two else 0.32) * s
+				var over_l := _hd(ov, dv * 0.5 - up * 0.5 + fwd * 0.2, rgt, 0.85)
+				var over_2l := _hd(ov - rgt * hw, dv, palm_dir, 0.5)
+				var over_2r := _hd(ov + rgt * hw, dv, -palm_dir if not plank else palm_dir, 0.5)
+				var side_r := _hd(c - dv * 0.18 * s + rgt * 0.2 * s + up * 0.22 * s, dv * 0.9 - up * 0.1, -rgt, 0.85)
+				var inside_r := _hd(c + up * (-0.13 if not bin.burning else 0.05) * s, dv * 0.92 - up * 0.2, -rgt, 0.85)
+				var edge := c - dv * 0.37 + up * 0.04
+				var lid_r := _hd(edge, dv, up, 0.4)
+				var lid_up := _hd(edge + up * 0.3 * s + dv * 0.06, dv, up, 0.4)
+				var left_over: Dictionary = over_2l if two else over_l
+				match name:
+					"open":
+						R = _bl(_bl(rest_rr, lid_r, _ease(_pt / 0.4)), lid_up, _ease((_pt - 0.4) / 0.35))
+						if _pt > 0.55:
+							R = _bl(R, rest_rr, _ease((_pt - 0.55) / 0.25))
+					"raise":
+						L = _bl(rest_ll, left_over, u * 0.7)
+						R = _bl(rest_rr, over_2r if two else side_r, u * 0.7)
+					"reach":
+						L = _bl(rest_ll, left_over, 0.7 + 0.3 * u)
+						R = _bl(rest_rr, over_2r if two else side_r, 0.7 + 0.3 * u)
+						want_lighter = not two
+					"drop_hot":
+						var uu := _ease(_pt / 0.4)
+						L = _bl(rest_ll, left_over, uu)
+						if two:
+							R = _bl(rest_rr, over_2r, uu)
+						if _pt > 0.4:
+							L = _bl(_open_hand(left_over, _ease((_pt - 0.4) / 0.12)), rest_ll, _ease((_pt - 0.5) / 0.25))
+							if two:
+								R = _bl(_open_hand(over_2r, _ease((_pt - 0.4) / 0.12)), rest_rr, _ease((_pt - 0.5) / 0.25))
+					"drop":
+						L = _bl(_open_hand(left_over, _ease((_pt - 0.12) / 0.14)), rest_ll, _ease((_pt - 0.3) / 0.28))
+						if two:
+							R = _bl(_open_hand(over_2r, _ease((_pt - 0.12) / 0.14)), rest_rr, _ease((_pt - 0.3) / 0.28))
+						else:
+							R = _bl(side_r, inside_r, _ease((_pt - 0.12) / 0.4))
+							want_lighter = true
+					"light":
+						var wob := Vector3(sin(_pt * 17.0) * 0.004, sin(_pt * 11.0) * 0.004, 0)
+						R = _hd(inside_r["pos"] + wob, inside_r["f"], inside_r["p"], 0.85)
+						L = rest_ll
+						want_lighter = true
+					"retreat":
+						R = _bl(side_r if bin.burning else inside_r, rest_rr, u)
+						want_lighter = u < 0.5 and not two and not bin.burning
+			"fire":
+				var tp := tpos - dv * 0.6 * s + up * 0.68 * s
+				var f_l := _hd(tp, dv * 0.9 - up * 0.3, rgt, 0.85)
+				var f_2l := _hd(tp - rgt * hw, dv, palm_dir, 0.5)
+				var f_2r := _hd(tp + rgt * hw, dv, -palm_dir if not plank else palm_dir, 0.5)
+				var f_left: Dictionary = f_2l if two else f_l
+				match name:
+					"raise":
+						L = _bl(rest_l if not two else carry_l, f_left, u)
+						if two:
+							R = _bl(carry_r, f_2r, u)
+					"toss":
+						var ok := _ease((_pt - 0.22) / 0.14)
+						L = _bl(_open_hand(f_left, ok), rest_l if not two else carry_l, _ease((_pt - 0.45) / 0.25))
+						if two:
+							R = _bl(_open_hand(f_2r, ok), carry_r, _ease((_pt - 0.45) / 0.25))
+					"retreat":
+						L = rest_l if not two else carry_l
+			"ground", "light", "pick":
+				var g := tpos
+				var top := float(_ctx.get("top", 0.1))
+				var item_at := g + up * top
+				var hov_l := _hd(g + up * (top + 0.28) * s - dv * 0.05, dv * 0.6 - up * 0.7, rgt, 0.85)
+				var low_l := _hd(g + up * (top + 0.07) * s - rgt * 0.02, dv * 0.5 - up * 0.8, rgt, 0.85)
+				var hov_2l := _hd(g + up * (top + 0.3) * s - rgt * hw, dv, palm_dir, 0.5)
+				var hov_2r := _hd(g + up * (top + 0.3) * s + rgt * hw, dv, -palm_dir if not plank else palm_dir, 0.5)
+				var low_2l := _hd(g + up * (top + 0.04) * s - rgt * hw, dv, palm_dir, 0.5)
+				var low_2r := _hd(g + up * (top + 0.04) * s + rgt * hw, dv, -palm_dir if not plank else palm_dir, 0.5)
+				var hov_r := _hd(g + up * (top + 0.2) * s + rgt * 0.22 * s - dv * 0.05, dv * 0.9 - up * 0.3, -rgt, 0.85)
+				var at_r := _hd(item_at - up * 0.07 + rgt * 0.045 - dv * 0.03, dv * 0.9 - up * 0.25, -rgt, 0.85)
+				var up_r := _hd(g + up * 0.28 * s, dv * 0.5 - up * 0.8, -up * 0.2 - rgt * 0.8, 0.4)
+				var grab_r := _hd(g + up * 0.06 * s, dv * 0.5 - up * 0.8, -up * 0.2 - rgt * 0.8, 0.55)
+				var knee_l := _hd(shL + fwd * 0.12 * s - up * 0.55 * s, fwd * 0.4 - up * 0.8, rgt, 0.6)
+				match name:
+					"crouch":
+						if type == "pick":
+							R = _bl(rest_r, up_r, u)
+						elif type == "ground":
+							if two:
+								L = _bl(carry_l, hov_2l, u)
+								R = _bl(carry_r, hov_2r, u)
+							else:
+								L = _bl(rest_l, hov_l, u) if news or held != null else _bl(rest_l, knee_l, u)
+								R = _bl(rest_r, hov_r, u)
+								want_lighter = true
+						else:
+							L = _bl(rest_l, knee_l, u)
+							R = _bl(rest_r, hov_r, u)
+							want_lighter = true
+					"grab":
+						R = _bl(up_r, grab_r, _ease(_pt / 0.22))
+						R["curl"] = lerpf(0.4, 0.95, _ease((_pt - 0.12) / 0.15))
+					"place":
+						if two:
+							var k := _ease(_pt / 0.28)
+							L = _bl(_open_hand(hov_2l, 0.0), low_2l, k)
+							R = _bl(hov_2r, low_2r, k)
+							if _pt > 0.3:
+								var o := _ease((_pt - 0.3) / 0.25)
+								L = _bl(_open_hand(low_2l, 1.0), rest_l, o)
+								R = _bl(_open_hand(low_2r, 1.0), rest_r, o)
+						else:
+							var pl := _bl(hov_l, low_l, _ease(_pt / 0.3))
+							if _pt < 0.3:
+								L = pl
+							else:
+								L = _bl(_open_hand(low_l, 1.0), knee_l, _ease((_pt - 0.4) / 0.15))
+							R = hov_r
+							want_lighter = true
+					"light":
+						R = _bl(hov_r, at_r, _ease(_pt / 0.4))
+						L = knee_l
+						want_lighter = true
+					"stand":
+						var back_r: Dictionary = rest_rr
+						R = _bl(grab_r if type == "pick" else at_r, back_r, u)
+						L = _bl(knee_l, rest_ll, u)
+						want_lighter = u < 0.4 and type != "pick"
+	_place_props(want_lighter, fwd, up, two)
+	R["w"] = _ease(equip_t) * _rw
+	L["w"] = _ease(equip_t) * _lw
+	return [R if _rw > 0.001 else null, L if _lw > 0.001 else null]
+
+
+func _place_props(want_lighter: bool, fwd: Vector3, up: Vector3, two: bool) -> void:
+	var vis := equip_t > 0.15
+	_lighter.visible = vis and want_lighter
 	if _lighter.visible:
+		var pr := human.palm("R")
+		_lighter.global_position = (pr["pos"] as Vector3) + (pr["p"] as Vector3) * 0.04
+		_lighter.global_basis = Basis(Quaternion(Vector3.UP, pr["thumb"] as Vector3))
+	_paper.visible = vis and held == null and _fresh > 0.4 and not _released
+	if _paper.visible:
 		var pl := human.palm("L")
-		_lighter.global_position = (pl["pos"] as Vector3) + (pl["p"] as Vector3) * 0.04
-		_lighter.global_basis = Basis(Quaternion(Vector3.UP, (pl["thumb"] as Vector3)))
-	if aim_t > 0.5 and _tt < 0.0 and lit:
-		_preview.exclude = [exclude_rid]
-		var o := palm + up * 0.05
-		_preview.show_arc(o, _solve(o, tgt[0]))
-	else:
-		_preview.hide_all()
-	return [r_dict, l_dict]
-
-
-func _release() -> void:
-	var cx := human.chest_xf()
-	var up := (cx.basis * Vector3(0, 1, 0)).normalized()
-	var sh := human.shoulder_world("R")
-	var tgt: Array = _target()
-	var origin := sh + _solve(sh + up * 0.1, tgt[0]).normalized() * 0.5 + up * 0.04
-	var v := _solve(origin, tgt[0]) * _rng.randf_range(0.985, 1.015)
-	var b := Burnable.make("paper")
-	get_tree().current_scene.add_child(b)
-	if human.get_parent() is PhysicsBody3D:
-		b.add_collision_exception_with(human.get_parent())
-	b.global_position = origin
-	b.linear_velocity = v
-	b.angular_velocity = Vector3(_rng.randf_range(-8, 8), _rng.randf_range(-8, 8), _rng.randf_range(-8, 8))
-	b.ignite()
-	b.burn = clampf(_burn / BURN_MAX * 0.5, 0.0, 0.4)
-	AudioLib.play_at(self, "sfx:throw", origin, -6.0, 5.0)
-	lit = false
-	_fire.emitting = false
-	_smoke.emitting = false
-	_crackle.stop()
-	_paper.visible = false
-	_preview.hide_all()
-	thrown.emit()
+		var th: Vector3 = pl["thumb"]
+		var g: Vector3 = (pl["pos"] as Vector3) + (pl["p"] as Vector3) * 0.03
+		_paper.global_transform = Transform3D(Props.basis_up(th, fwd), g + th * 0.04)
+	if held != null and is_instance_valid(held):
+		held.visible = vis
+		if two:
+			var pr2 := human.palm("R")
+			var pl2 := human.palm("L")
+			var mid := ((pr2["pos"] as Vector3) + (pl2["pos"] as Vector3)) * 0.5 + up * 0.03
+			held.global_transform = Transform3D(Basis(Vector3.UP, human.rotation.y), mid)
+		else:
+			var pl3 := human.palm("L")
+			var th2: Vector3 = pl3["thumb"]
+			held.global_transform = Transform3D(Basis(Vector3.UP, human.rotation.y), (pl3["pos"] as Vector3) + (pl3["p"] as Vector3) * 0.05 + th2 * 0.03)

@@ -40,6 +40,22 @@ var shake := 0.0         # « non » de la tête
 var lean_extra := 0.0    # inclinaison du buste (+ en avant)
 var idle_sway := 1.0     # transfert de poids au repos
 var step_in_place := 0.0 # > 0.5 : petits pas sur place (demi-tour sans avancer)
+# --- postures supplémentaires (PNJ, policiers, joueur arrêté)
+var sit := 0.0           # assis par terre, genoux relevés
+var kneel := 0.0         # à genoux
+var fall := 0.0          # 0 debout -> 1 allongé
+var fall_dir := 0.0      # sens de la chute : 0 = en arrière, PI = en avant, ±PI/2 = sur les côtés
+var hunch := 0.0         # dos voûté, tête en avant (toux, coup reçu)
+var side_lean := 0.0     # buste penché sur le côté (+ = vers la droite du personnage)
+var eye_open := 1.0      # 1 normal, < 1 yeux plissés, 0 fermés
+var breath_amp := 0.0    # essoufflement (0 calme -> 1 haletant)
+var lod := 0             # 0 complet, 1 sans yeux ni mâchoire, 2 sans bras IK
+var _fall_on := false
+var _fc := {}            # cache de la courbure des doigts
+var _finger_idx := {}
+var _finger_axis := {}
+var _leg_len := 0.9
+var _i := {}             # indices d'os fréquents
 var sway_seed := 0.0
 var _ly := 0.0
 var _lp := 0.0
@@ -240,6 +256,10 @@ func _cache_bones() -> void:
 		var n := skeleton.get_bone_name(i)
 		bone[n] = i
 		rest[n] = skeleton.get_bone_global_rest(i).origin
+	_leg_len = (rest["lowerleg01_L"] - rest["upperleg01_L"]).length() + (rest["foot_L"] - rest["lowerleg01_L"]).length()
+	for nm in ["spine05", "spine04", "spine03", "spine02", "spine01", "neck01", "neck02", "neck03", "head", "jaw", "root"]:
+		if bone.has(nm):
+			_i[nm] = bone[nm]
 	var f := FileAccess.open(DIR + "rig_" + variant + ".json", FileAccess.READ)
 	var info: Dictionary = JSON.parse_string(f.get_as_text())
 	for side: String in ["L", "R"]:
@@ -250,6 +270,16 @@ func _cache_bones() -> void:
 			pp = Vector3(-info["palm_n_L"][0], info["palm_n_L"][1], info["palm_n_L"][2])
 		hand_f[side] = ff.normalized()
 		palm_n[side] = (pp * PALM_SIGN).normalized()
+		_finger_axis[side] = hand_f[side].cross(palm_n[side]).normalized()
+		var lists: Array = []
+		for fi in range(1, 6):
+			var ids: Array[int] = []
+			for seg in range(1, 4):
+				var nm := "finger%d-%d_%s" % [fi, seg, side]
+				if bone.has(nm):
+					ids.append(bone[nm])
+			lists.append(ids)
+		_finger_idx[side] = lists
 
 
 func chest_xf() -> Transform3D:
@@ -286,6 +316,11 @@ func palm(side: String) -> Dictionary:
 	# repère monde direct : main droite -> pouce = f x p ; main gauche -> p x f
 	var thumb := f.cross(p) if side == "R" else p.cross(f)
 	return {"pos": w + f * PALM_TO_WRIST + p * 0.012, "f": f, "p": p, "thumb": thumb.normalized()}
+
+
+## Échelle du corps par rapport à la morphologie de référence (1,80 m)
+func hscale() -> float:
+	return float(rest["head"].y) / 1.6767
 
 
 ## Longueur bras + avant-bras (pour adapter les poses à la morphologie)
@@ -356,18 +391,19 @@ func _solve_limb(upper: String, lower: String, end: String, target: Vector3, pol
 
 
 func _curl_fingers(side: String, amount: float, thumb := 0.4, index_ext := 0.0) -> void:
-	var axis: Vector3 = hand_f[side].cross(palm_n[side]).normalized()
-	for fi in range(1, 6):
-		var k := thumb if fi == 1 else 1.0
-		if fi == 2:
+	var key := Vector3(amount, thumb, index_ext)
+	if _fc.has(side) and (_fc[side] as Vector3).distance_squared_to(key) < 0.000004:
+		return
+	_fc[side] = key
+	var axis: Vector3 = _finger_axis[side]
+	var lists: Array = _finger_idx[side]
+	for fi in 5:
+		var k := thumb if fi == 0 else 1.0
+		if fi == 1:
 			k *= 1.0 - index_ext
-		var spread := 0.0
-		for seg in range(1, 4):
-			var nm := "finger%d-%d_%s" % [fi, seg, side]
-			if not bone.has(nm):
-				continue
-			var ang := amount * k * (0.9 if seg == 1 else 1.0)
-			_local(nm, Quaternion(axis, ang))
+		var ids: Array = lists[fi]
+		for sg in ids.size():
+			skeleton.set_bone_pose_rotation(ids[sg], Quaternion(axis, amount * k * (0.9 if sg == 0 else 1.0)))
 
 
 # ------------------------------------------------------------------ animation
@@ -395,7 +431,6 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 	var stride := speed * beta * period * lerpf(1.0, 0.86, run_t) # amplitude avant/arrière du pied (m)
 	var off := lerpf(0.5, 0.34, run_t)          # l'appui se pose moins loin devant le bassin en courant
 	var w := _walk_w
-	var breath := sin(t_idle * 1.6) * 0.5 + 0.5
 	var ku := -1.0
 	var kk := 0.0        # intensité globale (cloche)
 	var k_ant := 0.0     # préparation : transfert de poids
@@ -424,6 +459,10 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 	var kfx := k_ant * (1.0 - k_rec)  # poids transféré sur la jambe d'appui, jusqu'au retour
 
 	# --- bassin / colonne
+	var sit_e := sit * sit * (3.0 - 2.0 * sit)
+	var kneel_e := kneel * kneel * (3.0 - 2.0 * kneel)
+	var fall_e := fall * fall * (3.0 - 2.0 * fall)
+	var lscale := _leg_len / 0.9
 	var dy := -(0.02 + 0.05 * run_t) * w
 	# marche : le bassin est le plus haut en milieu d'appui ; course : le plus bas (rebond)
 	var bob := cos(4.0 * PI * (phase - beta * 0.5))
@@ -431,24 +470,24 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 	dy -= 0.1 * air + 0.03 * kfx + 0.02 * k_cham * (1.0 - k_rec)
 	var root_rest: Vector3 = skeleton.get_bone_rest(bone["root"]).origin
 	# coup de pied : le bassin se décale sur la jambe gauche (+x) puis lance la hanche vers l'avant
-	var shift := 0.05 * kfx + sin(t_idle * 0.31 + sway_seed) * 0.022 * (1.0 - w) * idle_sway * (1.0 - crouch)
+	var shift := 0.05 * kfx + sin(t_idle * 0.31 + sway_seed) * 0.022 * (1.0 - w) * idle_sway * (1.0 - crouch) * (1.0 - sit_e) * (1.0 - kneel_e)
 	dy += hop - 0.42 * crouch
-	var lunge := 0.07 * k_str * (1.0 - k_rec)
-	skeleton.set_bone_pose_position(bone["root"], root_rest + Vector3(shift, dy, lunge))
+	dy -= (root_rest.y - 0.14 * lscale) * sit_e + root_rest.y * 0.47 * kneel_e
+	var lunge := 0.07 * k_str * (1.0 - k_rec) - 0.06 * sit_e
+	skeleton.set_bone_pose_position(_i["root"], root_rest + Vector3(shift, dy, lunge))
 	var kyaw := lerpf(-0.18 * k_cham, 0.32, k_str) * (1.0 - k_rec) if kick_t >= 0.0 else 0.0
 	var yaw := sin(TAU * phase) * 0.11 * w + kyaw + twist
 	var roll := cos(TAU * phase) * 0.035 * w
 	_lean = lerpf(_lean, (0.03 + 0.24 * run_t) * w + 0.05 * clampf(-vy * 0.15, 0.0, 1.0) * air, minf(1.0, delta * 6.0))
-	skeleton.set_bone_pose_rotation(bone["root"], Quaternion(Vector3.UP, yaw) * Quaternion(Vector3.BACK, roll))
-	var spine := ["spine05", "spine04", "spine03", "spine02", "spine01"]
-	for i in spine.size():
-		var share := 1.0 / spine.size()
-		var rx := _lean * share + kick * 0.05 + (breath - 0.5) * 0.004 - 0.06 * k_cham * (1.0 - k_rec) - 0.06 * k_str * (1.0 - k_rec) + (0.55 * crouch + lean_extra) * share
+	skeleton.set_bone_pose_rotation(_i["root"], Quaternion(Vector3.UP, yaw) * Quaternion(Vector3.BACK, roll))
+	var breath := sin(t_idle * (1.6 + 4.0 * breath_amp)) * 0.5 + 0.5
+	var spine_ids := ["spine05", "spine04", "spine03", "spine02", "spine01"]
+	for i in 5:
+		var share := 0.2
+		var rx := _lean * share + kick * 0.05 + (breath - 0.5) * (0.004 + 0.022 * breath_amp) - 0.06 * k_cham * (1.0 - k_rec) - 0.06 * k_str * (1.0 - k_rec) + (0.55 * crouch + lean_extra + 0.7 * hunch + 0.18 * sit_e) * share
 		var ry := -yaw * 1.5 * share
-		var rz := -roll * 1.2 * share
-		if i == 0:
-			rx -= 0.0
-		_local(spine[i], Quaternion(Vector3.UP, ry) * Quaternion(Vector3.RIGHT, rx) * Quaternion(Vector3.BACK, rz))
+		var rz := -roll * 1.2 * share + side_lean * 0.9 * share
+		skeleton.set_bone_pose_rotation(_i[spine_ids[i]], Quaternion(Vector3.UP, ry) * Quaternion(Vector3.RIGHT, rx) * Quaternion(Vector3.BACK, rz))
 	var hp := clampf(-look_pitch * 0.55, -0.9, 0.7)
 	var ty := 0.0
 	var tp := hp
@@ -463,27 +502,29 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 	_lp = lerpf(_lp, tp, minf(1.0, delta * 5.0))
 	var nod_a := sin(t_idle * 8.5) * 0.13 * nod
 	var shake_a := sin(t_idle * 7.5) * 0.3 * shake
-	var crouch_comp := -0.4 * crouch - lean_extra * 0.5  # garde le regard vers l'avant quand on se penche
+	var crouch_comp := -0.4 * crouch - lean_extra * 0.5 - 0.5 * hunch  # garde le regard vers l'avant quand on se penche
+	var nq := Quaternion(Vector3.UP, _ly * 0.16) * Quaternion(Vector3.RIGHT, _lp * 0.18 - _lean * 0.12 + crouch_comp * 0.2 + 0.25 * hunch) * Quaternion(Vector3.BACK, -side_lean * 0.12)
 	for nm in ["neck01", "neck02", "neck03"]:
-		_local(nm, Quaternion(Vector3.UP, _ly * 0.16) * Quaternion(Vector3.RIGHT, _lp * 0.18 - _lean * 0.12 + crouch_comp * 0.2))
-	_local("head", Quaternion(Vector3.UP, _ly * 0.4 + shake_a) * Quaternion(Vector3.RIGHT, _lp * 0.46 - _lean * 0.1 + nod_a + crouch_comp * 0.3))
-	if bone.has("jaw"):
-		_local("jaw", Quaternion(Vector3.RIGHT, 0.3 * clampf(jaw, 0.0, 1.0)))
-	# yeux : suivent un peu la cible ; clignements
-	for sd: String in ["L", "R"]:
-		if bone.has("eye_" + sd):
-			_local("eye_" + sd, Quaternion(Vector3.UP, clampf(ty - _ly, -0.3, 0.3) * 0.8) * Quaternion(Vector3.RIGHT, clampf(tp - _lp, -0.2, 0.2) * 0.8))
-	_next_blink -= delta
-	if _next_blink <= 0.0:
-		_blink = 1.0
-		_next_blink = randf_range(2.0, 6.0)
-	_blink = move_toward(_blink, 0.0, delta * 7.0)
-	var lid := sin(PI * _blink)
-	for sd: String in ["L", "R"]:
-		if bone.has("orbicularis03_" + sd):
-			_local("orbicularis03_" + sd, Quaternion(Vector3.RIGHT, 0.55 * lid))
-		if bone.has("orbicularis04_" + sd):
-			_local("orbicularis04_" + sd, Quaternion(Vector3.RIGHT, -0.18 * lid))
+		skeleton.set_bone_pose_rotation(_i[nm], nq)
+	skeleton.set_bone_pose_rotation(_i["head"], Quaternion(Vector3.UP, _ly * 0.4 + shake_a) * Quaternion(Vector3.RIGHT, _lp * 0.46 - _lean * 0.1 + nod_a + crouch_comp * 0.3) * Quaternion(Vector3.BACK, -side_lean * 0.2))
+	if lod == 0:
+		if _i.has("jaw"):
+			skeleton.set_bone_pose_rotation(_i["jaw"], Quaternion(Vector3.RIGHT, 0.3 * clampf(jaw, 0.0, 1.0)))
+		# yeux : suivent un peu la cible ; clignements
+		for sd: String in ["L", "R"]:
+			if bone.has("eye_" + sd):
+				_local("eye_" + sd, Quaternion(Vector3.UP, clampf(ty - _ly, -0.3, 0.3) * 0.8) * Quaternion(Vector3.RIGHT, clampf(tp - _lp, -0.2, 0.2) * 0.8))
+		_next_blink -= delta
+		if _next_blink <= 0.0:
+			_blink = 1.0
+			_next_blink = randf_range(2.0, 6.0)
+		_blink = move_toward(_blink, 0.0, delta * 7.0)
+		var lid := clampf(sin(PI * _blink) + (1.0 - eye_open), 0.0, 1.2)
+		for sd: String in ["L", "R"]:
+			if bone.has("orbicularis03_" + sd):
+				_local("orbicularis03_" + sd, Quaternion(Vector3.RIGHT, 0.55 * lid))
+			if bone.has("orbicularis04_" + sd):
+				_local("orbicularis04_" + sd, Quaternion(Vector3.RIGHT, -0.18 * lid))
 
 	# --- jambes (IK) : appui plat, balancier en arc
 	for side: String in ["L", "R"]:
@@ -530,6 +571,18 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 		target += Vector3(0, 0.22 * air, (0.12 if is_l else -0.06) * air)
 		var hip_n := "upperleg01_" + side
 		var pole := Vector3(0.12 if is_l else -0.12, 0.0, 1.0)
+		var sgx := 1.0 if is_l else -1.0
+		if sit_e > 0.001:     # assis, genoux relevés, pieds à plat devant
+			var st := foot_rest + Vector3(0.05 * sgx, 0.0, 0.52 * lscale)
+			target = target.lerp(st, sit_e)
+			fpitch = lerpf(fpitch, 0.0, sit_e)
+			pole = pole.lerp(Vector3(0.1 * sgx, 1.0, 0.2), sit_e)
+		if kneel_e > 0.001:   # à genoux : tibias au sol derrière
+			var kt := foot_rest + Vector3(0.02 * sgx, 0.07, -0.42 * lscale)
+			target = target.lerp(kt, kneel_e)
+			fpitch = lerpf(fpitch, -1.25, kneel_e)
+		if fall_e > 0.001:    # allongé : jambes molles, un peu écartées
+			target = target.lerp(foot_rest + Vector3(0.05 * sgx, 0.03, -0.05 * lscale), fall_e * 0.8)
 		# empreintes de pas
 		if moving and grounded and w > 0.5 and ph < float(_prev_ph[side]) - 0.5:
 			footstep.emit(speed)
@@ -545,6 +598,7 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 	if hand_provider.is_valid():
 		targets = hand_provider.call()
 	var swing := lerpf(0.5, 1.0, run_t) * w
+	var hunch_arm := 0.12 * hunch
 	for idx in 2:
 		var side := "R" if idx == 0 else "L"
 		var is_l := side == "L"
@@ -556,15 +610,15 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 		var ph := fposmod(phase + (0.5 if is_l else 0.0), 1.0)
 		var sw := -sin(TAU * ph) * swing
 		sw += (0.75 if not is_l else -0.55) * kfx * (1.0 - 0.3 * k_str)
-		var adduct := 0.5 + 0.05 * breath * (1.0 - w) - 0.35 * air - 0.28 * kk
-		_local(cl, Quaternion.IDENTITY)
+		var adduct := 0.5 + 0.05 * breath * (1.0 - w) - 0.35 * air - 0.28 * kk - 0.22 * fall_e + 0.1 * hunch
+		_local(cl, Quaternion(Vector3.UP, sgn * hunch_arm) if hunch > 0.01 else Quaternion.IDENTITY)
 		_local(up, Quaternion(Vector3.BACK, -sgn * adduct) * Quaternion(Vector3.RIGHT, sw - 0.5 * air))
 		var flex := 0.14 - (0.1 * w + 1.35 * run_t * w) - 0.4 * air
 		_local(lo, Quaternion(Vector3.RIGHT, flex))
 		_local(wr, Quaternion.IDENTITY)
 		var fk_curl := 0.35 + 0.6 * run_t * w
 		_curl_fingers(side, fk_curl)
-		if targets[idx] == null:
+		if targets[idx] == null or lod >= 2:
 			continue
 		var tg: Dictionary = targets[idx]
 		var wt: float = tg.get("w", 1.0)
@@ -590,6 +644,22 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 				var ik_q := skeleton.get_bone_pose_rotation(bone[ids[i]])
 				skeleton.set_bone_pose_rotation(bone[ids[i]], fk_q[i].slerp(ik_q, wt))
 		_curl_fingers(side, lerpf(fk_curl, tg.get("curl", 0.9), wt), 0.4, tg.get("index", 0.0) * wt)
+	if fall > 0.002 or _fall_on:
+		_fall_on = fall > 0.002
+		_apply_fall()
+
+
+## Bascule du corps entier (chute, K.O.) : rotation autour du bassin qui descend vers le sol.
+func _apply_fall() -> void:
+	var e := fall * fall * (3.0 - 2.0 * fall)
+	var th := e * PI * 0.5
+	var d := Vector3(sin(fall_dir), 0.0, cos(fall_dir))
+	var axis := Vector3(d.z, 0.0, -d.x)
+	var h0: float = rest["root"].y
+	var hh := lerpf(h0, 0.16, e)
+	var slide := d * (0.55 * h0 * e)
+	var xf := Transform3D(Basis(axis, th), Vector3(slide.x, hh, slide.z)) * Transform3D(Basis.IDENTITY, Vector3(0, -h0, 0)) * Transform3D(Basis(Vector3.UP, PI), Vector3.ZERO)
+	model.transform = xf
 
 
 func _frame(f: Vector3, p: Vector3) -> Basis:

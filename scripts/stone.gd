@@ -95,9 +95,8 @@ func _physics_process(delta: float) -> void:
 
 func _on_body(body: Node) -> void:
 	var speed := _prev_vel.length()
-	if body.has_meta("bus"):
-		var bus: BusStop = body.get_meta("bus")
-		bus.stone_hit(body.get_meta("pane_index"), global_position, speed, _prev_vel.normalized())
+	if body.has_meta("glass"):
+		(body.get_meta("glass") as GlassPane).stone_hit(global_position, speed, _prev_vel.normalized())
 		return
 	if body is Npc and speed > 3.0 and _age < 3.0:
 		(body as Npc).on_stone_hit(_prev_vel)

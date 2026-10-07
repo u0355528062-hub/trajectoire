@@ -12,6 +12,12 @@ const VARIANTS := ["male_a", "male_b", "male_c", "male_d", "male_e", "female_a",
 const CHANTS := ["chant_lacherien", "chant_ensemble", "chant_rue", "chant_onestla"]
 
 var npcs: Array[Npc] = []
+var actors: Array[Actor] = []          # civils + policiers
+var nav := NavGrid.new()
+var obstacles: Array[Dictionary] = []
+var _obs: Array[Dictionary] = []
+var _hash := {}
+var _nav_dirty := true
 var player: Player
 var bus: BusStop
 var excitement := 0.3
@@ -53,6 +59,8 @@ var _banner_r: Npc
 # --- discussions
 var _chats: Array = []
 var _rings := {}
+var fire_srcs: Array = []          # poubelles et feux au sol (cache par image)
+var _arson_cd := 140.0
 var _later: Array = []
 var _sound_cd := {}
 var _rng := RandomNumberGenerator.new()
@@ -71,10 +79,17 @@ func _ready() -> void:
 	add_to_group("crowd")
 	_rng.seed = 4242
 	_build_route()
-	_static_circles = [
+	var circles := [
 		[Vector3(-4.8, 0, -11.3), 0.35], [Vector3(3.4, 0, -11.6), 0.25], [Vector3(-3.4, 0, -11.6), 0.25],
 		[Vector3(3.55, 0, -13.3), 0.55], [Vector3(2.55, 0, -12.45), 0.35], [Vector3(-2.75, 0, -12.0), 0.22],
 	]
+	for c in circles:
+		var m := Marker3D.new()
+		add_child(m)
+		m.global_position = c[0]
+		add_obstacle(m, Vector2(c[1], 0.0), Vector2.ZERO, true)
+	if bus:
+		add_obstacle(bus, Vector2(2.15, 1.05))
 	_spawn_all()
 	_build_audio()
 	_banner = Banner.new()
@@ -286,6 +301,7 @@ func _spawn_all() -> void:
 		n.position = Vector3(pos.x, ground_y(pos), pos.z)
 		add_child(n)
 		npcs.append(n)
+		actors.append(n)
 
 
 func _build_audio() -> void:
@@ -322,15 +338,23 @@ func _physics_process(delta: float) -> void:
 	_cheer_cd = maxf(_cheer_cd - delta, 0.0)
 	excitement = move_toward(excitement, 0.3, delta * 0.006)
 	_run_later()
+	fire_srcs = get_tree().get_nodes_in_group("fire_sources")
+	_cache_obstacles()
+	_rebuild_hash()
+	if _nav_dirty:
+		rebuild_nav()
+	_update_arson(delta)
 	_update_cortege(delta)
 	_update_chats(delta)
 	_update_rally(delta)
 	_update_bumps()
 	var cam := get_viewport().get_camera_3d()
 	var cp := cam.global_position if cam else Vector3.ZERO
-	for n in npcs:
+	for n in actors:
 		var d := n.global_position.distance_to(cp)
 		var every := 1 if d < 22.0 else (2 if d < 45.0 else 3)
+		var has_prop: bool = (n is Npc and (n as Npc).prop != "") or (n is Cop)
+		n.human.lod = 0 if d < 40.0 else (1 if (d < 70.0 or has_prop) else 2)
 		n.tick(delta, every)
 	if _banner_l and _banner_r and _banner_l.pole_node and _banner_r.pole_node:
 		var a := _banner_r.pole_node.global_transform * Vector3(0, 1.4, 0)
@@ -574,74 +598,94 @@ func clamp_area(p: Vector3) -> Vector3:
 	return p
 
 
-## Chemin autour de l'abribus (seul gros obstacle) : 0, 1 ou 2 coins
-func plan(from: Vector3, to: Vector3) -> Array[Vector3]:
-	var out: Array[Vector3] = []
-	if bus == null:
-		out.append(to)
-		return out
-	var a := _to2(bus.to_local(from))
-	var b := _to2(bus.to_local(to))
-	var h := Vector2(2.35, 1.25)
-	if not _seg_hits_rect(a, b, h * 0.98):
-		out.append(to)
-		return out
-	var corners := [Vector2(-h.x, -h.y), Vector2(h.x, -h.y), Vector2(h.x, h.y), Vector2(-h.x, h.y)]
-	var best: Array = []
-	var best_len := INF
-	for i in 4:
-		var c: Vector2 = corners[i] * 1.06
-		if not _seg_hits_rect(a, c, h * 0.98) and not _seg_hits_rect(c, b, h * 0.98):
-			var L := a.distance_to(c) + c.distance_to(b)
-			if L < best_len:
-				best_len = L
-				best = [c]
-		for j in [(i + 1) % 4, (i + 3) % 4]:
-			var c2: Vector2 = corners[j] * 1.06
-			if not _seg_hits_rect(a, c, h * 0.98) and not _seg_hits_rect(c2, b, h * 0.98):
-				var L2 := a.distance_to(c) + c.distance_to(c2) + c2.distance_to(b)
-				if L2 < best_len:
-					best_len = L2
-					best = [c, c2]
-	for c in best:
-		var v: Vector2 = c
-		out.append(bus.to_global(Vector3(v.x, 0, v.y)))
-	out.append(to)
+## Enregistre un obstacle qui suit son nœud : boîte (demi-dimensions locales x/z) ou cercle.
+func add_obstacle(node: Node3D, half: Vector2, offset := Vector2.ZERO, circle := false, in_nav := true) -> void:
+	obstacles.append({"node": node, "half": half, "off": offset, "circle": circle, "nav": in_nav})
+	_nav_dirty = true
+
+
+func remove_obstacle(node: Node3D) -> void:
+	for i in range(obstacles.size() - 1, -1, -1):
+		if obstacles[i]["node"] == node:
+			obstacles.remove_at(i)
+	_nav_dirty = true
+
+
+func mark_nav_dirty() -> void:
+	_nav_dirty = true
+
+
+func rebuild_nav() -> void:
+	nav.clear()
+	for o in obstacles:
+		var node: Node3D = o["node"]
+		if not o["nav"] or not is_instance_valid(node):
+			continue
+		var xf := node.global_transform
+		var off: Vector2 = o["off"]
+		var c := xf * Vector3(off.x, 0, off.y)
+		if o["circle"]:
+			nav.block_circle(c, (o["half"] as Vector2).x)
+		else:
+			nav.block_box(c, o["half"], node.global_rotation.y)
+	_nav_dirty = false
+
+
+func _cache_obstacles() -> void:
+	_obs.clear()
+	for o in obstacles:
+		var node: Node3D = o["node"]
+		if not is_instance_valid(node):
+			continue
+		var xf := node.global_transform
+		var off: Vector2 = o["off"]
+		_obs.append({"c": xf * Vector3(off.x, 0, off.y), "inv": Basis(Vector3.UP, node.global_rotation.y).inverse(),
+			"h": o["half"], "circle": o["circle"]})
+	for n in get_tree().get_nodes_in_group("dyn_obstacles"):
+		var info: Array = n.obstacle_box()
+		if info.size() == 3:
+			_obs.append({"c": info[0], "inv": Basis(Vector3.UP, float(info[2])).inverse(), "h": info[1], "circle": false})
+
+
+func _rebuild_hash() -> void:
+	_hash.clear()
+	for a in actors:
+		var key := Vector2i(floori(a.global_position.x / 1.5), floori(a.global_position.z / 1.5))
+		if _hash.has(key):
+			(_hash[key] as Array).append(a)
+		else:
+			_hash[key] = [a]
+
+
+## Acteurs (civils et policiers) à moins de `r` de `p` (plan horizontal)
+func neighbors(p: Vector3, r: float) -> Array[Actor]:
+	var out: Array[Actor] = []
+	var k0 := Vector2i(floori((p.x - r) / 1.5), floori((p.z - r) / 1.5))
+	var k1 := Vector2i(floori((p.x + r) / 1.5), floori((p.z + r) / 1.5))
+	var r2 := r * r
+	for x in range(k0.x, k1.x + 1):
+		for y in range(k0.y, k1.y + 1):
+			var lst: Variant = _hash.get(Vector2i(x, y))
+			if lst == null:
+				continue
+			for a: Actor in lst:
+				var d := a.global_position - p
+				if d.x * d.x + d.z * d.z <= r2:
+					out.append(a)
 	return out
 
 
-func _to2(v: Vector3) -> Vector2:
-	return Vector2(v.x, v.z)
+## Chemin lissé (A*) évitant les obstacles fixes.
+func plan(from: Vector3, to: Vector3) -> Array[Vector3]:
+	if _nav_dirty:
+		rebuild_nav()
+	return nav.path(from, to)
 
 
-func _seg_hits_rect(a: Vector2, b: Vector2, h: Vector2) -> bool:
-	# Liang-Barsky
-	var d := b - a
-	var t0 := 0.0
-	var t1 := 1.0
-	var p := [-d.x, d.x, -d.y, d.y]
-	var q := [a.x + h.x, h.x - a.x, a.y + h.y, h.y - a.y]
-	for i in 4:
-		var pi_: float = p[i]
-		var qi: float = q[i]
-		if absf(pi_) < 1e-9:
-			if qi < 0.0:
-				return false
-		else:
-			var t := qi / pi_
-			if pi_ < 0.0:
-				t0 = maxf(t0, t)
-			else:
-				t1 = minf(t1, t)
-			if t0 > t1:
-				return false
-	return true
-
-
-func separation(n: Npc) -> Vector3:
+func separation(n: Actor) -> Vector3:
 	var p := n.global_position
 	var acc := Vector3.ZERO
-	for o in npcs:
+	for o in neighbors(p, 0.9):
 		if o == n:
 			continue
 		var d := Vector3(p.x - o.global_position.x, 0, p.z - o.global_position.z)
@@ -660,28 +704,42 @@ func separation(n: Npc) -> Vector3:
 	return acc
 
 
-func resolve(n: Npc, p: Vector3) -> Vector3:
-	# abribus
-	if bus:
-		var l := bus.to_local(p)
-		var hx := 2.15
-		var hz := 1.05
+func resolve(n: Actor, p: Vector3) -> Vector3:
+	var rad := 0.3
+	for o in _obs:
+		var c: Vector3 = o["c"]
+		var h: Vector2 = o["h"]
+		if o["circle"]:
+			p = _push_circle(p, c, h.x + rad)
+			continue
+		var l: Vector3 = (o["inv"] as Basis) * (p - c)
+		var hx := h.x + rad
+		var hz := h.y + rad
 		if absf(l.x) < hx and absf(l.z) < hz:
 			if hx - absf(l.x) < hz - absf(l.z):
-				l.x = signf(l.x if l.x != 0.0 else 1.0) * hx
+				l.x = (signf(l.x) if l.x != 0.0 else 1.0) * hx
 			else:
-				l.z = signf(l.z if l.z != 0.0 else 1.0) * hz
-			var g := bus.to_global(l)
-			p.x = g.x
-			p.z = g.z
+				l.z = (signf(l.z) if l.z != 0.0 else 1.0) * hz
+			var w: Vector3 = ((o["inv"] as Basis).inverse() * l) + c
+			p.x = w.x
+			p.z = w.z
 	for c in _static_circles:
 		p = _push_circle(p, c[0], c[1] + 0.25)
-	for b in get_tree().get_nodes_in_group("bins"):
-		var bin := b as TrashBin
+	for fs in fire_srcs:
+		var src := fs as Node3D
 		var r := 0.55
-		if bin.burning and not n.fire_ok:
-			r = 0.85 + bin.heat * 0.7
-		p = _push_circle(p, bin.global_position, r)
+		if src is TrashBin:
+			var bin := src as TrashBin
+			if bin.tipped:
+				r = 0.8
+			elif bin.burning and not n.fire_ok:
+				r = 0.85 + bin.heat * 0.7
+		else:
+			var ff := src as FloorFire
+			r = (0.55 + ff.radius + ff.heat * 0.5) if ff.burning else (0.5 + ff.radius * 0.5)
+			if n.fire_ok and ff.burning:
+				r = 0.5 + ff.radius * 0.5
+		p = _push_circle(p, src.global_position, r)
 	if player:
 		p = _push_circle(p, player.global_position, 0.48)
 	p.x = clampf(p.x, AREA_MIN.x - 4.0, AREA_MAX.x + 4.0)
@@ -709,10 +767,14 @@ func interest_point(n: Npc) -> Vector3:
 	if r < 0.25:
 		return cortege_center()
 	if r < 0.45:
-		for b in get_tree().get_nodes_in_group("bins"):
-			var bin := b as TrashBin
-			if bin.burning and bin.global_position.distance_to(p) < 30.0:
-				return bin.fire_center()
+		var best_fs: Node3D = null
+		var bd := 30.0
+		for fs in fire_srcs:
+			if fs.burning and fs.global_position.distance_to(p) < bd:
+				bd = fs.global_position.distance_to(p)
+				best_fs = fs
+		if best_fs:
+			return best_fs.fire_center()
 	if r < 0.6 and player and player.global_position.distance_to(p) < 16.0:
 		return player.global_position + Vector3.UP * 1.6
 	if r < 0.75 and bus:
@@ -758,7 +820,66 @@ func safe_sky_dir(n: Npc) -> Vector3:
 
 
 # =================================================================== feu
-func ring_point(n: Npc, bin: TrashBin) -> Vector3:
+## Foyer allumé le plus proche de `p` (à moins de `r` m)
+func nearest_fire(p: Vector3, r: float) -> Node3D:
+	var best: Node3D = null
+	var bd := r
+	for fs in fire_srcs:
+		if fs.burning and fs.global_position.distance_to(p) < bd:
+			bd = fs.global_position.distance_to(p)
+			best = fs
+	return best
+
+
+## Départ de feu spontané, rare : un manifestant décidé fait un feu au sol ou brûle une poubelle
+func _update_arson(delta: float) -> void:
+	_arson_cd -= delta
+	if _arson_cd > 0.0 or player == null:
+		return
+	_arson_cd = 20.0
+	var active := 0
+	for fs in fire_srcs:
+		if fs.burning:
+			active += 1
+	if active >= 2 or rally_active:
+		return
+	if _rng.randf() > 0.25 + excitement * 0.5:
+		return
+	var cands: Array[Npc] = []
+	for n in npcs:
+		if n.state == "home" and n.role != "march" and n.prop == "" and n.bold > 0.6 and not n.busy() and n.global_position.distance_to(player.global_position) < 40.0:
+			cands.append(n)
+	if cands.is_empty():
+		return
+	var who: Npc = cands[_rng.randi() % cands.size()]
+	_arson_cd = _rng.randf_range(170.0, 340.0)
+	# une poubelle fermée, pas encore brûlée, à proximité ?
+	if _rng.randf() < 0.3:
+		for b in get_tree().get_nodes_in_group("bins"):
+			var bin := b as TrashBin
+			if not bin.burning and not bin.tipped and bin.contents > 0.5 and bin.global_position.distance_to(who.global_position) < 22.0 and bin.grabbed_by == null:
+				who.make_fire(bin.global_position, bin)
+				return
+	# sinon un feu au sol, dans un coin dégagé
+	for i in 12:
+		var a := _rng.randf() * TAU
+		var spot := clamp_area(who.global_position + Vector3(cos(a), 0, sin(a)) * _rng.randf_range(3.0, 8.0))
+		if not nav.is_free(spot):
+			continue
+		if bus and spot.distance_to(bus.global_position) < 5.0:
+			continue
+		if spot.distance_to(player.global_position) < 3.0:
+			continue
+		var clear := true
+		for fs in fire_srcs:
+			if fs.global_position.distance_to(spot) < 4.5:
+				clear = false
+		if clear:
+			who.make_fire(spot)
+			return
+
+
+func ring_point(n: Npc, bin: Node3D) -> Vector3:
 	var lst: Array = _rings.get(bin, [])
 	lst = lst.filter(func(x): return is_instance_valid(x) and (x as Npc).state in ["watch", "feed", "react"] and (x as Npc).data.get("bin") == bin)
 	if not lst.has(n):
@@ -768,12 +889,12 @@ func ring_point(n: Npc, bin: TrashBin) -> Vector3:
 	var cnt := maxi(lst.size(), 5)
 	var base := float(bin.get_instance_id() % 100) * 0.1
 	var ang := base + TAU * i / cnt
-	var rad := 2.0 + bin.heat * 0.8 + (0.6 if i >= 9 else 0.0) + (n.idx % 3) * 0.12
-	var p := bin.global_position + Vector3(cos(ang), 0, sin(ang)) * rad
+	var rad: float = 2.0 + float(bin.heat) * 0.8 + (0.6 if i >= 9 else 0.0) + (n.idx % 3) * 0.12
+	var p: Vector3 = bin.global_position + Vector3(cos(ang), 0, sin(ang)) * rad
 	return clamp_area(p)
 
 
-func watchers(bin: TrashBin) -> int:
+func watchers(bin: Node3D) -> int:
 	var c := 0
 	for n in npcs:
 		if n.state in ["watch", "feed"] and n.data.get("bin") == bin:
@@ -786,7 +907,7 @@ func reserve_burnable(n: Npc, near: Vector3, r: float) -> Burnable:
 	var bd := r
 	for o in get_tree().get_nodes_in_group("burnables"):
 		var b := o as Burnable
-		if b.held or b.in_bin != null or b.lit or b._dying:
+		if b.held or b.in_bin != null or b.lit or b._dying or b.fire != null:
 			continue
 		if b.reserved_by != null and is_instance_valid(b.reserved_by) and b.reserved_by != n:
 			continue
@@ -1113,7 +1234,7 @@ func _ev_glass_break(d: Dictionary) -> void:
 
 
 func _ev_fire_start(d: Dictionary) -> void:
-	var bin: TrashBin = d["bin"]
+	var bin: Node3D = d["bin"]
 	var p: Vector3 = d["pos"]
 	excitement = minf(excitement + 0.1, 1.0)
 	var watchers_n := watchers(bin)
@@ -1144,7 +1265,7 @@ func _ev_fire_start(d: Dictionary) -> void:
 
 
 func _ev_fire_flare(d: Dictionary) -> void:
-	var bin: TrashBin = d["bin"]
+	var bin: Node3D = d["bin"]
 	var voiced := 0
 	for n in npcs:
 		if n.state == "watch" and n.data.get("bin") == bin:

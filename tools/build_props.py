@@ -194,10 +194,12 @@ def flames():
         a = np.clip(body * top * 1.6, 0, 1) ** 1.2
         heat = np.clip(body * (0.5 + yy * 0.8), 0, 1)
         r = np.clip(0.9 + heat * 0.3, 0, 1)
-        g = np.clip(0.25 + heat * 0.85, 0, 1)
-        b = np.clip(0.04 + (heat - 0.65) * 1.6, 0, 1)
+        g = np.clip(0.2 + heat * 0.68, 0, 0.88)
+        b = np.clip(0.02 + (heat - 0.7) * 0.9, 0, 0.3)
+        # fondu sur les bords de la case : aucune arête franche, même agrandie (base en bas, pointe en haut)
+        win = np.clip((1.0 - yy) / 0.14, 0, 1) ** 1.4 * np.clip(xx / 0.1, 0, 1) * np.clip((1.0 - xx) / 0.1, 0, 1) * np.clip(yy / 0.04, 0, 1)
+        a = a * win
         tile = np.stack([r, g, b, a], -1)
-        tile = tile[::-1]  # base en bas
         i, j = k // N, k % N
         atlas[i * S:(i + 1) * S, j * S:(j + 1) * S] = tile
     Image.fromarray((atlas * 255).astype(np.uint8), "RGBA").filter(ImageFilter.GaussianBlur(0.8)).save(OUT + "/flame_atlas.png")
@@ -218,6 +220,25 @@ def flames():
         atlas[i * S:(i + 1) * S, j * S:(j + 1) * S] = tile
     img = Image.fromarray((np.clip(atlas, 0, 1) * 255).astype(np.uint8), "RGBA").filter(ImageFilter.GaussianBlur(1.5))
     img.save(OUT + "/smoke.png")
+
+
+def fire_ground():
+    """Tache de brûlure (décalque) et lueur au sol."""
+    S = 256
+    yy, xx = np.mgrid[0:S, 0:S].astype(np.float32) / S * 2 - 1
+    r = np.sqrt(xx ** 2 + yy ** 2)
+    n1 = tile_noise(S, 2, 8, 311)
+    n2 = tile_noise(S, 6, 24, 312)
+    rr = r * (1.0 + 0.16 * n1 + 0.06 * n2)
+    core = np.clip((0.86 - rr) / 0.5, 0, 1) ** 0.8
+    ash = np.clip((1.0 - rr) / 0.25, 0, 1) * np.clip((rr - 0.45) / 0.3, 0, 1) * 0.45
+    a = np.clip(core * 0.92 + ash, 0, 1) * np.clip((1.0 - r) / 0.12, 0, 1)
+    col = np.stack([0.05 + 0.18 * ash, 0.045 + 0.17 * ash, 0.04 + 0.15 * ash], -1)
+    col *= (0.7 + 0.3 * (0.5 + 0.5 * n2))[..., None]
+    Image.fromarray((np.clip(np.dstack([col, a]), 0, 1) * 255).astype(np.uint8), "RGBA").save(OUT + "/scorch.png")
+    g = np.clip(1.0 - r, 0, 1) ** 2.2
+    rgb = np.dstack([np.ones_like(g), 0.55 + 0.25 * g, 0.2 + 0.2 * g])
+    Image.fromarray((np.clip(np.dstack([rgb, g]), 0, 1) * 255).astype(np.uint8), "RGBA").save(OUT + "/ground_glow.png")
 
 
 def misc():
@@ -261,5 +282,5 @@ def misc():
 
 
 if __name__ == "__main__":
-    signs(); phone_screens(); flames(); misc()
+    signs(); phone_screens(); flames(); misc(); fire_ground()
     print("ok")

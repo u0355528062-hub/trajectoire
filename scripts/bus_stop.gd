@@ -11,7 +11,7 @@ const BREAK_AT := 100.0
 var _glass: StandardMaterial3D
 var _graphite: StandardMaterial3D
 var _alu: StandardMaterial3D
-var _panes: Array[Dictionary] = []
+var _panes: Array[GlassPane] = []
 var _sign_pivot: Node3D
 var _rng := RandomNumberGenerator.new()
 var _crack_shader: Shader
@@ -411,52 +411,35 @@ func _build_panes() -> void:
 
 
 func _add_pane(size: Vector2, pos: Vector3, rot_y: float, frosted: bool) -> void:
-	var node := Node3D.new()
-	node.position = pos
-	node.rotation.y = rot_y
-	add_child(node)
-	var m := MeshInstance3D.new()
-	var b := BoxMesh.new()
-	b.size = Vector3(size.x, size.y, 0.012)
-	m.mesh = b
-	m.material_override = _glass
-	node.add_child(m)
-	var overlays: Array = []
+	var pane := GlassPane.new()
+	pane.size = size
+	pane.kind = "bus"
+	pane.position = pos
+	pane.rotation.y = rot_y
+	add_child(pane)
 	if frosted:
 		var fm := StandardMaterial3D.new()
 		fm.albedo_texture = _tex("frost.png")
 		fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		fm.roughness = 0.7
 		fm.cull_mode = BaseMaterial3D.CULL_DISABLED
-		overlays.append(_quad(node, Vector2(size.x - 0.02, 0.34), Vector3(0, -0.1, 0.0068), fm))
+		pane.overlays.append(_quad(pane, Vector2(size.x - 0.02, 0.34), Vector3(0, -0.1, 0.0068), fm))
 	var dm := StandardMaterial3D.new()
 	dm.albedo_texture = _tex("dirt.png")
 	dm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	dm.cull_mode = BaseMaterial3D.CULL_DISABLED
 	dm.roughness = 1.0
-	overlays.append(_quad(node, Vector2(size.x - 0.02, 0.6), Vector3(0, -size.y * 0.5 + 0.31, 0.0066), dm))
-	var sb := StaticBody3D.new()
-	var cs := CollisionShape3D.new()
-	var bs := BoxShape3D.new()
-	bs.size = Vector3(size.x, size.y, 0.05)
-	cs.shape = bs
-	sb.add_child(cs)
-	node.add_child(sb)
-	var idx := _panes.size()
-	sb.set_meta("bus", self)
-	sb.set_meta("pane_index", idx)
+	pane.overlays.append(_quad(pane, Vector2(size.x - 0.02, 0.6), Vector3(0, -size.y * 0.5 + 0.31, 0.0066), dm))
 	# fixations « araignée » aux quatre coins
-	var fix: Array = []
 	var chrome := StandardMaterial3D.new()
 	chrome.albedo_color = Color(0.85, 0.87, 0.9)
 	chrome.metallic = 1.0
 	chrome.roughness = 0.15
 	for sx in [-1, 1]:
 		for sy in [-1, 1]:
-			var f := _cyl(node, 0.018, 0.03, Vector3(sx * (size.x * 0.5 - 0.06), sy * (size.y * 0.5 - 0.07), 0.0), chrome, Vector3(PI / 2.0, 0, 0))
+			var f := _cyl(pane, 0.018, 0.03, Vector3(sx * (size.x * 0.5 - 0.06), sy * (size.y * 0.5 - 0.07), 0.0), chrome, Vector3(PI / 2.0, 0, 0))
 			f.reparent(self, true)
-	_panes.append({"node": node, "size": size, "damage": 0.0, "hits": 0, "mesh": m, "body": sb,
-			"overlays": overlays, "decor": overlays.duplicate(), "broken": false, "web": 0, "cracks": []})
+	_panes.append(pane)
 
 
 # ------------------------------------------------------------------ informations (PNJ)
@@ -465,104 +448,57 @@ func pane_count() -> int:
 
 
 func pane_alive(i: int) -> bool:
-	return i >= 0 and i < _panes.size() and not _panes[i]["broken"]
+	return i >= 0 and i < _panes.size() and not _panes[i].is_broken
 
 
 func pane_center(i: int) -> Vector3:
-	return (_panes[i]["node"] as Node3D).global_position
+	return _panes[i].global_position
 
 
 func pane_local_x(i: int) -> float:
-	return (_panes[i]["node"] as Node3D).position.x
+	return _panes[i].position.x
 
 
 func all_broken() -> bool:
 	for p in _panes:
-		if not p["broken"]:
+		if not p.is_broken:
 			return false
 	return true
 
 
-func _event(type: String, pos: Vector3) -> void:
-	if is_inside_tree():
-		get_tree().call_group("crowd", "on_event", type, {"pos": pos})
+func broken_count() -> int:
+	var c := 0
+	for p in _panes:
+		if p.is_broken:
+			c += 1
+	return c
 
 
 # ------------------------------------------------------------------ interaction
-func _pane_at(point: Vector3, depth := 0.75) -> int:
+## Coup de pied : point (monde) et direction de poussée.
+func kick(point: Vector3, dir: Vector3, power := 1.0) -> bool:
 	var best := -1
 	var best_d := 9.0
 	for i in _panes.size():
-		var p: Dictionary = _panes[i]
-		if p["broken"]:
-			continue
-		var node: Node3D = p["node"]
-		var sz: Vector2 = p["size"]
-		var l := node.to_local(point)
-		if absf(l.x) <= sz.x * 0.5 + 0.25 and absf(l.y) <= sz.y * 0.5 + 0.3 and absf(l.z) <= depth:
-			if absf(l.z) < best_d:
-				best_d = absf(l.z)
-				best = i
-	return best
-
-
-## Coup de pied : point (monde) et direction de poussée.
-func kick(point: Vector3, dir: Vector3, power := 1.0) -> bool:
-	var i := _pane_at(point)
-	if i < 0:
+		var d := _panes[i].contains(point)
+		if d >= 0.0 and d < best_d:
+			best_d = d
+			best = i
+	if best < 0:
 		var pp := _sign_pivot.global_position
 		if Vector2(point.x - pp.x, point.z - pp.z).length() < 0.6 and point.y < 2.4:
 			_wobble_sign()
 			_sound(&"glass_hit", point, -4.0)
+			get_tree().call_group("crowd", "on_event", "vandal", {"pos": point, "kind": "sign_bus", "amount": 0.5})
 			return true
 		return false
-	_damage_pane(i, point, KICK_DAMAGE * power, dir)
+	_panes[best].hit(point, GlassPane.KICK_DAMAGE * power, dir)
 	return true
 
 
-## Impact d'une pierre : `speed` en m/s.
-func stone_hit(pane_index: int, point: Vector3, speed: float, dir: Vector3) -> void:
-	if pane_index < 0 or pane_index >= _panes.size() or _panes[pane_index]["broken"]:
-		return
-	if speed < 3.0:
-		_sound(&"glass_hit", point, -10.0)
-		return
-	var dmg := clampf(speed * 1.9, 6.0, 44.0)
-	_damage_pane(pane_index, point, dmg, dir)
-
-
-func _damage_pane(i: int, point: Vector3, amount: float, dir: Vector3) -> void:
-	var p: Dictionary = _panes[i]
-	var node: Node3D = p["node"]
-	var sz: Vector2 = p["size"]
-	var l := node.to_local(point)
-	var imp := Vector2(clampf(l.x, -sz.x * 0.5 + 0.1, sz.x * 0.5 - 0.1), clampf(l.y, -sz.y * 0.5 + 0.1, sz.y * 0.5 - 0.1))
-	p["damage"] += amount
-	p["hits"] += 1
-	var impact_w := node.to_global(Vector3(imp.x, imp.y, 0))
-	if p["damage"] >= BREAK_AT:
-		_shatter(p, imp, dir)
-		_event("glass_break", impact_w)
-		return
-	_event("glass_hit", impact_w)
-	_add_crack(p, imp, "crack_s%d.png" % _rng.randi_range(0, 3), _rng.randf_range(0.5, 0.85) + amount * 0.004)
-	var d: float = p["damage"]
-	if d >= 42.0 and p["web"] < 1:
-		p["web"] = 1
-		_add_crack(p, imp, "crack1.png", 1.25)
-	if d >= 74.0 and p["web"] < 2:
-		p["web"] = 2
-		_add_crack(p, imp, "crack2.png", 2.1)
-	_vibrate(node)
-	_chips(p, imp, impact_w, dir, int(3 + amount * 0.2))
-	_sound(&"glass_hit", impact_w, 2.0 + amount * 0.03)
-	if d >= 42.0:
-		_sound(&"glass_crack", impact_w, 0.0)
-
-
-func _sound(name: StringName, pos: Vector3, vol: float) -> void:
+func _sound(sname: StringName, pos: Vector3, vol: float) -> void:
 	var a := AudioStreamPlayer3D.new()
-	a.stream = Sfx.get_stream(name)
+	a.stream = Sfx.get_stream(sname)
 	a.volume_db = vol
 	a.unit_size = 10.0
 	a.pitch_scale = _rng.randf_range(0.93, 1.07)
@@ -572,314 +508,9 @@ func _sound(name: StringName, pos: Vector3, vol: float) -> void:
 	a.finished.connect(a.queue_free)
 
 
-func _vibrate(node: Node3D) -> void:
-	var base := node.rotation
-	var tw := create_tween()
-	for k in 6:
-		var a := 0.012 * (1.0 - float(k) / 6.0) * (1.0 if k % 2 == 0 else -1.0)
-		tw.tween_property(node, "rotation", base + Vector3(a, a * 0.4, 0), 0.035)
-	tw.tween_property(node, "rotation", base, 0.04)
-
-
 func _wobble_sign() -> void:
 	var tw := create_tween()
 	for k in 8:
 		var a := 0.06 * (1.0 - float(k) / 8.0) * (1.0 if k % 2 == 0 else -1.0)
 		tw.tween_property(_sign_pivot, "rotation", Vector3(a * 0.4, 0, a), 0.06)
 	tw.tween_property(_sign_pivot, "rotation", Vector3.ZERO, 0.06)
-
-
-func _add_crack(p: Dictionary, imp: Vector2, tex: String, size: float) -> void:
-	var node: Node3D = p["node"]
-	var sz: Vector2 = p["size"]
-	var m := MeshInstance3D.new()
-	var q := QuadMesh.new()
-	q.size = Vector2(size, size)
-	m.mesh = q
-	var sm := ShaderMaterial.new()
-	sm.shader = _crack_shader
-	sm.set_shader_parameter("tex", _tex(tex))
-	sm.set_shader_parameter("half_size", sz * 0.5)
-	sm.set_shader_parameter("offset", imp)
-	sm.set_shader_parameter("rot", _rng.randf_range(0.0, TAU))
-	m.material_override = sm
-	var layer: int = (p["cracks"] as Array).size()
-	m.position = Vector3(imp.x, imp.y, 0.0075 + layer * 0.0003)
-	m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	node.add_child(m)
-	(p["cracks"] as Array).append(m)
-	(p["overlays"] as Array).append(m)
-
-
-## Petits éclats qui se détachent à chaque impact (la vitre se dégrade progressivement).
-func _chips(p: Dictionary, imp: Vector2, impact_w: Vector3, dir: Vector3, n: int) -> void:
-	var node: Node3D = p["node"]
-	var scene := get_tree().current_scene
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.75, 0.9, 0.95, 0.35)
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.roughness = 0.03
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	var phys := PhysicsMaterial.new()
-	phys.friction = 0.45
-	phys.bounce = 0.2
-	var normal := node.global_basis * Vector3(0, 0, 1)
-	var side := signf(normal.dot(dir))
-	for k in n:
-		var a := Vector2(_rng.randf_range(-0.05, 0.05), _rng.randf_range(-0.05, 0.05))
-		var s := _rng.randf_range(0.012, 0.04)
-		var poly: Array[Vector2] = [Vector2(-s, -s * 0.6) + a, Vector2(s, -s * 0.4) + a, Vector2(s * 0.3, s) + a]
-		var rb := RigidBody3D.new()
-		rb.collision_layer = 4
-		rb.collision_mask = 1
-		rb.mass = 0.02
-		rb.physics_material_override = phys
-		var mi := MeshInstance3D.new()
-		mi.mesh = _shard_mesh(poly, 0.006)
-		mi.material_override = mat
-		rb.add_child(mi)
-		var cs := CollisionShape3D.new()
-		var sh := ConvexPolygonShape3D.new()
-		var pts := PackedVector3Array()
-		for v in poly:
-			pts.append(Vector3(v.x, v.y, 0.003))
-			pts.append(Vector3(v.x, v.y, -0.003))
-		sh.points = pts
-		cs.shape = sh
-		rb.add_child(cs)
-		scene.add_child(rb)
-		rb.global_position = impact_w + normal * side * 0.02
-		rb.linear_velocity = dir * _rng.randf_range(0.4, 1.8) + Vector3(_rng.randf_range(-0.5, 0.5), _rng.randf_range(0.0, 0.8), _rng.randf_range(-0.5, 0.5))
-		rb.angular_velocity = Vector3(_rng.randf_range(-6, 6), _rng.randf_range(-6, 6), _rng.randf_range(-6, 6))
-		get_tree().create_timer(_rng.randf_range(6.0, 11.0)).timeout.connect(func():
-			if is_instance_valid(rb):
-				rb.queue_free())
-
-
-## Ralenti bref au moment où une vitre explose.
-func _slowmo() -> void:
-	Engine.time_scale = 0.3
-	var t := get_tree().create_timer(0.16, true, false, true)
-	t.timeout.connect(func():
-		var tw := create_tween().set_ignore_time_scale(true)
-		tw.tween_property(Engine, "time_scale", 1.0, 0.3))
-
-
-func _axis_points(a: float, b: float, c: float) -> Array[float]:
-	var pts: Array[float] = [c]
-	var x := c
-	while x < b - 0.04:
-		var d := absf(x - c)
-		x += (0.085 + 0.27 * smoothstep(0.0, 1.0, d / 1.0)) * _rng.randf_range(0.75, 1.3)
-		pts.append(minf(x, b))
-	x = c
-	while x > a + 0.04:
-		var d2 := absf(x - c)
-		x -= (0.085 + 0.27 * smoothstep(0.0, 1.0, d2 / 1.0)) * _rng.randf_range(0.75, 1.3)
-		pts.append(maxf(x, a))
-	pts.sort()
-	# fusionne les points trop proches
-	var out: Array[float] = []
-	for v in pts:
-		if out.is_empty() or v - out[out.size() - 1] > 0.03:
-			out.append(v)
-	out[0] = a
-	out[out.size() - 1] = b
-	return out
-
-
-func _shard_mesh(poly: Array[Vector2], thick: float) -> ArrayMesh:
-	var n := poly.size()
-	var c2 := Vector2.ZERO
-	for v in poly:
-		c2 += v
-	c2 /= n
-	var front: Array[Vector3] = []
-	var back: Array[Vector3] = []
-	for v in poly:
-		front.append(Vector3(v.x - c2.x, v.y - c2.y, thick * 0.5))
-		back.append(Vector3(v.x - c2.x, v.y - c2.y, -thick * 0.5))
-	var tris: Array = []
-	for i in range(1, n - 1):
-		tris.append([front[0], front[i], front[i + 1]])
-		tris.append([back[0], back[i + 1], back[i]])
-	for i in n:
-		var j := (i + 1) % n
-		tris.append([front[i], back[i], back[j]])
-		tris.append([front[i], back[j], front[j]])
-	var verts := PackedVector3Array()
-	var norms := PackedVector3Array()
-	for t in tris:
-		var a: Vector3 = t[0]
-		var b: Vector3 = t[1]
-		var c: Vector3 = t[2]
-		var nn := (b - a).cross(c - a)
-		var centre := (a + b + c) / 3.0
-		if nn.length() < 1e-12:
-			continue
-		nn = nn.normalized()
-		if nn.dot(centre) > 0.0: # normale vers l'extérieur => ordre anti-horaire : on inverse (Godot = horaire)
-			var tmp := b
-			b = c
-			c = tmp
-		else:
-			nn = -nn
-		verts.append_array([a, b, c])
-		norms.append_array([nn, nn, nn])
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_NORMAL] = norms
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
-
-
-func _shatter(p: Dictionary, imp: Vector2, kick_dir: Vector3) -> void:
-	p["broken"] = true
-	_slowmo()
-	var node: Node3D = p["node"]
-	var sz: Vector2 = p["size"]
-	(p["mesh"] as Node).queue_free()
-	(p["body"] as Node).queue_free()
-	for o in p["overlays"]:
-		if is_instance_valid(o):
-			(o as Node).queue_free()
-	p["overlays"].clear()
-	var impact_w := node.to_global(Vector3(imp.x, imp.y, 0))
-	_sound(&"glass_break", impact_w, 5.0)
-
-	var xs := _axis_points(-sz.x * 0.5, sz.x * 0.5, imp.x)
-	var ys := _axis_points(-sz.y * 0.5, sz.y * 0.5, imp.y)
-	var grid: Array = []
-	for i in xs.size():
-		var row: Array[Vector2] = []
-		for j in ys.size():
-			var v := Vector2(xs[i], ys[j])
-			var edge_x := i == 0 or i == xs.size() - 1
-			var edge_y := j == 0 or j == ys.size() - 1
-			if not edge_x:
-				var sx := minf(xs[i] - xs[i - 1], xs[i + 1] - xs[i])
-				v.x += _rng.randf_range(-0.32, 0.32) * sx
-			if not edge_y:
-				var sy := minf(ys[j] - ys[j - 1], ys[j + 1] - ys[j])
-				v.y += _rng.randf_range(-0.32, 0.32) * sy
-			row.append(v)
-		grid.append(row)
-
-	var scene := get_tree().current_scene
-	var shard_mat := StandardMaterial3D.new()
-	shard_mat.albedo_color = Color(0.72, 0.88, 0.92, 0.22)
-	shard_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	shard_mat.roughness = 0.03
-	shard_mat.metallic_specular = 1.0
-	shard_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	shard_mat.rim_enabled = true
-	shard_mat.rim = 0.5
-	var phys := PhysicsMaterial.new()
-	phys.friction = 0.45
-	phys.bounce = 0.18
-	var count := 0
-	for i in xs.size() - 1:
-		for j in ys.size() - 1:
-			var a: Vector2 = grid[i][j]
-			var b: Vector2 = grid[i + 1][j]
-			var c: Vector2 = grid[i + 1][j + 1]
-			var d: Vector2 = grid[i][j + 1]
-			var polys: Array = []
-			if _rng.randf() < 0.55:
-				polys.append([a, b, c, d] as Array[Vector2])
-			elif _rng.randf() < 0.5:
-				polys.append([a, b, c] as Array[Vector2])
-				polys.append([a, c, d] as Array[Vector2])
-			else:
-				polys.append([a, b, d] as Array[Vector2])
-				polys.append([b, c, d] as Array[Vector2])
-			var touches_edge := i == 0 or j == 0 or i == xs.size() - 2 or j == ys.size() - 2
-			for poly in polys:
-				var pl: Array[Vector2] = poly
-				var cen := Vector2.ZERO
-				for v in pl:
-					cen += v
-				cen /= pl.size()
-				var rb := RigidBody3D.new()
-				rb.collision_layer = 4
-				rb.collision_mask = 1
-				rb.mass = 0.35
-				rb.physics_material_override = phys
-				rb.linear_damp = 0.05
-				rb.angular_damp = 0.2
-				var mi := MeshInstance3D.new()
-				mi.mesh = _shard_mesh(pl, 0.008)
-				mi.material_override = shard_mat
-				rb.add_child(mi)
-				var pts := PackedVector3Array()
-				for v in pl:
-					pts.append(Vector3(v.x - cen.x, v.y - cen.y, 0.004))
-					pts.append(Vector3(v.x - cen.x, v.y - cen.y, -0.004))
-				var shape := ConvexPolygonShape3D.new()
-				shape.points = pts
-				var cs := CollisionShape3D.new()
-				cs.shape = shape
-				rb.add_child(cs)
-				scene.add_child(rb)
-				rb.global_transform = node.global_transform * Transform3D(Basis(), Vector3(cen.x, cen.y, 0))
-				var cw := rb.global_position
-				var away := cw - impact_w
-				var dist := away.length()
-				var k := clampf(dist / 1.5, 0.0, 1.0)
-				var vel := away.normalized() * lerpf(3.4, 0.4, k) + kick_dir * lerpf(3.2, 0.8, k)
-				vel += Vector3(_rng.randf_range(-0.4, 0.4), _rng.randf_range(0.1, 1.3) * (1.0 - k * 0.6), _rng.randf_range(-0.4, 0.4))
-				if touches_edge and _rng.randf() < 0.6:
-					rb.freeze = true
-					var delay := _rng.randf_range(0.3, 3.0)
-					get_tree().create_timer(delay).timeout.connect(func():
-						if is_instance_valid(rb):
-							rb.freeze = false
-							rb.linear_velocity = Vector3(_rng.randf_range(-0.3, 0.3), -0.2, _rng.randf_range(-0.3, 0.3)) + kick_dir * 0.4
-							rb.angular_velocity = Vector3(_rng.randf_range(-3, 3), _rng.randf_range(-3, 3), _rng.randf_range(-3, 3)))
-				else:
-					rb.linear_velocity = vel
-					rb.angular_velocity = Vector3(_rng.randf_range(-8, 8), _rng.randf_range(-8, 8), _rng.randf_range(-8, 8))
-				var life := _rng.randf_range(14.0, 22.0)
-				get_tree().create_timer(life).timeout.connect(func():
-					if is_instance_valid(rb):
-						var tw := rb.create_tween()
-						tw.tween_property(rb, "scale", Vector3.ONE * 0.01, 1.0)
-						tw.tween_callback(rb.queue_free))
-				count += 1
-	_glass_dust(impact_w, kick_dir)
-
-
-func _glass_dust(pos: Vector3, dir: Vector3) -> void:
-	var scene := get_tree().current_scene
-	var ps := GPUParticles3D.new()
-	ps.amount = 90
-	ps.lifetime = 1.8
-	ps.one_shot = true
-	ps.explosiveness = 0.95
-	ps.local_coords = false
-	ps.visibility_aabb = AABB(Vector3(-6, -6, -6), Vector3(12, 12, 12))
-	var pm := ParticleProcessMaterial.new()
-	pm.direction = dir.normalized() + Vector3.UP * 0.3
-	pm.spread = 70.0
-	pm.initial_velocity_min = 0.8
-	pm.initial_velocity_max = 4.5
-	pm.gravity = Vector3(0, -7.0, 0)
-	pm.scale_min = 0.3
-	pm.scale_max = 1.0
-	var g := Gradient.new()
-	g.offsets = PackedFloat32Array([0.0, 0.7, 1.0])
-	g.colors = PackedColorArray([Color(1, 1, 1, 1), Color(0.8, 0.92, 1, 0.8), Color(0.8, 0.92, 1, 0)])
-	var gt := GradientTexture1D.new()
-	gt.gradient = g
-	pm.color_ramp = gt
-	ps.process_material = pm
-	var q := QuadMesh.new()
-	q.size = Vector2(0.03, 0.03)
-	q.material = FireworkShell.spark_material(Color(0.85, 0.95, 1.0), 1.4)
-	ps.draw_pass_1 = q
-	scene.add_child(ps)
-	ps.global_position = pos
-	ps.emitting = true
-	get_tree().create_timer(3.5).timeout.connect(ps.queue_free)
