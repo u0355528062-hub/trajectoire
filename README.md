@@ -1,5 +1,7 @@
 # Blocus — Godot 4.4
 
+**Débutant ? Lis [GUIDE.md](GUIDE.md) (pas à pas).**
+
 Étape 1 : baseplate grise, personnage humain réaliste, mortier d'artifice (6 tirs), vue 1re/3e personne.
 
 Ouvrir le dossier dans Godot 4.4+ et lancer (F5). Au premier lancement, laisser Godot importer les assets.
@@ -13,6 +15,7 @@ Ouvrir le dossier dans Godot 4.4+ et lancer (F5). Au premier lancement, laisser 
 | 1 | Sortir / ranger le mortier |
 | Clic droit (maintenu) | Viser : bras tendu, réticule, flou périphérique, léger tremblement |
 | Clic gauche (en visant) | Tirer (6 obus : on ramène le tube, allumage au briquet, on retend, départ) |
+| F | Coup de pied (arrêt de bus cassable : fissures, puis éclatement au 3ᵉ coup) |
 | R | Recharger les 6 obus (test) |
 | H | Masquer l'aide |
 | Échap | Libérer la souris |

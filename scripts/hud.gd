@@ -21,6 +21,8 @@ var _view_chip: Label
 var _help: PanelContainer
 var _preview_pivot: Node3D
 var _prompt_row: HBoxContainer
+var _kick_prompt: PanelContainer
+var _kick_prompt_on := false
 var _post: ColorRect
 var _reticle: Control
 var _aim_tween: Tween
@@ -140,6 +142,7 @@ func bind(player: Player) -> void:
 	player.view_changed.connect(_on_view)
 	player.stage_changed.connect(_on_stage)
 	player.aim_changed.connect(_on_aim)
+	player.near_breakable_changed.connect(func(n): _kick_prompt_on = n)
 	_on_equipped(player.mortar.equipped)
 
 
@@ -341,6 +344,16 @@ void fragment() {
 	_prompt_row = _key_row(["CLIC DROIT"], "Maintenir pour viser")
 	_prompt.add_child(_prompt_row)
 	bottom.move_child(pc, 1)
+	_kick_prompt = PanelContainer.new()
+	_kick_prompt.add_theme_stylebox_override("panel", _style(Color(0.05, 0.05, 0.08, 0.7), 14, Color(1, 0.72, 0.28, 0.5), 1, 8.0))
+	_kick_prompt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_kick_prompt.modulate.a = 0.0
+	_kick_prompt.add_child(_key_row(["F"], "Coup de pied"))
+	var kc := CenterContainer.new()
+	kc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	kc.add_child(_kick_prompt)
+	bottom.add_child(kc)
+	bottom.move_child(kc, 1)
 
 	# ---- aide (haut gauche)
 	_help = PanelContainer.new()
@@ -360,6 +373,7 @@ void fragment() {
 	hv.add_child(_key_row(["ESPACE"], "Sauter"))
 	hv.add_child(_key_row(["CLIC DROIT"], "Viser (obligatoire pour tirer)"))
 	hv.add_child(_key_row(["CLIC GAUCHE"], "Tirer"))
+	hv.add_child(_key_row(["F"], "Coup de pied"))
 	hv.add_child(_key_row(["V"], "Vue 1re / 3e personne"))
 	hv.add_child(_key_row(["1"], "Mortier"))
 	hv.add_child(_key_row(["R"], "Recharger (test)"))
@@ -381,6 +395,8 @@ void fragment() {
 func _process(delta: float) -> void:
 	if _preview_pivot:
 		_preview_pivot.rotate_y(delta * 0.9)
+	if _kick_prompt:
+		_kick_prompt.modulate.a = lerpf(_kick_prompt.modulate.a, 1.0 if _kick_prompt_on else 0.0, minf(1.0, delta * 8.0))
 	if _prompt:
 		var show := _selected and _ammo > 0 and _status.text == ""
 		_prompt.modulate.a = lerpf(_prompt.modulate.a, 1.0 if show else 0.0, minf(1.0, delta * 8.0))

@@ -13,6 +13,13 @@ const PALM_SIGN := -1.0        # signe de la normale de paume mesurée sur le mo
 var model: Node3D
 var skeleton: Skeleton3D
 var head_meshes: Array[MeshInstance3D] = []
+signal kick_impact(point: Vector3)
+
+const KICK_DUR := 0.85
+var kick_t := -1.0
+var _kick_fired := false
+var _whoosh: AudioStreamPlayer3D
+
 var hand_provider := Callable() # -> [droite, gauche] : null ou {pos, f, p, curl} en coordonnées monde
 
 var bone := {}       # nom -> index
@@ -43,6 +50,10 @@ func _ready() -> void:
 	skeleton = _find_skeleton(inst)
 	_apply_materials(inst)
 	_cache_bones()
+	_whoosh = AudioStreamPlayer3D.new()
+	_whoosh.stream = Sfx.get_stream(&"kick_whoosh")
+	_whoosh.volume_db = -6.0
+	add_child(_whoosh)
 
 
 func _find_skeleton(n: Node) -> Skeleton3D:
@@ -74,7 +85,7 @@ func _apply_materials(root: Node) -> void:
 	skin.metallic_specular = 0.45
 	skin.normal_enabled = true
 	skin.normal_texture = _tex("skin_n.png")
-	skin.normal_scale = 0.28
+	skin.normal_scale = 0.1
 	skin.subsurf_scatter_enabled = true
 	skin.subsurf_scatter_strength = 0.22
 
@@ -132,6 +143,18 @@ func chest_xf() -> Transform3D:
 
 func shoulder_world(side: String) -> Vector3:
 	return skeleton.global_transform * _gp("upperarm01_" + side)
+
+
+func start_kick() -> void:
+	if kick_t >= 0.0:
+		return
+	kick_t = 0.0
+	_kick_fired = false
+	get_tree().create_timer(0.22).timeout.connect(_whoosh.play)
+
+
+func foot_world(side := "R") -> Vector3:
+	return skeleton.global_transform * _gp("foot_" + side)
 
 
 func kick_back(amount := 1.0) -> void:
@@ -222,28 +245,44 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 
 	var moving := speed > 0.15 and grounded
 	_walk_w = move_toward(_walk_w, 1.0 if moving else 0.0, delta * 6.0)
-	var period := lerpf(1.02, 0.60, run_t)
+	var period := lerpf(1.02, 0.66, run_t)
 	if moving:
 		phase = fposmod(phase + delta / period, 1.0)
-	var beta := lerpf(0.62, 0.40, run_t)       # fraction d'appui
-	var stride := speed * beta * period          # amplitude avant/arrière du pied (m)
+	var beta := lerpf(0.62, 0.36, run_t)       # fraction d'appui
+	var stride := speed * beta * period * lerpf(1.0, 0.86, run_t) # amplitude avant/arrière du pied (m)
+	var off := lerpf(0.5, 0.34, run_t)          # l'appui se pose moins loin devant le bassin en courant
 	var w := _walk_w
 	var breath := sin(t_idle * 1.6) * 0.5 + 0.5
+	var ku := -1.0
+	var kk := 0.0
+	if kick_t >= 0.0:
+		kick_t += delta
+		ku = kick_t / KICK_DUR
+		kk = sin(PI * clampf(ku, 0.0, 1.0))
+		if ku >= 0.52 and not _kick_fired:
+			_kick_fired = true
+			kick_impact.emit(foot_world("R"))
+		if ku >= 1.0:
+			kick_t = -1.0
+			ku = -1.0
+			kk = 0.0
 
 	# --- bassin / colonne
-	var dy := -(0.02 + 0.045 * run_t) * w - 0.012 * (1.0 - w) * 0.0
-	dy += (0.012 + 0.03 * run_t) * w * (1.0 - cos(4.0 * PI * phase)) * 0.5
-	dy -= 0.1 * air
+	var dy := -(0.02 + 0.05 * run_t) * w
+	# marche : le bassin est le plus haut en milieu d'appui ; course : le plus bas (rebond)
+	var bob := cos(4.0 * PI * (phase - beta * 0.5))
+	dy += w * bob * (0.014 * (1.0 - run_t) - 0.04 * run_t)
+	dy -= 0.1 * air + 0.035 * kk
 	var root_rest: Vector3 = skeleton.get_bone_rest(bone["root"]).origin
 	skeleton.set_bone_pose_position(bone["root"], root_rest + Vector3(0, dy, 0))
 	var yaw := sin(TAU * phase) * 0.11 * w
 	var roll := cos(TAU * phase) * 0.035 * w
-	_lean = lerpf(_lean, (0.03 + 0.17 * run_t) * w + 0.05 * clampf(-vy * 0.15, 0.0, 1.0) * air, minf(1.0, delta * 6.0))
+	_lean = lerpf(_lean, (0.03 + 0.24 * run_t) * w + 0.05 * clampf(-vy * 0.15, 0.0, 1.0) * air, minf(1.0, delta * 6.0))
 	skeleton.set_bone_pose_rotation(bone["root"], Quaternion(Vector3.UP, yaw) * Quaternion(Vector3.BACK, roll))
 	var spine := ["spine05", "spine04", "spine03", "spine02", "spine01"]
 	for i in spine.size():
 		var share := 1.0 / spine.size()
-		var rx := _lean * share + kick * 0.05 + (breath - 0.5) * 0.004 + 0.0
+		var rx := _lean * share + kick * 0.05 + (breath - 0.5) * 0.004 - 0.05 * kk
 		var ry := -yaw * 1.5 * share
 		var rz := -roll * 1.2 * share
 		if i == 0:
@@ -264,16 +303,38 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 		var pitch_f := 0.0
 		if ph < beta:
 			var u := ph / beta
-			z = stride * (0.5 - u)
+			z = stride * (off - u)
 			pitch_f = lerpf(0.18, -0.35, smoothstep(0.55, 1.0, u)) * (1.0 - smoothstep(0.0, 0.25, u) * 0.0)
 		else:
 			var u := (ph - beta) / (1.0 - beta)
 			var e := u * u * (3.0 - 2.0 * u)
-			z = stride * (-0.5 + e)
-			lift = sin(PI * u) * lerpf(0.09, 0.2, run_t)
+			z = stride * (off - 1.0 + e)
+			lift = pow(sin(PI * u), 0.85) * lerpf(0.09, 0.30, run_t)
 			pitch_f = lerpf(-0.35, 0.22, e)
 		var target := foot_rest + Vector3(0, lift * w, z * w)
 		var fpitch := pitch_f * w
+		if side == "R" and ku >= 0.0:
+			var cham := Vector3(-0.19, 0.68, 0.36)
+			var strike := Vector3(-0.17, 0.80, 0.86)
+			var e := 0.0
+			if ku < 0.38:
+				e = ku / 0.38
+				e = e * e * (3.0 - 2.0 * e)
+				target = foot_rest.lerp(cham, e)
+				fpitch = lerpf(0.0, 0.55, e)
+			elif ku < 0.52:
+				e = (ku - 0.38) / 0.14
+				e = e * e * (3.0 - 2.0 * e)
+				target = cham.lerp(strike, e)
+				fpitch = lerpf(0.55, -1.15, e)
+			elif ku < 0.6:
+				target = strike
+				fpitch = -1.15
+			else:
+				e = (ku - 0.6) / 0.4
+				e = e * e * (3.0 - 2.0 * e)
+				target = strike.lerp(foot_rest, e)
+				fpitch = lerpf(-1.15, 0.0, e)
 		# en l'air : jambes repliées
 		target += Vector3(0, 0.22 * air, (0.12 if is_l else -0.06) * air)
 		var hip_n := "upperleg01_" + side
@@ -288,7 +349,7 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 	var targets: Array = [null, null]
 	if hand_provider.is_valid():
 		targets = hand_provider.call()
-	var swing := lerpf(0.5, 0.95, run_t) * w
+	var swing := lerpf(0.5, 1.0, run_t) * w
 	for idx in 2:
 		var side := "R" if idx == 0 else "L"
 		var is_l := side == "L"
@@ -299,13 +360,13 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 		var cl := "clavicle_" + side
 		var ph := fposmod(phase + (0.5 if is_l else 0.0), 1.0)
 		var sw := -sin(TAU * ph) * swing
-		var adduct := 0.5 + 0.05 * breath * (1.0 - w) - 0.35 * air
+		var adduct := 0.5 + 0.05 * breath * (1.0 - w) - 0.35 * air - 0.28 * kk
 		_local(cl, Quaternion.IDENTITY)
 		_local(up, Quaternion(Vector3.BACK, -sgn * adduct) * Quaternion(Vector3.RIGHT, sw - 0.5 * air))
-		var flex := 0.14 - (0.1 * w + 0.95 * run_t * w) - 0.4 * air
+		var flex := 0.14 - (0.1 * w + 1.35 * run_t * w) - 0.4 * air
 		_local(lo, Quaternion(Vector3.RIGHT, flex))
 		_local(wr, Quaternion.IDENTITY)
-		var fk_curl := 0.35 + 0.2 * run_t
+		var fk_curl := 0.35 + 0.6 * run_t * w
 		_curl_fingers(side, fk_curl)
 		if targets[idx] == null:
 			continue

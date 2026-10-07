@@ -8,6 +8,7 @@ signal ammo_changed(count: int, maximum: int)
 signal message(text: String)
 signal stage_changed(label: String, progress: float)
 signal aim_changed(on: bool)
+signal near_breakable_changed(near: bool)
 
 const WALK_SPEED := 1.75
 const RUN_SPEED := 5.2
@@ -29,6 +30,8 @@ var _pitch := -0.12
 var _run_t := 0.0
 var _shake := 0.0
 var aiming := false
+var _kick_yaw := 0.0
+var _near := false
 var _rng := RandomNumberGenerator.new()
 
 
@@ -54,6 +57,7 @@ func _ready() -> void:
 	mortar.message.connect(func(t): message.emit(t))
 	mortar.fired.connect(func(): _shake = 1.0)
 	mortar.aim_point_provider = Callable(self, "_aim_point")
+	human.kick_impact.connect(_on_kick_impact)
 
 	cam_yaw = Node3D.new()
 	cam_yaw.position.y = EYE_HEIGHT
@@ -88,6 +92,7 @@ func _register_inputs() -> void:
 		"toggle_view": [KEY_V],
 		"slot_1": [KEY_1, KEY_KP_1],
 		"reload_cheat": [KEY_R],
+		"kick": [KEY_F],
 	}
 	for action in map:
 		if not InputMap.has_action(action):
@@ -129,6 +134,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		equip(not mortar.equipped)
 	elif event.is_action_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		mortar.try_fire()
+	elif event.is_action_pressed("kick") and not aiming and not mortar.busy and is_on_floor() and human.kick_t < 0.0:
+		_kick_yaw = _yaw
+		human.start_kick()
 	elif event.is_action_pressed("reload_cheat"):
 		mortar.reload_all()
 		message.emit("Obus rechargés")
@@ -144,6 +152,10 @@ func _physics_process(delta: float) -> void:
 	var target_speed := lerpf(WALK_SPEED, RUN_SPEED, _run_t)
 	if mortar.busy or aiming:
 		target_speed = minf(target_speed, WALK_SPEED * 0.55)
+		_run_t = 0.0
+	var kicking := human.kick_t >= 0.0
+	if kicking:
+		target_speed = 0.0
 		_run_t = 0.0
 
 	var want_aim := mortar.equipped and Input.is_action_pressed("aim") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
@@ -172,11 +184,22 @@ func _physics_process(delta: float) -> void:
 	# --- orientation du corps
 	var face_cam := first_person or mortar.equipped
 	var target_yaw := human.rotation.y
-	if face_cam:
+	if kicking:
+		target_yaw = _kick_yaw
+	elif face_cam:
 		target_yaw = _yaw
-	elif wish.length() > 0.1:
+	elif wish.length() > 0.1 and not kicking:
 		target_yaw = atan2(-wish.x, -wish.z)
 	human.rotation.y = lerp_angle(human.rotation.y, target_yaw, minf(1.0, delta * (14.0 if face_cam else 10.0)))
+
+	# --- objets cassables à proximité (invite « F »)
+	var near := false
+	for n in get_tree().get_nodes_in_group("breakable"):
+		if (n as Node3D).global_position.distance_to(global_position) < 4.6:
+			near = true
+	if near != _near:
+		_near = near
+		near_breakable_changed.emit(near)
 
 	# --- animation
 	mortar.step(delta)
@@ -184,6 +207,16 @@ func _physics_process(delta: float) -> void:
 	var run_blend := clampf((speed - WALK_SPEED) / (RUN_SPEED - WALK_SPEED), 0.0, 1.0)
 	human.animate(delta, speed, run_blend, is_on_floor(), velocity.y, _pitch)
 	_update_camera(delta)
+
+
+func _on_kick_impact(point: Vector3) -> void:
+	var fwd := Basis(Vector3.UP, human.rotation.y) * Vector3(0, 0, -1)
+	var hit := false
+	for n in get_tree().get_nodes_in_group("breakable"):
+		if n.has_method("kick") and n.kick(point + fwd * 0.12, fwd):
+			hit = true
+	if hit:
+		_shake = 0.6
 
 
 func _aim_point() -> Vector3:

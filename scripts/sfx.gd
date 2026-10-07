@@ -15,6 +15,10 @@ static func get_stream(sound: StringName) -> AudioStreamWAV:
 			&"hiss": _cache[sound] = _make(_gen_hiss())
 			&"whistle": _cache[sound] = _make(_gen_whistle())
 			&"click": _cache[sound] = _make(_gen_click())
+			&"glass_hit": _cache[sound] = _make(_gen_glass_hit())
+			&"glass_crack": _cache[sound] = _make(_gen_glass_crack())
+			&"glass_break": _cache[sound] = _make(_gen_glass_break())
+			&"kick_whoosh": _cache[sound] = _make(_gen_whoosh())
 			_: _cache[sound] = _make(PackedFloat32Array([0.0]))
 	return _cache[sound]
 
@@ -135,4 +139,85 @@ static func _gen_click() -> PackedFloat32Array:
 	for i in a.size():
 		var t := float(i) / RATE
 		a[i] = rng.randf_range(-1.0, 1.0) * exp(-t * 120.0) * 0.5 + sin(TAU * 900.0 * t) * exp(-t * 60.0) * 0.3
+	return a
+
+
+static func _ping(a: PackedFloat32Array, start: int, freq: float, amp: float, decay: float) -> void:
+	var n := int(minf(0.35, 6.0 / decay) * RATE)
+	for j in n:
+		var idx := start + j
+		if idx >= a.size():
+			break
+		var t := float(j) / RATE
+		a[idx] += sin(TAU * freq * t) * amp * exp(-t * decay)
+
+
+static func _gen_glass_hit() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 41
+	var a := _buf(0.7)
+	var lp := 0.0
+	for i in a.size():
+		var t := float(i) / RATE
+		lp += (rng.randf_range(-1.0, 1.0) - lp) * 0.2
+		a[i] = sin(TAU * 150.0 * t) * exp(-t * 28.0) * 0.8 + lp * exp(-t * 60.0) * 0.9
+	_ping(a, 0, 2310.0, 0.18, 14.0)
+	_ping(a, 0, 3720.0, 0.12, 18.0)
+	_ping(a, 0, 5150.0, 0.07, 24.0)
+	return a
+
+
+static func _gen_glass_crack() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 43
+	var a := _buf(1.0)
+	for k in 34:
+		var st := int(rng.randf_range(0.0, 0.8) * RATE)
+		var amp := rng.randf_range(0.25, 0.8) * (1.0 - float(st) / a.size() * 0.6)
+		var prev := 0.0
+		for j in 90:
+			var idx := st + j
+			if idx >= a.size():
+				break
+			var n := rng.randf_range(-1.0, 1.0)
+			a[idx] += (n - prev) * amp * exp(-float(j) / 14.0)
+			prev = n
+		_ping(a, st, rng.randf_range(3500.0, 8200.0), amp * 0.25, 90.0)
+	return a
+
+
+static func _gen_glass_break() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 47
+	var a := _buf(3.2)
+	var lp := 0.0
+	var prev := 0.0
+	for i in a.size():
+		var t := float(i) / RATE
+		var n := rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * 0.08
+		var hp := n - prev * 0.6
+		prev = n
+		var burst := hp * exp(-t * 7.0) * 0.9 * (1.0 - exp(-t * 900.0))
+		var thump := sin(TAU * 95.0 * t) * exp(-t * 14.0) * 0.45
+		var roll := hp * exp(-t * 1.6) * 0.07 * (0.5 + 0.5 * sin(t * 53.0))
+		a[i] = burst + thump + lp * exp(-t * 30.0) * 0.6 + roll
+	for k in 220:
+		var tt := pow(rng.randf(), 1.6) * 2.7 + 0.03
+		var amp := rng.randf_range(0.05, 0.28) * exp(-tt * 0.9)
+		_ping(a, int(tt * RATE), rng.randf_range(2200.0, 9500.0), amp, rng.randf_range(35.0, 110.0))
+	return a
+
+
+static func _gen_whoosh() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 53
+	var a := _buf(0.5)
+	var lp := 0.0
+	for i in a.size():
+		var t := float(i) / RATE
+		var n := rng.randf_range(-1.0, 1.0)
+		var k := 0.04 + 0.18 * sin(PI * clampf(t / 0.4, 0.0, 1.0))
+		lp += (n - lp) * k
+		a[i] = lp * sin(PI * clampf(t / 0.4, 0.0, 1.0)) * 0.9
 	return a

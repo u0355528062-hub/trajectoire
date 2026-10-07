@@ -7,6 +7,9 @@ var player: Player
 func _ready() -> void:
 	_build_environment()
 	_build_ground()
+	var bus := BusStop.new()
+	add_child(bus)
+	bus.position = Vector3(0, 0, -13)
 	player = Player.new()
 	add_child(player)
 	player.position = Vector3(0, 0.05, 0)
