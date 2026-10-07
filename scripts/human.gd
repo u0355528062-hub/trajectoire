@@ -34,6 +34,7 @@ var look_target := Vector3.ZERO
 var look_w := 0.0        # 0 = regard selon la caméra, 1 = suit look_target
 var jaw := 0.0           # ouverture de la bouche (parole, cris)
 var crouch := 0.0        # 0 debout -> 1 accroupi
+var crouch_user := 0.0   # accroupi volontaire du joueur (le plus grand des deux s'applique)
 var hop := 0.0           # petit saut (joie)
 var nod := 0.0           # hochement « oui »
 var shake := 0.0         # « non » de la tête
@@ -441,6 +442,13 @@ func _curl_fingers(side: String, amount: float, thumb := 0.4, index_ext := 0.0) 
 func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float, pitch: float) -> void:
 	if skeleton == null:
 		return
+	var crouch_saved := crouch
+	crouch = maxf(crouch, crouch_user)
+	_animate(delta, speed, run_t, grounded, vy, pitch)
+	crouch = crouch_saved
+
+
+func _animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float, pitch: float) -> void:
 	t_idle += delta
 	kick = move_toward(kick, 0.0, delta * 2.6)
 	look_pitch = lerpf(look_pitch, pitch, minf(1.0, delta * 10.0))

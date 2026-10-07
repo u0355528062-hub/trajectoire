@@ -1071,6 +1071,8 @@ func on_event(type: String, d: Dictionary) -> void:
 			_gather(d["pos"], 3, 22.0)
 		"call":
 			_ev_call(d)
+		"player_gesture":
+			_ev_player_gesture(d)
 		"police_gas":
 			_ev_police_gas(d)
 		"gas_land":
@@ -1113,6 +1115,25 @@ func _update_hostility(delta: float) -> void:
 	var tcop := police.nearest_cop(n2.global_position, 30.0)
 	if tcop:
 		n2.throw_at(tcop)
+
+
+## Le joueur lève le poing / applaudit : les voisins suivent
+func _ev_player_gesture(d: Dictionary) -> void:
+	var p: Vector3 = d["pos"]
+	var kind: String = d["kind"]
+	if kind == "hands":
+		return
+	var joined := 0
+	for n in _near(p, 15.0):
+		if joined >= 4 or n.busy() or n.state != "home" or n.react_cd > 0.0 or _rng.randf() > 0.45 + 0.3 * n.bold:
+			continue
+		joined += 1
+		if kind == "fist":
+			n.react("fist" if n.prop == "" else n._prop_cheer_pose()[0], 3.0, p + Vector3.UP * 1.7, {"voice": "allez" if _rng.randf() < 0.5 else "ouais", "voice_p": 0.6, "prm": {"k": 1.0} if n.prop == "" else n._prop_cheer_pose()[1]})
+		else:
+			n.react("clap" if n.prop == "" else n._prop_cheer_pose()[0], 3.0, p + Vector3.UP * 1.7, {"voice": "bravo", "voice_p": 0.4, "prm": {"gap": 0.1} if n.prop == "" else n._prop_cheer_pose()[1]})
+	if joined >= 2:
+		excitement = minf(excitement + 0.04, 1.0)
 
 
 func _ev_police_gas(d: Dictionary) -> void:

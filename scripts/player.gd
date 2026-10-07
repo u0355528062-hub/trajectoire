@@ -83,6 +83,22 @@ var _down_e := 0.0
 var _cuffs: Node3D
 var _fall_dir := 0.0
 var _over_sent := false
+# --- animations du joueur
+var crouching := false
+var _crouch_e := 0.0
+var _emote := ""
+var _emote_w := 0.0
+var _emote_t := 0.0
+var _emote_evt := 0.0
+var _still_t := 0.0
+var _fidget := ""
+var _fidget_t := 0.0
+var _fidget_w := 0.0
+var _fidget_cd := 8.0
+var _phone: Node3D
+var _fidget_forced := ""          # (mise au point)
+var _cap: CapsuleShape3D
+var _cap_node: CollisionShape3D
 var _aim_evt := 0.0
 var _voice: AudioStreamPlayer3D
 
@@ -99,8 +115,13 @@ func _ready() -> void:
 	col.shape = cap
 	col.position.y = 0.88
 	add_child(col)
+	_cap = cap
+	_cap_node = col
 	collision_mask = 1 | 16 | 32 | 64
 	floor_snap_length = 0.25
+	platform_floor_layers = 0     # ne jamais « hériter » la vitesse d'un corps sous les pieds (policier, PNJ)
+	platform_wall_layers = 0
+	platform_on_leave = CharacterBody3D.PLATFORM_ON_LEAVE_DO_NOTHING
 	floor_max_angle = deg_to_rad(50.0)
 
 	human = Human.new()
@@ -185,6 +206,10 @@ func _register_inputs() -> void:
 		"call_crowd": [KEY_G],
 		"reload_cheat": [KEY_R],
 		"kick": [KEY_F],
+		"crouch": [KEY_C],
+		"emote_fist": [KEY_B],
+		"emote_clap": [KEY_N],
+		"emote_hands": [KEY_X],
 	}
 	for action in map:
 		if not InputMap.has_action(action):
@@ -279,6 +304,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			0:
 				if flare_tool.carrying:
 					flare_tool.use()
+	elif event.is_action_pressed("crouch") and arrest_phase == "" and down_t <= 0.0 and not _busy():
+		crouching = not crouching
 	elif event.is_action_pressed("kick") and not aiming and not _busy() and is_on_floor():
 		_kick_yaw = _yaw
 		human.start_kick()
@@ -295,7 +322,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	# --- entrée
 	var iv := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-	var wants_run := Input.is_action_pressed("run") and iv.y <= 0.3 and iv.length() > 0.1
+	var wants_run := Input.is_action_pressed("run") and iv.y <= 0.3 and iv.length() > 0.1 and not crouching
 	_run_t = move_toward(_run_t, 1.0 if wants_run else 0.0, delta * 4.0)
 	var target_speed := lerpf(WALK_SPEED, RUN_SPEED, _run_t)
 	if _tools_busy() or (aiming and current_item != 4):
@@ -307,7 +334,7 @@ func _physics_process(delta: float) -> void:
 	if igniter.busy or _lift_t >= 0.0 or arrest_phase != "" or down_t > 0.0:
 		target_speed = 0.0   # les deux pieds au sol pendant qu'on dépose / allume / redresse / est maîtrisé
 		_run_t = 0.0
-	target_speed *= _status_speed()
+	target_speed *= _status_speed() * lerpf(1.0, 0.55, _crouch_e)
 	var kicking := human.kick_t >= 0.0
 	if kicking:
 		target_speed = 0.0
@@ -343,7 +370,10 @@ func _physics_process(delta: float) -> void:
 	if is_on_floor():
 		velocity.y = 0.0
 		if Input.is_action_just_pressed("jump") and not kicking and _grab_bin == null and arrest_phase == "" and down_t <= 0.0:
-			velocity.y = JUMP_VELOCITY
+			if crouching:
+				crouching = false            # se relever d'abord
+			else:
+				velocity.y = JUMP_VELOCITY
 	else:
 		velocity.y -= GRAVITY * delta
 	move_and_slide()
@@ -377,6 +407,7 @@ func _physics_process(delta: float) -> void:
 	_update_bins(delta)
 	_update_lift(delta)
 	_update_status(delta)
+	_update_gestures(delta, iv)
 	_call_cd = maxf(_call_cd - delta, 0.0)
 	if _call_t >= 0.0:
 		_call_t += delta
@@ -397,6 +428,133 @@ func _physics_process(delta: float) -> void:
 	var run_blend := clampf((speed - WALK_SPEED) / (RUN_SPEED - WALK_SPEED), 0.0, 1.0)
 	human.animate(delta, speed, run_blend, is_on_floor(), velocity.y, _pitch)
 	_update_camera(delta, speed)
+
+
+# =================================================================== accroupi, gestes, petits gestes d'attente
+func _update_gestures(delta: float, iv: Vector2) -> void:
+	if arrest_phase != "" or down_t > 0.0:
+		crouching = false
+	_crouch_e = move_toward(_crouch_e, 1.0 if crouching else 0.0, delta * 5.0)
+	var ce := _crouch_e * _crouch_e * (3.0 - 2.0 * _crouch_e)
+	human.crouch_user = 0.8 * ce
+	# gestes (maintenir la touche)
+	var want := ""
+	if arrest_phase == "" and down_t <= 0.0 and _lift_t < 0.0 and not _grab_bin and not igniter.busy and human.kick_t < 0.0:
+		if Input.is_action_pressed("emote_fist"):
+			want = "fist"
+		elif Input.is_action_pressed("emote_clap"):
+			want = "clap"
+		elif Input.is_action_pressed("emote_hands"):
+			want = "hands"
+	if want != "" and current_item != 0 and not _tools_busy():
+		select_item(0)
+	if want != "" and (current_item != 0 or _tools_busy()):
+		want = ""
+	if want != _emote:
+		_emote_t = 0.0
+		if want != "":
+			_emote = want
+	if want == "" and _emote_w <= 0.01:
+		_emote = ""
+	_emote_w = move_toward(_emote_w, 1.0 if want != "" else 0.0, delta * 6.0)
+	if want != "":
+		_emote_t += delta
+		_emote_evt -= delta
+		if _emote_evt <= 0.0 and _emote_t > 0.6:
+			_emote_evt = 2.5
+			get_tree().call_group("crowd", "on_event", "player_gesture", {"kind": want, "pos": global_position, "dir": -cam_yaw.global_basis.z})
+		if want == "hands":
+			wanted = maxf(wanted - delta * 0.08, 0.0)       # les mains en l'air apaisent la police
+	# petits gestes d'attente : on regarde autour, on frotte les mains, on sort le téléphone
+	var idle := iv.length() < 0.1 and is_on_floor() and _busy() == false and aiming == false and want == "" and arrest_phase == "" and down_t <= 0.0 and gas_level < 0.2
+	if idle and current_item == 0:
+		_still_t += delta
+	else:
+		_still_t = 0.0
+		if _fidget != "":
+			_fidget = ""
+			_fidget_t = 0.0
+	if _fidget == "" and _still_t > _fidget_cd and not first_person:
+		_fidget = ["look", "rub", "phone", "look", "stretch"][_rng.randi() % 5]
+		if _fidget_forced != "":
+			_fidget = _fidget_forced
+			_fidget_forced = ""
+		_fidget_t = 0.0
+		_fidget_cd = _rng.randf_range(6.0, 12.0)
+	if _fidget != "":
+		_fidget_t += delta
+		var dur: float = {"look": 5.2, "rub": 4.0, "phone": 6.5, "stretch": 3.2}.get(_fidget, 4.0)
+		if _fidget_t > dur:
+			_fidget = ""
+			_still_t = 0.0
+	_fidget_w = move_toward(_fidget_w, 1.0 if (_fidget != "" and _fidget in ["rub", "phone", "stretch"]) else 0.0, delta * 4.0)
+	# regard qui se promène
+	if _fidget == "look":
+		var yaw_off := sin(_fidget_t * 1.3) * 1.0 + sin(_fidget_t * 0.6) * 0.5
+		var yb := Basis(Vector3.UP, human.rotation.y + yaw_off)
+		human.look_target = human.head_world() + yb * Vector3(0, 0.05, -4.0)
+		human.look_w = lerpf(human.look_w, 1.0, minf(1.0, delta * 4.0))
+	else:
+		human.look_w = lerpf(human.look_w, 0.0, minf(1.0, delta * 5.0))
+	# le téléphone sorti pendant « phone »
+	if _fidget == "phone" and _phone == null:
+		_phone = Props.phone("feed")
+		_phone.top_level = true
+		add_child(_phone)
+	if _phone != null:
+		_phone.visible = _fidget == "phone" and _fidget_w > 0.3
+		if _phone.visible:
+			var pr := human.palm("R")
+			var f: Vector3 = pr["f"]
+			var p: Vector3 = pr["p"]
+			_phone.global_transform = Transform3D(Props.basis_up(f, p), (pr["pos"] as Vector3) + p * 0.018 + f * 0.012)
+
+
+func _bdir(v: Vector3) -> Vector3:
+	var yb := Basis(Vector3.UP, human.rotation.y)
+	return yb * Vector3(v.x, v.y, -v.z)
+
+
+## Mains pour les gestes volontaires et les petits gestes d'attente (repère corps : x droite, y haut, z devant)
+func _gesture_hands() -> Array:
+	var yb := Basis(Vector3.UP, human.rotation.y)
+	var k := human.arm_length() / 0.58
+	var shr := human.shoulder_world("R")
+	var shl := human.shoulder_world("L")
+	var t := Time.get_ticks_msec() / 1000.0
+	var mid := (shr + shl) * 0.5
+	var r: Variant = null
+	var l: Variant = null
+	var w := _emote_w if _emote != "" and _emote_w > 0.01 else _fidget_w
+	var kind := _emote if (_emote != "" and _emote_w > 0.01) else _fidget
+	match kind:
+		"fist":
+			var pump := sin(_emote_t * 5.6)
+			r = {"pos": shr + _bdir(Vector3(0.04, 0.5 + 0.05 * pump, 0.08) * k), "f": _bdir(Vector3(0, 1, 0.15)), "p": _bdir(Vector3(-1, 0, 0)), "curl": 1.0, "w": w}
+			l = {"pos": shl + _bdir(Vector3(-0.06, -0.42, -0.02) * k), "f": _bdir(Vector3(0.3, -0.75, 0.55)), "p": _bdir(Vector3(1, 0, 0)), "curl": 0.2, "w": w}
+		"clap":
+			var gap := 0.035 + 0.11 * (0.5 + 0.5 * sin(_emote_t * 17.0))
+			var c := mid + _bdir(Vector3(0, -0.22, 0.34) * k)
+			r = {"pos": c + _bdir(Vector3(gap, 0, 0)), "f": _bdir(Vector3(0, 0.35, 0.9)), "p": _bdir(Vector3(-1, 0, 0)), "curl": 0.12, "w": w}
+			l = {"pos": c - _bdir(Vector3(gap, 0, 0)), "f": _bdir(Vector3(0, 0.35, 0.9)), "p": _bdir(Vector3(1, 0, 0)), "curl": 0.12, "w": w}
+		"hands":
+			var sway := sin(t * 3.0) * 0.012
+			r = {"pos": shr + _bdir(Vector3(0.12, 0.4 + sway, 0.12) * k), "f": _bdir(Vector3(0.1, 1, 0.2)), "p": _bdir(Vector3(0, 0, 1)), "curl": 0.05, "w": w}
+			l = {"pos": shl + _bdir(Vector3(-0.12, 0.4 - sway, 0.12) * k), "f": _bdir(Vector3(-0.1, 1, 0.2)), "p": _bdir(Vector3(0, 0, 1)), "curl": 0.05, "w": w}
+		"rub":
+			var rub := sin(_fidget_t * 9.0)
+			var c2 := mid + _bdir(Vector3(0, -0.24, 0.36) * k)
+			r = {"pos": c2 + _bdir(Vector3(0.03 + 0.02 * rub, 0.0, 0.0)), "f": _bdir(Vector3(0, 0.3, 1)), "p": _bdir(Vector3(-1, 0, 0)), "curl": 0.3, "w": w}
+			l = {"pos": c2 - _bdir(Vector3(0.03 - 0.02 * rub, 0.0, 0.0)), "f": _bdir(Vector3(0, 0.3, 1)), "p": _bdir(Vector3(1, 0, 0)), "curl": 0.3, "w": w}
+		"phone":
+			var u := clampf(_fidget_t / 0.6, 0.0, 1.0) * clampf((6.5 - _fidget_t) / 0.6, 0.0, 1.0)
+			r = {"pos": shr + _bdir(Vector3(-0.1, -0.3 + 0.0, 0.3) * k) + Vector3(0, sin(t * 0.7) * 0.01, 0), "f": _bdir(Vector3(0, 0.6, 0.8)), "p": _bdir(Vector3(0, 0.8, -0.6)), "curl": 0.55, "w": w * u}
+		"stretch":
+			var u2 := clampf(_fidget_t / 0.5, 0.0, 1.0) * clampf((3.2 - _fidget_t) / 0.5, 0.0, 1.0)
+			var hd := human.head_world()
+			r = {"pos": hd + _bdir(Vector3(-0.11, -0.1, -0.1)), "f": _bdir(Vector3(0.5, 0.8, 0.2)), "p": _bdir(Vector3(-0.3, -0.3, 1)), "curl": 0.5, "w": w * u2}
+			l = {"pos": hd + _bdir(Vector3(0.11, -0.1, -0.1)), "f": _bdir(Vector3(-0.5, 0.8, 0.2)), "p": _bdir(Vector3(0.3, -0.3, 1)), "curl": 0.5, "w": w * u2}
+	return [r, l]
 
 
 # =================================================================== état physique : gaz, coups, arrestation
@@ -776,6 +934,12 @@ func _hands() -> Array:
 	var out: Array = [null, null]
 	if _tool_hands.is_valid() and arrest_phase == "" and down_t <= 0.0:
 		out = _tool_hands.call()
+	if arrest_phase == "" and down_t <= 0.0 and ((_emote != "" and _emote_w > 0.01) or _fidget_w > 0.01) and gas_level < 0.4 and pepper_level < 0.35 and _lift_t < 0.0:
+		var gh := _gesture_hands()
+		for i in 2:
+			if gh[i] != null:
+				out[i] = gh[i]
+		return out
 	if arrest_phase != "" or down_t > 0.0 or gas_level > 0.4 or pepper_level > 0.35:
 		return _status_hands(out)
 	if _grab_bin != null:
@@ -914,7 +1078,7 @@ func _update_camera(delta: float, speed: float) -> void:
 	var bob_k := 1.0 if Settings.d["head_bob"] else 0.0
 	var bob_y := sin(human.phase * TAU * 2.0) * (0.010 + 0.018 * _run_t) * sp * e * bob_k
 	var bob_x := sin(human.phase * TAU) * (0.006 + 0.01 * _run_t) * sp * e * bob_k
-	cam_yaw.position.y = EYE_HEIGHT + bob_y - _land_dip - 1.15 * _down_e - 0.62 * human.kneel
+	cam_yaw.position.y = EYE_HEIGHT + bob_y - _land_dip - 1.15 * _down_e - 0.62 * human.kneel - 0.5 * _crouch_e * _crouch_e * (3.0 - 2.0 * _crouch_e)
 	cam_pitch.position.x = bob_x
 	# champ de vision : s'ouvre en courant, se resserre en visant
 	var fov_target := lerpf(float(Settings.d["fov"]) + 8.0 * _run_t, 46.0, k)

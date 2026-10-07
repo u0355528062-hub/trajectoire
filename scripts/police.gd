@@ -83,9 +83,9 @@ func _spawn_cop(loadout: String, pos: Vector3, yaw: float, role := "line") -> Co
 	c.loadout = loadout
 	c.role = role
 	c.bold = _rng.randf_range(0.4, 0.95)
-	add_child(c)
-	c.global_position = pos
+	c.position = pos          # avant add_child : un corps cinématique qui « se téléporte » transmet une vitesse énorme
 	c.rotation.y = yaw
+	add_child(c)
 	c.yaw = yaw
 	c.line_dir = line_dir
 	c.line_slot = pos
@@ -113,10 +113,10 @@ func _spawn_cordon() -> void:
 func _make_vehicle(kind: String, pos: Vector3, yaw: float) -> PoliceVehicle:
 	var v := PoliceVehicle.new()
 	v.crowd = crowd
+	v.position = pos
+	v.rotation.y = yaw
 	add_child(v)
 	v.build(kind)
-	v.global_position = pos
-	v.rotation.y = yaw
 	vehicles.append(v)
 	crowd.add_obstacle(v, v.half, Vector2.ZERO, false, true)
 	crowd.nav_dirty()
@@ -132,10 +132,10 @@ func _send_vehicle(kind: String, crew: Array, stage_tag: int) -> void:
 	var start := Vector3(118.0, 0, lane_z)
 	var v := PoliceVehicle.new()
 	v.crowd = crowd
+	v.position = start
+	v.rotation.y = PI / 2.0
 	add_child(v)
 	v.build(kind)
-	v.global_position = start
-	v.rotation.y = PI / 2.0
 	vehicles.append(v)
 	v.set_lights(true, true)
 	var px := maxf(line_c.x + 9.0 + 3.5 * float(_park_n), STREET_X + 3.0) if kind == "truck" else maxf(line_c.x + 7.0 + 2.0 * float(_park_n), STREET_X)
