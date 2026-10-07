@@ -424,9 +424,7 @@ func _shatter(imp: Vector2, kick_dir: Vector3) -> void:
 				var life := _rng.randf_range(14.0, 22.0)
 				get_tree().create_timer(life).timeout.connect(func():
 					if is_instance_valid(rb):
-						var tw := rb.create_tween()
-						tw.tween_property(rb, "scale", Vector3.ONE * 0.01, 1.0)
-						tw.tween_callback(rb.queue_free))
+						Fx.shrink_and_free(rb, 1.0))
 				made += 1
 	_glass_dust(impact_w, kick_dir)
 

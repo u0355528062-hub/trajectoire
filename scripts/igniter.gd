@@ -589,8 +589,8 @@ func _bl(a: Dictionary, b: Dictionary, k: float) -> Dictionary:
 	k = clampf(k, 0.0, 1.0)
 	return {
 		"pos": (a["pos"] as Vector3).lerp(b["pos"], k),
-		"f": ((a["f"] as Vector3).slerp(b["f"], k)).normalized(),
-		"p": ((a["p"] as Vector3).slerp(b["p"], k)).normalized(),
+		"f": Fx.vslerp(a["f"], b["f"], k).normalized(),
+		"p": Fx.vslerp(a["p"], b["p"], k).normalized(),
 		"curl": lerpf(a["curl"], b["curl"], k),
 		"w": 1.0,
 	}

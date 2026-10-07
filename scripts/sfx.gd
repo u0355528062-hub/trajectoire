@@ -23,6 +23,9 @@ static func get_stream(sound: StringName) -> AudioStreamWAV:
 			&"footstep_b": _cache[sound] = _make(_gen_footstep(62, 170.0))
 			&"stone_thud": _cache[sound] = _make(_gen_stone_thud())
 			&"throw": _cache[sound] = _make(_gen_throw())
+			&"petard_s": _cache[sound] = _make(_gen_petard(false))
+			&"petard_m": _cache[sound] = _make(_gen_petard(true))
+			&"fuse": _cache[sound] = _make(_gen_fuse())
 			&"amb_wind": _cache[sound] = _make_loop(_gen_wind(), 22050)
 			&"amb_city": _cache[sound] = _make_loop(_gen_city(), 22050)
 			&"amb_crickets": _cache[sound] = _make_loop(_gen_crickets(), 22050)
@@ -290,6 +293,68 @@ static func _gen_throw() -> PackedFloat32Array:
 		var n := rng.randf_range(-1.0, 1.0)
 		lp += (n - lp) * (0.1 + 0.25 * sin(PI * clampf(t / 0.28, 0.0, 1.0)))
 		a[i] = lp * sin(PI * clampf(t / 0.28, 0.0, 1.0)) * 0.6
+	return a
+
+
+## Pétard : claquement sec (petit) ou détonation sourde + claquement (moyen), suivis d'échos de façades
+static func _gen_petard(big: bool) -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 91 if big else 89
+	var a := _buf(2.6 if big else 1.5)
+	var lp := 0.0
+	var lp2 := 0.0
+	var prev := 0.0
+	var phase := 0.0
+	for i in a.size():
+		var t := float(i) / RATE
+		var n := rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * (0.35 if big else 0.6)
+		lp2 += (lp - lp2) * 0.3
+		var hp := n - prev * 0.85
+		prev = n
+		var crack := hp * exp(-t * (95.0 if big else 230.0)) * (1.0 - exp(-t * 6000.0))
+		var body := lp2 * exp(-t * (26.0 if big else 70.0)) * (3.2 if big else 1.2)
+		var low := 0.0
+		if big:
+			phase += TAU * (58.0 + 85.0 * exp(-t * 22.0)) / RATE
+			low = sin(phase) * exp(-t * 17.0) * 0.85
+		a[i] = (crack * (0.85 if big else 0.7) + body * 0.5 + low) * 0.9
+	# échos : réflexions sur les façades, adoucies
+	var taps: Array = [[0.13, 0.5], [0.29, 0.34], [0.52, 0.22], [0.86, 0.12]] if big else [[0.11, 0.34], [0.24, 0.2], [0.43, 0.1]]
+	var src := a.duplicate()
+	for tp in taps:
+		var off := int(float(tp[0]) * RATE)
+		var amp: float = tp[1]
+		var sm := 0.0
+		for i in range(off, mini(a.size(), off + int(0.5 * RATE))):
+			sm += (src[i - off] - sm) * 0.2
+			a[i] += sm * amp * exp(-float(i - off) / RATE * 7.0)
+	# petit « bruit de série » pour les gros : un second claquement étouffé
+	if big:
+		var off2 := int(0.045 * RATE)
+		for j in int(0.08 * RATE):
+			if off2 + j < a.size():
+				a[off2 + j] += rng.randf_range(-1.0, 1.0) * exp(-float(j) / RATE * 70.0) * 0.18
+	for i in a.size():
+		a[i] = clampf(a[i], -1.0, 1.0)
+	return a
+
+
+## Mèche qui crépite
+static func _gen_fuse() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 97
+	var a := _buf(3.8)
+	var lp := 0.0
+	for i in a.size():
+		var t := float(i) / RATE
+		var n := rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * 0.75
+		var hiss := (n - lp) * 0.2
+		var spit := 0.0
+		if rng.randf() < 0.0016:
+			spit = rng.randf_range(-1.0, 1.0) * 0.5
+		a[i] = (hiss + spit) * smoothstep(0.0, 0.08, t) * clampf((3.8 - t) * 8.0, 0.0, 1.0) * (0.7 + 0.3 * sin(t * 37.0))
 	return a
 
 

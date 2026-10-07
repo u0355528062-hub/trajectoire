@@ -201,7 +201,7 @@ func _place_props() -> void:
 			lighter.global_position = lp + (hand["p"] as Vector3) * 0.04
 			lighter.global_basis = Basis(Quaternion(Vector3.UP, (hand["thumb"] as Vector3)))
 	if cig:
-		var in_hand := act in ["smoke_drag", "smoke_hold", "idle", "pocket", "crossed", "akimbo", "back"] and not phone_on
+		var in_hand := act in ["smoke_drag", "smoke_hold", "idle"] and not phone_on
 		var cp: Vector3
 		var ax2: Vector3
 		if in_hand:
@@ -1250,7 +1250,7 @@ func _think_mortar(delta: float) -> void:
 				set_act("mortar_aim", {"axis": axis_b}, 3.5)
 				AudioLib.play_at(self, "sfx:hiss", mortar_m.global_position, -12.0, 5.0)
 		"aim":
-			data["axis_w"] = (data["axis_w"] as Vector3).slerp(_bd(axis_b), minf(1.0, delta * 4.0))
+			data["axis_w"] = Fx.vslerp(data["axis_w"], _bd(axis_b), minf(1.0, delta * 4.0))
 			_fuse_light.light_energy = 0.8 + randf() * 0.6
 			look(mortar_m.global_position + (data["axis_w"] as Vector3) * 3.0, 0.8)
 			if sub_t > 1.1:
@@ -1262,7 +1262,7 @@ func _think_mortar(delta: float) -> void:
 			look(global_position + Vector3.UP * 30.0 + forward() * 10.0, 1.0)
 			if sub_t > 0.9:
 				set_act("mortar_carry", {}, 2.0)
-				data["axis_w"] = (data["axis_w"] as Vector3).slerp(_bd(Vector3(0, 0.71, 0.70)), minf(1.0, delta * 3.0))
+				data["axis_w"] = Fx.vslerp(data["axis_w"], _bd(Vector3(0, 0.71, 0.70)), minf(1.0, delta * 3.0))
 			if sub_t > 3.5:
 				data.erase("axis_w")
 				_mortar_cd = _rng.randf_range(40.0, 80.0)

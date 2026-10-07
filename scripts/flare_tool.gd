@@ -190,8 +190,8 @@ func _target() -> Array:
 func _blend(a: Dictionary, b: Dictionary, k: float) -> Dictionary:
 	return {
 		"palm": (a["palm"] as Vector3).lerp(b["palm"], k),
-		"f": (a["f"] as Vector3).slerp(b["f"], k).normalized(),
-		"p": (a["p"] as Vector3).slerp(b["p"], k).normalized(),
+		"f": Fx.vslerp(a["f"], b["f"], k).normalized(),
+		"p": Fx.vslerp(a["p"], b["p"], k).normalized(),
 		"curl": lerpf(a["curl"], b["curl"], k),
 	}
 

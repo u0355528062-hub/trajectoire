@@ -158,7 +158,7 @@ func _ready() -> void:
 
 func _enter_tree() -> void:
 	if held:
-		freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+		freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
 		freeze = true
 
 
@@ -217,7 +217,7 @@ func join_fire(f: Node) -> void:
 func set_held(on: bool) -> void:
 	held = on
 	if on:
-		freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+		freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
 		freeze = true
 		collision_layer = 0
 		collision_mask = 0
@@ -279,9 +279,7 @@ func _finish() -> void:
 	_dying = true
 	lit = false
 	_stop_flame()
-	var tw := create_tween()
-	tw.tween_property(self, "scale", Vector3(0.4, 0.05, 0.4), 1.8)
-	tw.tween_callback(queue_free)
+	Fx.shrink_and_free(self, 1.8, Vector3(0.4, 0.05, 0.4))
 
 
 func kick(point: Vector3, dir: Vector3, _power := 1.0) -> bool:

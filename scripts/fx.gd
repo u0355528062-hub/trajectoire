@@ -255,3 +255,35 @@ static func muzzle(scene: Node, pos: Vector3, axis: Vector3) -> void:
 	root.add_child(sm)
 	sm.emitting = true
 	root.get_tree().create_timer(4.0).timeout.connect(root.queue_free)
+
+
+## Fait disparaître un corps physique en réduisant son apparence (jamais le nœud physique lui-même :
+## mettre à l'échelle un RigidBody3D fait protester le moteur — axes non normalisés dans l'intégration).
+static func shrink_and_free(body: Node3D, dur := 1.0, to := Vector3.ONE * 0.01) -> void:
+	if not is_instance_valid(body) or body.is_queued_for_deletion():
+		return
+	if body is CollisionObject3D:
+		(body as CollisionObject3D).collision_layer = 0
+		(body as CollisionObject3D).collision_mask = 0
+	if body is RigidBody3D:
+		(body as RigidBody3D).freeze = true
+	var tw := body.create_tween().set_parallel(true)
+	for c in body.get_children():
+		if c is MeshInstance3D:
+			var m := c as MeshInstance3D
+			tw.tween_property(m, "scale", m.scale * to, dur)
+	tw.chain().tween_callback(body.queue_free)
+
+
+## Interpolation sphérique « blindée » : Vector3.slerp du moteur divise par la norme d'un produit vectoriel qui,
+## pour deux vecteurs presque identiques, devient dénormalisé -> axe non normalisé -> erreur moteur à chaque image.
+static func vslerp(a: Vector3, b: Vector3, t: float) -> Vector3:
+	var c := a.cross(b)
+	if c.length_squared() < 1e-8:
+		if a.dot(b) >= 0.0:
+			return a.lerp(b, t)
+		var perp := a.cross(Vector3.UP)
+		if perp.length_squared() < 1e-6:
+			perp = a.cross(Vector3.RIGHT)
+		return a.rotated(perp.normalized(), PI * t)
+	return a.slerp(b, t)

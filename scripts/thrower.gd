@@ -214,8 +214,8 @@ func _hand_targets() -> Array:
 func _blend(a: Dictionary, b: Dictionary, k: float) -> Dictionary:
 	return {
 		"palm": (a["palm"] as Vector3).lerp(b["palm"], k),
-		"f": (a["f"] as Vector3).slerp(b["f"], k).normalized(),
-		"p": (a["p"] as Vector3).slerp(b["p"], k).normalized(),
+		"f": Fx.vslerp(a["f"], b["f"], k).normalized(),
+		"p": Fx.vslerp(a["p"], b["p"], k).normalized(),
 		"curl": lerpf(a["curl"], b["curl"], k),
 	}
 
@@ -288,7 +288,5 @@ func _release() -> void:
 		old.queue_free()
 	get_tree().create_timer(60.0).timeout.connect(func():
 		if is_instance_valid(s):
-			var tw := s.create_tween()
-			tw.tween_property(s, "scale", Vector3.ONE * 0.01, 0.8)
-			tw.tween_callback(s.queue_free))
+			Fx.shrink_and_free(s, 0.8))
 	thrown.emit()

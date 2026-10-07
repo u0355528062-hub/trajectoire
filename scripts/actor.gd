@@ -431,15 +431,15 @@ func _film_dir(want: Vector3) -> Vector3:
 	var yaw := clampf(atan2(w.x, w.z), -0.75, 0.75)
 	var pitch := clampf(asin(clampf(w.y, -1.0, 1.0)), -0.45, 0.55)
 	var tgt := Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)).normalized()
-	_film_d = _film_d.slerp(tgt, 0.12).normalized()
+	_film_d = Fx.vslerp(_film_d, tgt, 0.12).normalized()
 	return _film_d
 
 
 func _blend_h(a: Dictionary, b: Dictionary, u: float) -> Dictionary:
 	var r := {
 		"pos": (a["pos"] as Vector3).lerp(b["pos"], u),
-		"f": (a["f"] as Vector3).slerp(b["f"], u).normalized(),
-		"p": (a["p"] as Vector3).slerp(b["p"], u).normalized(),
+		"f": Fx.vslerp(a["f"], b["f"], u).normalized(),
+		"p": Fx.vslerp(a["p"], b["p"], u).normalized(),
 		"curl": lerpf(a.get("curl", 0.6), b.get("curl", 0.6), u),
 		"index": lerpf(a.get("index", 0.0), b.get("index", 0.0), u),
 		"w": lerpf(a.get("w", 1.0), b.get("w", 1.0), u),

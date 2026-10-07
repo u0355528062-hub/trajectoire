@@ -322,9 +322,9 @@ func _chest(p_rest: Vector3, cx: Transform3D) -> Vector3:
 func _pose_blend(a: Dictionary, b: Dictionary, k: float) -> Dictionary:
 	return {
 		"palm": (a["palm"] as Vector3).lerp(b["palm"], k),
-		"axis": (a["axis"] as Vector3).slerp(b["axis"], k).normalized(),
-		"f": (a["f"] as Vector3).slerp(b["f"], k).normalized(),
-		"p": (a["p"] as Vector3).slerp(b["p"], k).normalized(),
+		"axis": Fx.vslerp(a["axis"], b["axis"], k).normalized(),
+		"f": Fx.vslerp(a["f"], b["f"], k).normalized(),
+		"p": Fx.vslerp(a["p"], b["p"], k).normalized(),
 	}
 
 

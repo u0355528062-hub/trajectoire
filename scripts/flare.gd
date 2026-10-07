@@ -155,7 +155,7 @@ func ignite() -> void:
 ## Tenu en main : la position est imposée chaque image
 func hold(xf: Transform3D) -> void:
 	if not held:
-		freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+		freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
 		freeze = true
 		held = true
 	collision_layer = 0     # tenu en main : ne doit rien pousser (ni le porteur)
@@ -177,7 +177,7 @@ func tip_world() -> Vector3:
 
 
 func _enter_tree() -> void:
-	freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+	freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
 	freeze = held
 
 

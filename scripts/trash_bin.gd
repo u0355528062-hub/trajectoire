@@ -395,7 +395,7 @@ func _accept(item: Node3D) -> void:
 		lit_item = f.lit
 		fuel = 0.1
 		f.held = true
-		f.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+		f.freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
 		f.freeze = true
 	# l'objet devient un simple décor dans la poubelle : plus de collisions
 	(item as CollisionObject3D).collision_layer = 0
@@ -539,7 +539,7 @@ func begin_right(yaw: float, duration := 1.0) -> void:
 	if not tipped or _righting:
 		return
 	_righting = true
-	freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+	freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
 	freeze = true
 	var q0 := global_transform.basis.get_rotation_quaternion()
 	var p0 := global_position
@@ -620,7 +620,7 @@ func grab(by: Node3D) -> void:
 	grabbed_by = by
 	if by is PhysicsBody3D:
 		add_collision_exception_with(by)
-	freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+	freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
 	freeze = true
 	AudioLib.play_at(self, "bin_hit", global_position + Vector3.UP * 0.5, -12.0, 5.0, 0.8)
 
