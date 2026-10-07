@@ -1288,6 +1288,25 @@ func _mortar_launch(axis: Vector3) -> void:
 		crowd.on_event("mortar_fire", {"pos": mouth, "dir": axis, "npc": self})
 
 
+## Pétard déjà allumé, lancé vers la cible : la mèche est réglée pour qu'il éclate à peu près à l'arrivée
+func _launch_petard(tg: Node3D, sz: int) -> void:
+	var f := Firecracker.make(sz, false, self)
+	get_tree().current_scene.add_child(f)
+	var pr := human.palm("R")
+	f.global_position = (pr["pos"] as Vector3) + Vector3.UP * 0.05
+	var aim := tg.global_position + Vector3(0, 0.9, 0)
+	var v := _ballistic(f.global_position, aim, 13.0) * _rng.randf_range(0.97, 1.03)
+	f.linear_velocity = v
+	f.angular_velocity = Vector3(_rng.randf_range(-12, 12), _rng.randf_range(-12, 12), _rng.randf_range(-12, 12))
+	var flight := f.global_position.distance_to(aim) / maxf(Vector2(v.x, v.z).length(), 1.0)
+	f.fuse = clampf(flight + _rng.randf_range(-0.1, 0.9), 0.5, 3.6)
+	f.add_collision_exception_with(self)
+	AudioLib.play_at(self, "toss", f.global_position, -4.0, 6.0)
+	hostile = minf(hostile + 0.9, 1.5)
+	if _rng.randf() < 0.6:
+		say_cat("throw" if _rng.randf() < 0.5 else "anger", true)
+
+
 # =================================================================== police : gaz, coups, arrestation, jets
 var hostile := 0.0            # a agressé la police : visé en priorité par les interpellations
 var gas_level := 0.0
@@ -1551,6 +1570,11 @@ func throw_at(target: Node3D, kind := "") -> void:
 	if kind == "":
 		var r := _rng.randf()
 		kind = "stone" if r < 0.5 else ("can" if r < 0.78 else ("bag" if r < 0.9 else ("bottle" if r < 0.96 else "pencil")))
+		# les plus déterminés (cagoulés, très audacieux) sortent un pétard quand ça chauffe
+		var stage: int = crowd.police.stage if crowd and crowd.police else 0
+		var hard: bool = outfit.get("face", "") == "balaclava" or bold > 0.78
+		if stage >= 2 and hard and _rng.randf() < 0.16 + 0.1 * float(stage - 2):
+			kind = "petard_m" if (stage >= 3 and _rng.randf() < 0.4) else "petard_s"
 	state = "throwcop"
 	state_t = 0.0
 	sub = "wind"
@@ -1577,6 +1601,9 @@ func _think_throwcop(delta: float) -> void:
 
 
 func _launch_throwable(tg: Node3D, kind: String) -> void:
+	if kind.begins_with("petard"):
+		_launch_petard(tg, 2 if kind == "petard_m" else 1)
+		return
 	var t := Throwable.make(kind)
 	t.thrower = self
 	get_tree().current_scene.add_child(t)

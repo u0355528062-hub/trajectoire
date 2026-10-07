@@ -1069,6 +1069,12 @@ func on_event(type: String, d: Dictionary) -> void:
 		"flare_raise":
 			_ev_player_flare(d["pos"], 0.5)
 			_gather(d["pos"], 3, 22.0)
+		"petard_lit":
+			for n in _near(d["pos"], 7.0):
+				if n.state == "home" and n.react_cd <= 0.0 and _rng.randf() < 0.4:
+					n.look(d["pos"], 1.0)
+		"petard_boom":
+			_ev_petard_boom(d)
 		"call":
 			_ev_call(d)
 		"player_gesture":
@@ -1250,11 +1256,49 @@ func _ev_mortar_fire(d: Dictionary) -> void:
 		if elev < 0.45 and along > 0.0 and lateral < 2.0 + along * 0.12 and dist < 28.0 and n.prop != "banner":
 			n.panic(o + dir * along, 1.0)
 			panicked += 1
+		elif elev >= 0.45 and dist < 24.0 and n.state == "home" and n.react_cd <= 0.0:
+			_react_sky_shot(n, o, dir, dist)
 		elif dist < 9.0 and n.react_cd <= 0.0:
 			n.startle(o)
 	if panicked >= 2:
 		_crowd_sound("panic", o + dir * 8.0, 0.0, 5.0)
 		excitement = minf(excitement + 0.1, 1.0)
+
+
+## Tir vers le ciel : tout le monde ne fuit pas — certains s'écartent, d'autres applaudissent, filment,
+## lèvent le poing, sursautent ou ne bougent pas (selon l'audace, le calme et la distance).
+func _react_sky_shot(n: Npc, o: Vector3, dir: Vector3, dist: float) -> void:
+	var sky := o + dir * 40.0
+	var r := _rng.randf()
+	var shy := (1.0 - n.calm) * 0.5 + (1.0 - n.bold) * 0.25
+	var delay := _rng.randf_range(0.05, 0.5)
+	if dist < 5.0 and r < 0.35 + shy * 0.3:
+		later(delay, func():
+			if is_instance_valid(n) and not n.busy():
+				n.human.kick_back(0.9)
+				var side := dir.cross(Vector3.UP).normalized()
+				if (n.global_position - o).dot(side) < 0.0:
+					side = -side
+				n.dodge(o, dir if absf(dir.y) < 0.9 else side))
+		return
+	if r < 0.2 + shy * 0.2:
+		later(delay, func(): if is_instance_valid(n): n.startle(o))
+	elif r < 0.45:
+		var pc := n._prop_cheer_pose()
+		later(delay, func():
+			if is_instance_valid(n):
+				n.react(pc[0], _rng.randf_range(2.2, 3.4), sky, {"voice": "allez" if _rng.randf() < 0.5 else "ouais", "voice_p": 0.55, "prm": pc[1], "face": false}))
+	elif r < 0.62:
+		later(delay, func():
+			if is_instance_valid(n):
+				n.react("clap" if n.prop == "" else n._prop_rest_pose(), _rng.randf_range(2.4, 3.8), sky, {"voice": "ouais", "voice_p": 0.35, "face": false}))
+	elif r < 0.74 and n.prop == "":
+		later(delay, func():
+			if is_instance_valid(n):
+				n.react("film", _rng.randf_range(3.0, 5.0), sky, {"prm": {"dir": n._wbd((sky - n.head_pos()).normalized())}, "face": false}))
+	elif r < 0.84:
+		later(delay, func(): if is_instance_valid(n): n.look(sky, 1.0))
+	# sinon : il ne bouge pas
 
 
 func _ev_burst(d: Dictionary) -> void:
@@ -1430,6 +1474,63 @@ func _ev_fire_flare(d: Dictionary) -> void:
 		for n in _near(d["pos"], 25.0):
 			if n.state == "home" and n.role != "march" and n.curious > 0.5 and _rng.randf() < 0.3:
 				n.watch_fire(bin, ring_point(n, bin))
+
+
+## Un pétard explose : sursaut des plus proches (certains reculent, d'autres s'écartent ou rient), les autres
+## tournent la tête, applaudissent, filment ou font semblant de rien. Le son met un peu de temps à arriver.
+func _ev_petard_boom(d: Dictionary) -> void:
+	var p: Vector3 = d["pos"]
+	var big: bool = int(d.get("size", 1)) >= 2
+	var reach := 32.0 if big else 15.0
+	var near_r := 6.5 if big else 3.2
+	var voiced := 0
+	var scared := 0
+	for n in npcs:
+		var dist := n.global_position.distance_to(p)
+		if dist > reach or n.state in ["arrested", "boarded", "gassed", "hit", "sprayed", "mortar", "throwcop", "rescue"]:
+			continue
+		var near := dist < near_r
+		var delay := dist / 340.0 * 0.4 + _rng.randf_range(0.0, 0.25)
+		var r := _rng.randf()
+		var speak := voiced < 3 and _rng.randf() < 0.35
+		if speak:
+			voiced += 1
+		later(delay, func():
+			if not is_instance_valid(n):
+				return
+			if n.busy() and not (near and n.state in ["react", "home"]):
+				n.look(p, 1.0)
+				return
+			if near:
+				var away := n.global_position - p
+				away.y = 0.0
+				if r < 0.45 or (n.calm < 0.35 and r < 0.7):
+					n.panic(p, 0.45 if not big else 0.8)
+					scared += 1
+				elif r < 0.75:
+					n.dodge(p, away.normalized().cross(Vector3.UP))
+				elif n.bold > 0.6:
+					var pc := n._prop_cheer_pose()
+					n.react(pc[0], 2.2, p, {"voice": "ouais", "voice_p": 0.7, "hop": true, "prm": pc[1]})
+				else:
+					n.startle(p)
+				return
+			var pose_r := r * 1.0 + (0.25 - n.calm * 0.25)
+			if pose_r < 0.30:
+				n.human.kick_back(0.5)
+				n.react("head" if n.prop == "" else n._prop_rest_pose(), _rng.randf_range(1.6, 2.6), p, {"voice": "wow" if speak else "", "voice_p": 1.0 if speak else 0.0})
+			elif pose_r < 0.5 and n.bold > 0.45:
+				var pc2 := n._prop_cheer_pose()
+				n.react(pc2[0], _rng.randf_range(1.6, 2.8), p, {"voice": "ouais" if speak else "", "voice_p": 1.0 if speak else 0.0, "prm": pc2[1]})
+			elif pose_r < 0.65 and n.prop == "":
+				n.react("film", _rng.randf_range(2.5, 4.5), p, {"prm": {"dir": n._wbd((p + Vector3.UP * 0.5 - n.head_pos()).normalized())}, "face": false})
+			elif pose_r < 0.8:
+				n.startle(p)
+			else:
+				n.look(p, 1.0))
+	if scared >= 3 or (big and reach > 0.0 and _rng.randf() < 0.5):
+		_crowd_sound("panic" if big else "awe", p, -4.0, 6.0)
+	excitement = minf(excitement + (0.05 if big else 0.02), 1.0)
 
 
 func _ev_player_flare(p: Vector3, chance: float) -> void:

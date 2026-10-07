@@ -270,6 +270,30 @@ func on_event(type: String, d: Dictionary) -> void:
 			pass
 		"mortar_aim":
 			pass
+		"petard_boom":
+			_react_petard(d)
+
+
+## Un pétard explose : les policiers les plus proches sursautent, les autres se tournent vers le bruit.
+## Si le joueur l'a lancé près du cordon, on le remarque.
+func _react_petard(d: Dictionary) -> void:
+	var p: Vector3 = d["pos"]
+	var big: bool = int(d.get("size", 1)) >= 2
+	var reach := 34.0 if big else 15.0
+	var closest := INF
+	for c in cops:
+		if not is_instance_valid(c) or c.state in ["down", "arrest", "escort"]:
+			continue
+		var dist := c.global_position.distance_to(p)
+		if dist > reach:
+			continue
+		closest = minf(closest, dist)
+		c.alert = maxf(c.alert, 0.35 if not big else 0.55)
+		c.look(p + Vector3.UP, 1.0)
+		if dist < (6.0 if big else 2.5) and not c.busy():
+			c.stagger(0.9 if big else 0.45, (c.global_position - p).normalized())
+	if closest < reach and d.get("player", false) and player != null:
+		player.wanted = minf(player.wanted + (0.3 if big else 0.1), 1.0)
 
 
 ## Un obus éclate près des policiers : certains reculent, d'autres foncent, d'autres se couvrent

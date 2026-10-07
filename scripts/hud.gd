@@ -40,6 +40,8 @@ var _e_prompt: PanelContainer
 var _e_label: Label
 var _flares := 5
 var _flares_max := 5
+var _pet := [0, 12, 6]
+var _pet_max := [0, 12, 6]
 var _cmax: Label
 
 
@@ -179,6 +181,18 @@ func _make_slot(i: int) -> PanelContainer:
 		fl.add_child(gm)
 		fl.rotation.z = deg_to_rad(-28)
 		pivot.add_child(fl)
+	elif i == 4 or i == 5:
+		var pd := Props.petard(1 if i == 4 else 2)
+		pcam.look_at_from_position(Vector3(0, 0.0, 0.2 if i == 4 else 0.3), Vector3(0, 0.002, 0))
+		pd.rotation.z = deg_to_rad(-30)
+		pd.position = Vector3(0.0, -0.004, 0.0)
+		pivot.add_child(pd)
+		if i == 4:
+			# trois petits pétards pour bien montrer que ce sont des « petits »
+			var pd2 := Props.petard(1)
+			pd2.rotation.z = deg_to_rad(-52)
+			pd2.position = Vector3(0.034, -0.012, -0.01)
+			pivot.add_child(pd2)
 	else:
 		pcam.look_at_from_position(Vector3(0, 0.03, 0.34), Vector3(0, 0.0, 0))
 		var mi := MeshInstance3D.new()
@@ -257,6 +271,10 @@ func bind(player: Player) -> void:
 	player.flares_changed.connect(func(c, m):
 		_flares = c
 		_flares_max = m
+		_refresh())
+	player.petards_changed.connect(func(a, am, b, bm):
+		_pet = [0, a, b]
+		_pet_max = [0, am, bm]
 		_refresh())
 	_player = player
 	_on_item(player.current_item)
@@ -355,8 +373,8 @@ void fragment() {
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(row)
 
-	# emplacements d'inventaire : aperçus 3D (1 mortier, 2 pierres, 3 briquet, 4 fumigène)
-	for i in 4:
+	# emplacements d'inventaire : aperçus 3D (1 mortier, 2 pierres, 3 briquet, 4 fumigène, 5-6 pétards)
+	for i in 6:
 		row.add_child(_make_slot(i))
 
 	# infos : nom, obus, état
@@ -464,6 +482,7 @@ void fragment() {
 	hv.add_child(_key_row(["2"], "Pierres (lancer)"))
 	hv.add_child(_key_row(["3"], "Briquet + journal (mettre le feu)"))
 	hv.add_child(_key_row(["4"], "Fumigène (clic droit : brandir)"))
+	hv.add_child(_key_row(["5", "6"], "Pétards petit / moyen (allumer puis lancer)"))
 	hv.add_child(_key_row(["E"], "Poubelle : ouvrir · maintenir : déplacer"))
 	hv.add_child(_key_row(["G"], "Appeler la foule à casser l'abribus"))
 	hv.add_child(_key_row(["R"], "Recharger (test)"))
@@ -534,6 +553,10 @@ func _refresh() -> void:
 	elif _item == 4:
 		_count.text = str(_flares)
 		_count.add_theme_color_override("font_color", AMBER if _flares > 0 else Color(1, 0.4, 0.35))
+	elif _item == 5 or _item == 6:
+		var pn: int = _pet[_item - 4]
+		_count.text = str(pn)
+		_count.add_theme_color_override("font_color", AMBER if pn > 0 else Color(1, 0.4, 0.35))
 	else:
 		_count.text = str(_ammo)
 		_count.add_theme_color_override("font_color", AMBER if _ammo > 0 else Color(1, 0.4, 0.35))
@@ -542,12 +565,13 @@ func _refresh() -> void:
 		_slot_styles[i].border_color = AMBER if sel else Color(1, 1, 1, 0.18)
 		_slot_styles[i].shadow_size = 14 if sel else 0
 		_slots[i].modulate = Color.WHITE if sel else Color(1, 1, 1, 0.6)
-	_name.text = ["MAINS LIBRES", "MORTIER D'ARTIFICE", "PIERRES", "BRIQUET + DÉCHETS", "FUMIGÈNE"][clampi(_item, 0, 4)]
+	_name.text = ["MAINS LIBRES", "MORTIER D'ARTIFICE", "PIERRES", "BRIQUET + DÉCHETS", "FUMIGÈNE", "PÉTARDS · PETITS", "PÉTARDS · MOYENS"][clampi(_item, 0, 6)]
 	_shells.visible = _item <= 1
 	_hint.visible = _item >= 2
-	_hint.text = ["", "", "Vise (clic droit) : la trajectoire s'affiche", "Dépose le journal (ou ce que tu ramasses avec E) dans une poubelle ou par terre, puis allume", "Craque-le, brandis-le (clic droit), lance-le"][clampi(_item, 0, 4)]
+	_hint.text = ["", "", "Vise (clic droit) : la trajectoire s'affiche", "Dépose le journal (ou ce que tu ramasses avec E) dans une poubelle ou par terre, puis allume", "Craque-le, brandis-le (clic droit), lance-le", "Allume la mèche (clic gauche), vise (clic droit), lance avant qu'il n'explose !", "Plus fort, plus long à brûler : lance-le loin, ça fait craquer les vitres"][clampi(_item, 0, 6)]
 	if _cmax:
-		_cmax.text = (" / %d" % _flares_max) if _item == 4 else (" / %d" % _max if _item <= 1 else "")
+		var pm_: int = _pet_max[_item - 4] if (_item == 5 or _item == 6) else 0
+		_cmax.text = (" / %d" % _flares_max) if _item == 4 else ((" / %d" % pm_) if pm_ > 0 else (" / %d" % _max if _item <= 1 else ""))
 
 
 func _on_item(i: int) -> void:

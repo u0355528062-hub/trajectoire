@@ -83,6 +83,31 @@ static func bus_for(sound: String) -> StringName:
 	return &"Effets"
 
 
+## Acouphène : filtre passe-bas progressif sur les bus d'effets, d'ambiance et de voix (k de 0 à 1)
+static var _ring_fx: AudioEffectLowPassFilter
+static var _ring_on := false
+
+
+static func set_ring(k: float) -> void:
+	ensure_buses()
+	if k <= 0.001:
+		if _ring_on and _ring_fx != null:
+			for nm in ["Effets", "Ambiance", "Voix"]:
+				var bi := AudioServer.get_bus_index(nm)
+				for i in range(AudioServer.get_bus_effect_count(bi) - 1, -1, -1):
+					if AudioServer.get_bus_effect(bi, i) == _ring_fx:
+						AudioServer.remove_bus_effect(bi, i)
+			_ring_on = false
+		return
+	if _ring_fx == null:
+		_ring_fx = AudioEffectLowPassFilter.new()
+	if not _ring_on:
+		for nm in ["Effets", "Ambiance", "Voix"]:
+			AudioServer.add_bus_effect(AudioServer.get_bus_index(nm), _ring_fx)
+		_ring_on = true
+	_ring_fx.cutoff_hz = lerpf(20000.0, 650.0, clampf(k, 0.0, 1.0))
+
+
 static func _vol(v: float) -> float:
 	return linear_to_db(maxf(v, 0.0001)) if v > 0.001 else -80.0
 

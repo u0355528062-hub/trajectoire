@@ -26,6 +26,7 @@ static func get_stream(sound: StringName) -> AudioStreamWAV:
 			&"petard_s": _cache[sound] = _make(_gen_petard(false))
 			&"petard_m": _cache[sound] = _make(_gen_petard(true))
 			&"fuse": _cache[sound] = _make(_gen_fuse())
+			&"tinnitus": _cache[sound] = _make_loop(_gen_tinnitus(), 22050)
 			&"amb_wind": _cache[sound] = _make_loop(_gen_wind(), 22050)
 			&"amb_city": _cache[sound] = _make_loop(_gen_city(), 22050)
 			&"amb_crickets": _cache[sound] = _make_loop(_gen_crickets(), 22050)
@@ -337,6 +338,17 @@ static func _gen_petard(big: bool) -> PackedFloat32Array:
 				a[off2 + j] += rng.randf_range(-1.0, 1.0) * exp(-float(j) / RATE * 70.0) * 0.18
 	for i in a.size():
 		a[i] = clampf(a[i], -1.0, 1.0)
+	return a
+
+
+## Acouphène : deux sifflements aigus qui battent légèrement
+static func _gen_tinnitus() -> PackedFloat32Array:
+	var rate := 22050
+	var a := PackedFloat32Array()
+	a.resize(rate * 2)
+	for i in a.size():
+		var t := float(i) / rate
+		a[i] = (sin(TAU * 4000.0 * t) * 0.5 + sin(TAU * 4013.0 * t) * 0.5) * 0.16
 	return a
 
 

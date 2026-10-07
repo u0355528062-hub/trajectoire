@@ -287,6 +287,41 @@ static func pencil() -> Node3D:
 	return root
 
 
+## Pétard : axe +Y, mèche en haut ; méta "tip" = bout de la mèche (repère local). size : 1 petit, 2 moyen
+static func petard(size := 1) -> Node3D:
+	var root := Node3D.new()
+	root.name = "Petard"
+	var big := size >= 2
+	var hl := 0.034 if big else 0.019
+	var r := 0.0088 if big else 0.0047
+	var body := MeshKit.lathe(PackedVector2Array([Vector2(0.0, -hl), Vector2(r * 0.94, -hl), Vector2(r, -hl + 0.0025), Vector2(r, hl - 0.0025), Vector2(r * 0.94, hl), Vector2(0.0, hl)]), 12)
+	_mi(root, body, _m("petard_body%d" % size, func() -> Material: return _col(Color(0.46, 0.07, 0.05) if big else Color(0.72, 0.07, 0.05), 0.7)))
+	# bagues dorées / bande étiquette
+	for sy in [-1.0, 1.0]:
+		var ring := CylinderMesh.new()
+		ring.top_radius = r * 1.03
+		ring.bottom_radius = r * 1.03
+		ring.height = 0.004 if big else 0.003
+		ring.radial_segments = 12
+		_mi(root, ring, _m("petard_ring%d" % size, func() -> Material: return _col(Color(0.12, 0.1, 0.09) if big else Color(0.85, 0.66, 0.16), 0.55, 0.0 if big else 0.4)), Vector3(0, sy * (hl - 0.006), 0))
+	if big:
+		var lab := CylinderMesh.new()
+		lab.top_radius = r * 1.02
+		lab.bottom_radius = r * 1.02
+		lab.height = 0.026
+		lab.radial_segments = 12
+		_mi(root, lab, _m("petard_label", func() -> Material: return _col(Color(0.9, 0.74, 0.18), 0.6)), Vector3(0, 0.0, 0))
+	var fl := 0.026 if big else 0.016
+	var fuse := CylinderMesh.new()
+	fuse.top_radius = 0.0011
+	fuse.bottom_radius = 0.0013
+	fuse.height = fl
+	fuse.radial_segments = 6
+	_mi(root, fuse, _m("petard_fuse", func() -> Material: return _col(Color(0.2, 0.28, 0.12), 0.9)), Vector3(0, hl + fl * 0.5 - 0.002, 0), Vector3(0, 0, 0.12))
+	root.set_meta("tip", Vector3(0, hl + fl * 0.5 - 0.002, 0) + Vector3(-sin(0.12), cos(0.12), 0) * fl * 0.5)
+	return root
+
+
 ## Briquet : flamme (enfant "Flame") + lumière ("Light")
 static func lighter(col := Color(0.8, 0.15, 0.1)) -> Node3D:
 	var root := Node3D.new()

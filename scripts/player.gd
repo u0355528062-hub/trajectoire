@@ -1,16 +1,18 @@
 class_name Player
 extends CharacterBody3D
 ## Joueur : déplacement, caméra 1re/3e personne, inventaire (1 mortier, 2 pierres,
-## 3 briquet + journal, 4 fumigène), coup de pied, poubelles (E), appel à la foule (G).
+## 3 briquet + journal, 4 fumigène, 5 petits pétards, 6 pétards moyens), coup de pied, poubelles (E),
+## appel à la foule (G).
 
 signal view_changed(first_person: bool)
-signal item_changed(index: int)         # 0 = mains libres, 1 mortier, 2 pierres, 3 briquet, 4 fumigène
+signal item_changed(index: int)         # 0 = mains libres, 1 mortier, 2 pierres, 3 briquet, 4 fumigène, 5-6 pétards
 signal ammo_changed(count: int, maximum: int)
 signal message(text: String)
 signal stage_changed(label: String, progress: float)
 signal aim_changed(on: bool)
 signal near_breakable_changed(near: bool)
 signal flares_changed(count: int, maximum: int)
+signal petards_changed(small: int, small_max: int, medium: int, medium_max: int)
 signal arrested                       # menotté : fin de partie
 signal hurt(kind: String)
 
@@ -26,6 +28,7 @@ var mortar: Mortar
 var thrower: Thrower
 var igniter: Igniter
 var flare_tool: FlareTool
+var petard_tool: PetardTool
 var cam_yaw: Node3D
 var cam_pitch: Node3D
 var spring: SpringArm3D
@@ -97,6 +100,8 @@ var _fidget_w := 0.0
 var _fidget_cd := 8.0
 var _phone: Node3D
 var _fidget_forced := ""          # (mise au point)
+var ring_t := 0.0                 # acouphène après une détonation toute proche
+var _ring_snd: AudioStreamPlayer
 var _cap: CapsuleShape3D
 var _cap_node: CollisionShape3D
 var _aim_evt := 0.0
@@ -150,6 +155,15 @@ func _ready() -> void:
 	flare_tool.aim_target_provider = Callable(self, "_aim_target")
 	flare_tool.message.connect(func(t): message.emit(t))
 	flare_tool.count_changed.connect(func(c, m): flares_changed.emit(c, m))
+	petard_tool = PetardTool.new()
+	petard_tool.attach_to(human)
+	petard_tool.aim_target_provider = Callable(self, "_aim_target")
+	petard_tool.exclude_rid = get_rid()
+	petard_tool.speed = 13.0
+	petard_tool.message.connect(func(t): message.emit(t))
+	petard_tool.thrown.connect(func(): _shake = 0.2)
+	petard_tool.counts_changed.connect(func(a, b, c, d): petards_changed.emit(a, b, c, d))
+	petard_tool.blown_in_hand.connect(func(sz, pos): on_blast(0.0, pos, sz))
 	human.hand_provider = Callable(self, "_hands")
 	_tool_hands = Callable(mortar, "_hand_targets")
 	_voice = AudioStreamPlayer3D.new()
@@ -202,6 +216,8 @@ func _register_inputs() -> void:
 		"slot_2": [KEY_2, KEY_KP_2],
 		"slot_3": [KEY_3, KEY_KP_3],
 		"slot_4": [KEY_4, KEY_KP_4],
+		"slot_5": [KEY_5, KEY_KP_5],
+		"slot_6": [KEY_6, KEY_KP_6],
 		"interact": [KEY_E],
 		"call_crowd": [KEY_G],
 		"reload_cheat": [KEY_R],
@@ -231,20 +247,25 @@ func _register_inputs() -> void:
 
 
 func _tools_busy() -> bool:
-	return mortar.busy or thrower.busy or igniter.busy or flare_tool.busy
+	return mortar.busy or thrower.busy or igniter.busy or flare_tool.busy or petard_tool.busy
 
 
 func _busy() -> bool:
 	return _tools_busy() or human.kick_t >= 0.0 or _grab_bin != null or _lift_t >= 0.0
 
 
-## 0 = mains libres, 1 = mortier, 2 = pierres, 3 = briquet + journal, 4 = fumigène
+## 0 = mains libres, 1 = mortier, 2 = pierres, 3 = briquet + journal, 4 = fumigène, 5-6 = pétards (petit, moyen)
 func select_item(i: int) -> void:
 	if _tools_busy() or i == current_item or _lift_t >= 0.0:
 		return
 	mortar.set_equipped(i == 1)
 	thrower.set_equipped(i == 2)
 	igniter.set_equipped(i == 3)
+	if i == 5 or i == 6:
+		petard_tool.select_size(1 if i == 5 else 2)
+		petard_tool.set_equipped(true)
+	else:
+		petard_tool.set_equipped(false)
 	if i == 4:
 		flare_tool.set_equipped(true)
 	elif i == 0 and flare_tool.is_lit():
@@ -257,6 +278,8 @@ func select_item(i: int) -> void:
 		thrower.hide_now()
 	if i != 3:
 		igniter.hide_now()
+	if i != 5 and i != 6:
+		petard_tool.hide_now()
 	if i != 4 and not flare_tool.carrying:
 		flare_tool.hide_now()
 	match i:
@@ -265,6 +288,7 @@ func select_item(i: int) -> void:
 		2: _tool_hands = Callable(thrower, "_hand_targets")
 		3: _tool_hands = Callable(igniter, "_hand_targets")
 		4: _tool_hands = Callable(flare_tool, "_hand_targets")
+		5, 6: _tool_hands = Callable(petard_tool, "_hand_targets")
 	current_item = i
 	if aiming:
 		aiming = false
@@ -283,7 +307,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton and event.pressed and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 		var dirn := 1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else -1
 		if _grab_bin == null:
-			select_item(posmod(current_item + dirn, 5))
+			select_item(posmod(current_item + dirn, 7))
 	elif event.is_action_pressed("toggle_view"):
 		first_person = not first_person
 		view_changed.emit(first_person)
@@ -295,12 +319,17 @@ func _unhandled_input(event: InputEvent) -> void:
 		select_item(0 if current_item == 3 else 3)
 	elif _grab_bin == null and event.is_action_pressed("slot_4"):
 		select_item(0 if current_item == 4 else 4)
+	elif _grab_bin == null and event.is_action_pressed("slot_5"):
+		select_item(0 if current_item == 5 else 5)
+	elif _grab_bin == null and event.is_action_pressed("slot_6"):
+		select_item(0 if current_item == 6 else 6)
 	elif event.is_action_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and _grab_bin == null:
 		match current_item:
 			1: mortar.try_fire()
 			2: thrower.throw_stone()
 			3: igniter.use()
 			4: flare_tool.use()
+			5, 6: petard_tool.use()
 			0:
 				if flare_tool.carrying:
 					flare_tool.use()
@@ -314,7 +343,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event.is_action_pressed("reload_cheat"):
 		mortar.reload_all()
 		flare_tool.reload_all()
-		message.emit("Obus et fumigènes rechargés")
+		petard_tool.reload_all()
+		message.emit("Obus, fumigènes et pétards rechargés")
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and false:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
@@ -345,11 +375,12 @@ func _physics_process(delta: float) -> void:
 	var want_aim := (current_item != 0 or flare_tool.carrying) and Input.is_action_pressed("aim") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not kicking and _grab_bin == null
 	if want_aim != aiming:
 		aiming = want_aim
-		aim_changed.emit(aiming and current_item in [1, 2])
+		aim_changed.emit(aiming and current_item in [1, 2, 5, 6])
 		mortar.set_aim(aiming and current_item == 1)
 		thrower.set_aim(aiming and current_item == 2)
 		igniter.set_aim(aiming and current_item == 3)
 		flare_tool.set_aim(aiming and (current_item == 4 or flare_tool.carrying))
+		petard_tool.set_aim(aiming and (current_item == 5 or current_item == 6))
 	cam_yaw.rotation.y = _yaw
 	var basis_yaw := Basis(Vector3.UP, _yaw)
 	var wish := basis_yaw * Vector3(iv.x, 0.0, iv.y)
@@ -424,6 +455,7 @@ func _physics_process(delta: float) -> void:
 	thrower.step(delta)
 	igniter.step(delta)
 	flare_tool.step(delta)
+	petard_tool.step(delta)
 	var speed := Vector3(velocity.x, 0, velocity.z).length()
 	var run_blend := clampf((speed - WALK_SPEED) / (RUN_SPEED - WALK_SPEED), 0.0, 1.0)
 	human.animate(delta, speed, run_blend, is_on_floor(), velocity.y, _pitch)
@@ -679,7 +711,44 @@ func break_free() -> void:
 	velocity += -Basis(Vector3.UP, human.rotation.y).z * 2.0
 
 
+## Souffle d'un pétard (ou d'un obus) tout près : secousse, acouphène, parfois à terre.
+## k : distance normalisée (0 = dans la main, 1 = limite de portée)
+func on_blast(k: float, from: Vector3, size: int) -> void:
+	k = clampf(k, 0.0, 1.0)
+	var d := global_position - from
+	d.y = 0.0
+	var power := (1.0 - k) * (1.0 if size >= 2 else 0.35)
+	if d.length() > 0.05:
+		velocity += d.normalized() * 3.6 * power
+	ring_t = maxf(ring_t, (5.5 if size >= 2 else 1.8) * (0.4 + 0.6 * (1.0 - k)))
+	hit_flash = maxf(hit_flash, 0.55 * power)
+	_shake = maxf(_shake, 0.6 * power + 0.2)
+	human.kick_back(0.8 * power + 0.2)
+	if size >= 2 and k < 0.3 and down_t <= 0.0 and arrest_phase == "":
+		injured_t = maxf(injured_t, 4.0)
+		knock_down(d if d.length() > 0.05 else Vector3.BACK, 1.5)
+		_voice_say("pain")
+
+
+func _update_ring(delta: float) -> void:
+	ring_t = maxf(ring_t - delta, 0.0)
+	var rk := clampf(ring_t / 2.5, 0.0, 1.0)
+	Settings.set_ring(rk)
+	if _ring_snd == null:
+		_ring_snd = AudioStreamPlayer.new()
+		_ring_snd.stream = Sfx.get_stream(&"tinnitus")
+		_ring_snd.volume_db = -80.0
+		add_child(_ring_snd)
+	if rk > 0.01:
+		if not _ring_snd.playing:
+			_ring_snd.play()
+		_ring_snd.volume_db = lerpf(-46.0, -17.0, rk)
+	elif _ring_snd.playing:
+		_ring_snd.stop()
+
+
 func _update_status(delta: float) -> void:
+	_update_ring(delta)
 	invuln_t = maxf(invuln_t - delta, 0.0)
 	injured_t = maxf(injured_t - delta, 0.0)
 	_hit_chain = maxf(_hit_chain - delta * 0.35, 0.0)
@@ -1026,6 +1095,12 @@ func context_prompt() -> Array:
 			if not flare_tool.is_lit():
 				return [["CLIC GAUCHE"], "Craquer le fumigène"]
 			return [["CLIC DROIT", "CLIC GAUCHE"], "Brandir · Lancer"]
+		5, 6:
+			if not petard_tool.has_item():
+				return [["R"], "Plus de pétards de ce type"]
+			if not petard_tool.lit:
+				return [["CLIC GAUCHE"], "Allumer la mèche"]
+			return [["CLIC DROIT", "CLIC GAUCHE"], "Viser · Lancer (vite !)"]
 		0:
 			if flare_tool.carrying:
 				return [["CLIC DROIT", "CLIC GAUCHE"], "Fumigène en main : brandir · lancer"]
@@ -1066,7 +1141,7 @@ func _aim_target() -> Array:
 func _update_camera(delta: float, speed: float) -> void:
 	_fp_blend = move_toward(_fp_blend, 1.0 if first_person else 0.0, delta * 6.0)
 	var e := _fp_blend * _fp_blend * (3.0 - 2.0 * _fp_blend)
-	var k := clampf(maxf(maxf(mortar.aim_t, thrower.aim_t), igniter.aim_t), 0.0, 1.0)
+	var k := clampf(maxf(maxf(mortar.aim_t, maxf(thrower.aim_t, petard_tool.aim_t)), igniter.aim_t), 0.0, 1.0)
 	k = k * k * (3.0 - 2.0 * k)
 	cam_pitch.rotation.x = _pitch
 	spring.spring_length = lerpf(lerpf(3.1, 1.75, k), 0.0, e)

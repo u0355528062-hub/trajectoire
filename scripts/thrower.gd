@@ -15,6 +15,7 @@ var human: Human
 var equipped := false
 var busy := false
 var aim_t := 0.0
+var speed := SPEED
 var equip_t := 0.0
 ## -> Array [Vector3 point visé, bool touche quelque chose]
 var aim_target_provider := Callable()
@@ -23,7 +24,7 @@ var exclude_rid := RID()
 var _aim_input := false
 var _t := -1.0
 var _released := false
-var _vis: MeshInstance3D
+var _vis: Node3D
 var _dots: Array[MeshInstance3D] = []
 var _marker: MeshInstance3D
 var _throw_snd: AudioStreamPlayer3D
@@ -157,7 +158,7 @@ func _solve(origin: Vector3, target: Vector3) -> Vector3:
 	var dist := maxf(d.length(), 0.5)
 	var h := target.y - origin.y
 	var g := 9.8
-	var v := SPEED
+	var v := speed
 	var disc := v * v * v * v - g * (g * dist * dist + 2.0 * h * v * v)
 	var tan_t := 0.7
 	if disc >= 0.0:

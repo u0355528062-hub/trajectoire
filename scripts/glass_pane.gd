@@ -39,6 +39,7 @@ static func tex(f: String) -> Texture2D:
 
 func _ready() -> void:
 	_rng.randomize()
+	add_to_group("glass")
 	_mesh = MeshInstance3D.new()
 	var b := BoxMesh.new()
 	b.size = Vector3(size.x, size.y, thick)
