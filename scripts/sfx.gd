@@ -19,6 +19,13 @@ static func get_stream(sound: StringName) -> AudioStreamWAV:
 			&"glass_crack": _cache[sound] = _make(_gen_glass_crack())
 			&"glass_break": _cache[sound] = _make(_gen_glass_break())
 			&"kick_whoosh": _cache[sound] = _make(_gen_whoosh())
+			&"footstep_a": _cache[sound] = _make(_gen_footstep(61, 150.0))
+			&"footstep_b": _cache[sound] = _make(_gen_footstep(62, 170.0))
+			&"stone_thud": _cache[sound] = _make(_gen_stone_thud())
+			&"throw": _cache[sound] = _make(_gen_throw())
+			&"amb_wind": _cache[sound] = _make_loop(_gen_wind(), 22050)
+			&"amb_city": _cache[sound] = _make_loop(_gen_city(), 22050)
+			&"amb_crickets": _cache[sound] = _make_loop(_gen_crickets(), 22050)
 			_: _cache[sound] = _make(PackedFloat32Array([0.0]))
 	return _cache[sound]
 
@@ -34,6 +41,28 @@ static func _make(samples: PackedFloat32Array) -> AudioStreamWAV:
 	w.stereo = false
 	w.data = bytes
 	return w
+
+
+static func _make_loop(samples: PackedFloat32Array, rate: int) -> AudioStreamWAV:
+	var w := _make(samples)
+	w.mix_rate = rate
+	w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	w.loop_begin = 0
+	w.loop_end = samples.size()
+	return w
+
+
+## Fondu enchaîné fin -> début pour boucler sans clic ; `a` contient n + fade échantillons.
+static func _loopify(a: PackedFloat32Array, fade: int) -> PackedFloat32Array:
+	var n := a.size() - fade
+	var out := PackedFloat32Array()
+	out.resize(n)
+	for i in n:
+		out[i] = a[i]
+	for i in fade:
+		var wgt := float(i) / fade
+		out[i] = a[i] * wgt + a[n + i] * (1.0 - wgt)
+	return out
 
 
 static func _buf(seconds: float) -> PackedFloat32Array:
@@ -220,4 +249,108 @@ static func _gen_whoosh() -> PackedFloat32Array:
 		var k := 0.04 + 0.18 * sin(PI * clampf(t / 0.4, 0.0, 1.0))
 		lp += (n - lp) * k
 		a[i] = lp * sin(PI * clampf(t / 0.4, 0.0, 1.0)) * 0.9
+	return a
+
+
+static func _gen_footstep(seed_: int, f0: float) -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_
+	var a := _buf(0.22)
+	var lp := 0.0
+	var lp2 := 0.0
+	for i in a.size():
+		var t := float(i) / RATE
+		var n := rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * 0.22
+		lp2 += (lp - lp2) * 0.3
+		a[i] = sin(TAU * f0 * t) * exp(-t * 30.0) * 0.55 + lp2 * exp(-t * 38.0) * 1.3 + n * exp(-t * 210.0) * 0.25
+	return a
+
+
+static func _gen_stone_thud() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 71
+	var a := _buf(0.3)
+	var lp := 0.0
+	for i in a.size():
+		var t := float(i) / RATE
+		var n := rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * 0.3
+		a[i] = sin(TAU * 210.0 * t) * exp(-t * 34.0) * 0.5 + lp * exp(-t * 60.0) * 1.0 + n * exp(-t * 300.0) * 0.4
+	return a
+
+
+static func _gen_throw() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 73
+	var a := _buf(0.32)
+	var lp := 0.0
+	for i in a.size():
+		var t := float(i) / RATE
+		var n := rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * (0.1 + 0.25 * sin(PI * clampf(t / 0.28, 0.0, 1.0)))
+		a[i] = lp * sin(PI * clampf(t / 0.28, 0.0, 1.0)) * 0.6
+	return a
+
+
+static func _gen_wind() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 81
+	var rate := 22050
+	var n := 8 * rate
+	var fade := rate
+	var a := PackedFloat32Array()
+	a.resize(n + fade)
+	var lp := 0.0
+	var lp2 := 0.0
+	for i in a.size():
+		var t := float(i) / rate
+		var w := rng.randf_range(-1.0, 1.0)
+		lp += (w - lp) * 0.06
+		lp2 += (lp - lp2) * 0.15
+		var gust := 0.55 + 0.45 * sin(TAU * t / 8.0 * 1.0 + 0.7) * sin(TAU * t / 8.0 * 3.0 + 1.9)
+		a[i] = (lp2 * 5.0) * gust
+	return _loopify(a, fade)
+
+
+static func _gen_city() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 83
+	var rate := 22050
+	var n := 8 * rate
+	var fade := rate
+	var a := PackedFloat32Array()
+	a.resize(n + fade)
+	var lp := 0.0
+	var lp2 := 0.0
+	var lp3 := 0.0
+	for i in a.size():
+		var t := float(i) / rate
+		var w := rng.randf_range(-1.0, 1.0)
+		lp += (w - lp) * 0.02
+		lp2 += (lp - lp2) * 0.05
+		lp3 += (lp2 - lp3) * 0.1
+		var pass_ := exp(-pow((t - 4.0) / 0.9, 2.0))  # une voiture lointaine
+		a[i] = lp3 * (6.0 + 8.0 * pass_) + sin(TAU * 52.0 * t) * 0.03
+	return _loopify(a, fade)
+
+
+static func _gen_crickets() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 85
+	var rate := 22050
+	var n := 8 * rate
+	var a := PackedFloat32Array()
+	a.resize(n)
+	for c in 3:
+		var f := 4100.0 + c * 330.0 + rng.randf() * 80.0
+		var period := 0.75 + c * 0.11
+		var phase := rng.randf() * period
+		for i in n:
+			var t := float(i) / rate + phase
+			var bt := fmod(t, period)
+			if bt < 0.36:
+				var pulse := fmod(bt, 0.06) / 0.06
+				var env := sin(PI * pulse)
+				a[i] += sin(TAU * f * float(i) / rate) * env * 0.06
 	return a

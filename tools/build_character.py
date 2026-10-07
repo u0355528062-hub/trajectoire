@@ -235,7 +235,7 @@ def make_shoes():
             tris = tris[:, ::-1]; N = vertex_normals(Pn, tris)
         col = np.zeros((len(Pn), 4)); col[:, 3] = 1
         sole = Pn[:, 1] < 0.014
-        col[:, :3] = np.where(sole[:, None], [0.88, 0.88, 0.86], [0.09, 0.09, 0.11])
+        col[:, :3] = np.where(sole[:, None], [0.88, 0.88, 0.86], [0.20, 0.21, 0.25])
         # bout blanc (gomme) : zone avant
         toecap = (Pn[:, 2] > z1 - 0.06) & (Pn[:, 1] < 0.045)
         col[toecap, :3] = [0.88, 0.88, 0.86]

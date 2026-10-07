@@ -7,8 +7,11 @@ const GLASS := Color(0.045, 0.05, 0.075, 0.82)
 const TEXT := Color(0.93, 0.94, 0.97)
 const MUTED := Color(0.93, 0.94, 0.97, 0.55)
 
-var _slot: PanelContainer
-var _slot_style: StyleBoxFlat
+var _slots: Array[PanelContainer] = []
+var _slot_styles: Array[StyleBoxFlat] = []
+var _pivots: Array[Node3D] = []
+var _item := 1
+var _hint: Label
 var _shells: ShellRow
 var _count: Label
 var _name: Label
@@ -19,7 +22,6 @@ var _toast: Label
 var _crosshair: Control
 var _view_chip: Label
 var _help: PanelContainer
-var _preview_pivot: Node3D
 var _prompt_row: HBoxContainer
 var _kick_prompt: PanelContainer
 var _kick_prompt_on := false
@@ -29,6 +31,7 @@ var _aim_tween: Tween
 var _ammo := 6
 var _max := 6
 var _selected := true
+var _aim_on := false
 var _toast_tween: Tween
 var _help_tween: Tween
 
@@ -85,6 +88,67 @@ class Reticle extends Control:
 		draw_circle(c, 1.6, Color(1.0, 0.82, 0.45, 1.0))
 
 
+func _make_slot(i: int) -> PanelContainer:
+	var slot := PanelContainer.new()
+	slot.custom_minimum_size = Vector2(96, 96)
+	var st := _style(Color(0.1, 0.11, 0.15, 0.9), 16, AMBER, 2, 0.0)
+	st.shadow_color = Color(1.0, 0.6, 0.15, 0.4)
+	st.shadow_size = 14
+	slot.add_theme_stylebox_override("panel", st)
+	slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var svc := SubViewportContainer.new()
+	svc.stretch = true
+	svc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	slot.add_child(svc)
+	var vp := SubViewport.new()
+	vp.own_world_3d = true
+	vp.transparent_bg = true
+	vp.size = Vector2i(192, 192)
+	vp.msaa_3d = Viewport.MSAA_4X
+	svc.add_child(vp)
+	var pcam := Camera3D.new()
+	pcam.fov = 26
+	vp.add_child(pcam)
+	var key := DirectionalLight3D.new()
+	key.rotation_degrees = Vector3(-30, 35, 0)
+	key.light_energy = 1.6
+	vp.add_child(key)
+	var rim := DirectionalLight3D.new()
+	rim.rotation_degrees = Vector3(-10, -150, 0)
+	rim.light_energy = 1.0
+	rim.light_color = Color(1.0, 0.7, 0.45)
+	vp.add_child(rim)
+	var env := Environment.new()
+	env.background_mode = Environment.BG_CLEAR_COLOR
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.5, 0.55, 0.7)
+	env.ambient_light_energy = 0.5
+	var we := WorldEnvironment.new()
+	we.environment = env
+	vp.add_child(we)
+	var pivot := Node3D.new()
+	vp.add_child(pivot)
+	if i == 0:
+		pcam.look_at_from_position(Vector3(0, 0.2, 0.78), Vector3(0, 0.15, 0))
+		pivot.rotation = Vector3(0.0, 0.0, deg_to_rad(-16))
+		pivot.add_child(MortarModel.build())
+	else:
+		pcam.look_at_from_position(Vector3(0, 0.03, 0.34), Vector3(0, 0.0, 0))
+		var mi := MeshInstance3D.new()
+		mi.mesh = Stone.make_mesh(5)
+		mi.material_override = Stone.material()
+		mi.scale = Vector3.ONE * 0.13
+		pivot.add_child(mi)
+		pivot.rotation = Vector3(0.3, 0, 0)
+	var kl := _label(str(i + 1), 13, Color(1, 1, 1, 0.8), false)
+	kl.position = Vector2(9, 5)
+	slot.add_child(kl)
+	_slots.append(slot)
+	_slot_styles.append(st)
+	_pivots.append(pivot)
+	return slot
+
+
 func _style(bg: Color, radius := 16, border := Color(1, 1, 1, 0.08), bw := 1, margin := 12.0) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
 	s.bg_color = bg
@@ -136,14 +200,14 @@ func _key_row(keys: Array, action: String) -> HBoxContainer:
 
 # ------------------------------------------------------------------- liaison
 func bind(player: Player) -> void:
-	player.equipped_changed.connect(_on_equipped)
+	player.item_changed.connect(_on_item)
 	player.ammo_changed.connect(_on_ammo)
 	player.message.connect(_toast_show)
 	player.view_changed.connect(_on_view)
 	player.stage_changed.connect(_on_stage)
 	player.aim_changed.connect(_on_aim)
 	player.near_breakable_changed.connect(func(n): _kick_prompt_on = n)
-	_on_equipped(player.mortar.equipped)
+	_on_item(player.current_item)
 
 
 func _ready() -> void:
@@ -239,57 +303,9 @@ void fragment() {
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(row)
 
-	# emplacement 1 : aperçu 3D du mortier
-	_slot = PanelContainer.new()
-	_slot.custom_minimum_size = Vector2(104, 104)
-	_slot_style = _style(Color(0.1, 0.11, 0.15, 0.9), 16, AMBER, 2, 0.0)
-	_slot_style.shadow_color = Color(1.0, 0.6, 0.15, 0.4)
-	_slot_style.shadow_size = 14
-	_slot.add_theme_stylebox_override("panel", _slot_style)
-	_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_child(_slot)
-	var svc := SubViewportContainer.new()
-	svc.stretch = true
-	svc.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_slot.add_child(svc)
-	var vp := SubViewport.new()
-	vp.own_world_3d = true
-	vp.transparent_bg = true
-	vp.size = Vector2i(208, 208)
-	vp.msaa_3d = Viewport.MSAA_4X
-	svc.add_child(vp)
-	var pcam := Camera3D.new()
-	pcam.fov = 26
-	pcam.position = Vector3(0, 0.2, 0.9)
-	vp.add_child(pcam)
-	pcam.look_at_from_position(Vector3(0, 0.2, 0.78), Vector3(0, 0.15, 0))
-	var key := DirectionalLight3D.new()
-	key.rotation_degrees = Vector3(-30, 35, 0)
-	key.light_energy = 1.6
-	vp.add_child(key)
-	var rim := DirectionalLight3D.new()
-	rim.rotation_degrees = Vector3(-10, -150, 0)
-	rim.light_energy = 1.0
-	rim.light_color = Color(1.0, 0.7, 0.45)
-	vp.add_child(rim)
-	var env := Environment.new()
-	env.background_mode = Environment.BG_CLEAR_COLOR
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.5, 0.55, 0.7)
-	env.ambient_light_energy = 0.5
-	var we := WorldEnvironment.new()
-	we.environment = env
-	vp.add_child(we)
-	_preview_pivot = Node3D.new()
-	_preview_pivot.position = Vector3(0, 0.0, 0)
-	_preview_pivot.rotation = Vector3(0.0, 0.0, deg_to_rad(-16))
-	vp.add_child(_preview_pivot)
-	var mm := MortarModel.build()
-	_preview_pivot.add_child(mm)
-	mm.position = Vector3(0, 0.0, 0)
-	var kl := _label("1", 13, Color(1, 1, 1, 0.8), false)
-	kl.position = Vector2(9, 5)
-	_slot.add_child(kl)
+	# emplacements d'inventaire : aperçus 3D (1 mortier, 2 pierres)
+	for i in 2:
+		row.add_child(_make_slot(i))
 
 	# infos : nom, obus, état
 	var info := VBoxContainer.new()
@@ -309,6 +325,11 @@ void fragment() {
 	cmax.size_flags_vertical = Control.SIZE_SHRINK_END
 	top.add_child(cmax)
 
+	_hint = _label("Vise (clic droit) : la trajectoire s'affiche", 12, MUTED, false)
+	_hint.custom_minimum_size = Vector2(232, 32)
+	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hint.visible = false
+	info.add_child(_hint)
 	_shells = ShellRow.new()
 	_shells.custom_minimum_size = Vector2(232, 32)
 	_shells.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -376,6 +397,7 @@ void fragment() {
 	hv.add_child(_key_row(["F"], "Coup de pied"))
 	hv.add_child(_key_row(["V"], "Vue 1re / 3e personne"))
 	hv.add_child(_key_row(["1"], "Mortier"))
+	hv.add_child(_key_row(["2"], "Pierres (lancer)"))
 	hv.add_child(_key_row(["R"], "Recharger (test)"))
 	hv.add_child(_key_row(["H"], "Masquer l'aide"))
 
@@ -393,12 +415,12 @@ void fragment() {
 
 
 func _process(delta: float) -> void:
-	if _preview_pivot:
-		_preview_pivot.rotate_y(delta * 0.9)
+	for pv in _pivots:
+		pv.rotate_y(delta * 0.9)
 	if _kick_prompt:
 		_kick_prompt.modulate.a = lerpf(_kick_prompt.modulate.a, 1.0 if _kick_prompt_on else 0.0, minf(1.0, delta * 8.0))
 	if _prompt:
-		var show := _selected and _ammo > 0 and _status.text == ""
+		var show := _item != 0 and (_item == 2 or _ammo > 0) and _status.text == ""
 		_prompt.modulate.a = lerpf(_prompt.modulate.a, 1.0 if show else 0.0, minf(1.0, delta * 8.0))
 
 
@@ -413,20 +435,47 @@ func _refresh() -> void:
 	_shells.count = _ammo
 	_shells.maximum = _max
 	_shells.queue_redraw()
-	_count.text = str(_ammo)
-	_count.add_theme_color_override("font_color", AMBER if _ammo > 0 else Color(1, 0.4, 0.35))
-	_slot_style.border_color = AMBER if _selected else Color(1, 1, 1, 0.18)
-	_slot_style.shadow_size = 14 if _selected else 0
-	_slot.modulate = Color.WHITE if _selected else Color(1, 1, 1, 0.65)
+	if _item == 2:
+		_count.text = "∞"
+		_count.add_theme_color_override("font_color", AMBER)
+	else:
+		_count.text = str(_ammo)
+		_count.add_theme_color_override("font_color", AMBER if _ammo > 0 else Color(1, 0.4, 0.35))
+	for i in _slots.size():
+		var sel := _item == i + 1
+		_slot_styles[i].border_color = AMBER if sel else Color(1, 1, 1, 0.18)
+		_slot_styles[i].shadow_size = 14 if sel else 0
+		_slots[i].modulate = Color.WHITE if sel else Color(1, 1, 1, 0.6)
+	_name.text = "PIERRES" if _item == 2 else "MORTIER D'ARTIFICE"
+	_shells.visible = _item != 2
+	_hint.visible = _item == 2
+	_apply_prompt()
 
 
-func _on_equipped(on: bool) -> void:
-	_selected = on
+func _apply_prompt() -> void:
+	var l: Label = _prompt_row.get_child(_prompt_row.get_child_count() - 1)
+	var kc: Label = _prompt_row.get_child(0).get_child(0)
+	if _item == 2:
+		kc.text = "CLIC GAUCHE" if not _aim_on else "CLIC GAUCHE"
+		l.text = "Lancer"
+	elif _aim_on:
+		kc.text = "CLIC GAUCHE"
+		l.text = "Tirer"
+	else:
+		kc.text = "CLIC DROIT"
+		l.text = "Maintenir pour viser"
+
+
+func _on_item(i: int) -> void:
+	_item = i
+	_selected = i != 0
 	_refresh()
-	_slot.pivot_offset = _slot.size * 0.5
-	var tw := create_tween()
-	tw.tween_property(_slot, "scale", Vector2.ONE * (1.1 if on else 0.94), 0.08)
-	tw.tween_property(_slot, "scale", Vector2.ONE * (1.0 if on else 0.96), 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	if i > 0:
+		var sl := _slots[i - 1]
+		sl.pivot_offset = sl.size * 0.5
+		var tw := create_tween()
+		tw.tween_property(sl, "scale", Vector2.ONE * 1.1, 0.08)
+		tw.tween_property(sl, "scale", Vector2.ONE, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 func _on_ammo(count: int, maximum: int) -> void:
@@ -449,13 +498,10 @@ func _on_stage(label: String, progress: float) -> void:
 func _on_aim(on: bool) -> void:
 	if _aim_tween:
 		_aim_tween.kill()
+	_aim_on = on
 	if on:
 		_post.visible = true
-		_prompt_row.get_child(0).get_child(0).text = "CLIC GAUCHE"
-		_prompt_row.get_child(1).text = "Tirer"
-	else:
-		_prompt_row.get_child(0).get_child(0).text = "CLIC DROIT"
-		_prompt_row.get_child(1).text = "Maintenir pour viser"
+	_apply_prompt()
 	_aim_tween = create_tween().set_parallel(true)
 	_aim_tween.tween_method(func(v): (_post.material as ShaderMaterial).set_shader_parameter("amount", v), 0.0 if on else 1.0, 1.0 if on else 0.0, 0.35)
 	_aim_tween.tween_property(_reticle, "modulate:a", 1.0 if on else 0.0, 0.25)

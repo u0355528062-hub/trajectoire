@@ -199,6 +199,14 @@ func set_equipped(on: bool) -> void:
 		visible = true
 
 
+func hide_now() -> void:
+	equipped = false
+	equip_t = 0.0
+	visible = false
+	_aim_input = false
+	aim_t = 0.0
+
+
 func set_aim(on: bool) -> void:
 	_aim_input = on and equipped
 
@@ -328,11 +336,16 @@ func _hand_targets() -> Array:
 	var fwd := (cx.basis * Vector3(0, 0, 1)).normalized()
 	var left := (cx.basis * Vector3(1, 0, 0)).normalized()
 
-	# --- pose « portée » : poignée de main le long de la cuisse droite, tube vers le haut-avant
+	# --- pose « prêt » : tube tenu devant la hanche, incliné vers l'avant, coude plié ;
+	# la main suit un léger balancement de marche
+	var sway := Vector3.ZERO
+	if human._walk_w > 0.01:
+		var ph := human.phase * TAU
+		sway = up * sin(ph * 2.0) * 0.012 * human._walk_w + fwd * sin(ph) * 0.02 * human._walk_w
 	var carry := {
-		"palm": _chest(Vector3(-0.255, 0.93, 0.115), cx),
-		"axis": (up * cos(0.45) + fwd * sin(0.45)).normalized(),
-		"f": fwd, "p": left,
+		"palm": _chest(Vector3(-0.215, 1.02, 0.235), cx) + sway,
+		"axis": (up * cos(0.78) + fwd * sin(0.78)).normalized(),
+		"f": (fwd * cos(0.3) - up * sin(0.3)).normalized(), "p": left,
 	}
 	# --- pose « visée » : bras tendu vers le point visé
 	var sh := human.shoulder_world("R")

@@ -146,3 +146,107 @@ wood = np.stack([0.50 * (0.7 + 0.3 * g), 0.30 * (0.7 + 0.3 * g), 0.15 * (0.7 + 0
 Image.fromarray((np.clip(wood, 0, 1) * 255).astype(np.uint8)).save(os.path.join(OUT, "wood_a.png"))
 Image.fromarray(to_normal(g * 0.8 + tile_noise(n, 30, 130, 32) * 0.2, 0.6)).save(os.path.join(OUT, "wood_n.png"))
 print("ok")
+
+
+# =============================================================== v2 : plus de détails
+def save_rgba(arr, name):
+    Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), "RGBA").save(os.path.join(OUT, name))
+
+# petites fissures (impacts de pierres)
+for i, (rays, rings, seed, spread) in enumerate([(6, 1, 11, 0.7), (7, 2, 12, 0.8), (8, 1, 13, 0.75), (5, 1, 14, 0.65)]):
+    cracks(512, rays, rings, seed, spread).save(os.path.join(OUT, f"crack_s{i}.png"))
+
+# roche
+n = 512
+h = tile_noise(n, 2, 8, 41) * 1.0 + tile_noise(n, 8, 40, 42) * 0.8 + tile_noise(n, 40, 160, 43) * 0.35
+Image.fromarray(to_normal(h, 0.9)).save(os.path.join(OUT, "rock_n.png"))
+v = 0.38 + 0.09 * tile_noise(n, 2, 8, 44) + 0.06 * tile_noise(n, 10, 60, 45)
+alb = np.stack([v * 1.0, v * 0.97, v * 0.92], -1)
+Image.fromarray((np.clip(alb, 0, 1) * 255).astype(np.uint8)).save(os.path.join(OUT, "rock_a.png"))
+
+# asphalte
+h = tile_noise(n, 30, 160, 51) * 0.8 + tile_noise(n, 6, 30, 52) * 0.4
+Image.fromarray(to_normal(h, 0.7)).save(os.path.join(OUT, "asphalt_n.png"))
+v = 0.17 + 0.03 * tile_noise(n, 2, 12, 53) + 0.04 * np.clip(tile_noise(n, 60, 200, 54), -1, 2)
+Image.fromarray((np.clip(np.stack([v, v, v * 1.03], -1), 0, 1) * 255).astype(np.uint8)).save(os.path.join(OUT, "asphalt_a.png"))
+
+# marquages routiers
+dash = np.zeros((64, 256, 4)); dash[...] = 0
+im = Image.new("RGBA", (256, 64), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
+d.rectangle([0, 18, 150, 46], fill=(235, 235, 225, 235))
+im = im.filter(ImageFilter.GaussianBlur(0.8)); im.save(os.path.join(OUT, "road_dash.png"))
+im = Image.new("RGBA", (1024, 512), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
+f = ImageFont.truetype(BOLD, 330)
+d.text((512 - d.textlength("BUS", font=f) / 2, 40), "BUS", font=f, fill=(240, 232, 200, 235))
+d.rectangle([40, 440, 984, 480], fill=(240, 232, 200, 235))
+arr = np.array(im).astype(np.float32)
+wear = np.clip(0.75 + 0.5 * np.tile(tile_noise(512, 20, 120, 61), (1, 2))[:512, :1024], 0.3, 1.2)
+arr[..., 3] *= np.clip(wear, 0, 1)
+Image.fromarray(arr.astype(np.uint8), "RGBA").save(os.path.join(OUT, "road_bus.png"))
+
+# écran d'information (LED ambre)
+W2, H2 = 768, 192
+im = Image.new("RGB", (W2, H2), (6, 4, 2)); d = ImageDraw.Draw(im)
+fb = ImageFont.truetype(BOLD, 54)
+d.text((20, 18), "12  CENTRE-VILLE", font=fb, fill=(255, 170, 30))
+d.text((20, 98), "3 min     18 min", font=fb, fill=(255, 190, 60))
+a = np.array(im).astype(np.float32)
+yy, xx = np.mgrid[0:H2, 0:W2]
+led = ((xx % 6) < 5) & ((yy % 6) < 5)
+a *= led[..., None] * 1.0 + 0.12
+Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)).save(os.path.join(OUT, "ledscreen.png"))
+
+# bande dépolie (sablage) avec pictogramme
+fw, fh = 1024, 256
+fr = tile_noise(256, 5, 60, 71)
+fr = np.tile(fr, (1, 4))[:256, :1024]
+alpha = np.clip(0.58 + 0.08 * fr, 0, 1) * 255
+rgba = np.zeros((fh, fw, 4)); rgba[..., :3] = (232, 240, 244); rgba[..., 3] = alpha
+im = Image.fromarray(rgba.astype(np.uint8), "RGBA"); d = ImageDraw.Draw(im)
+for x in range(60, fw, 340):
+    d.rounded_rectangle([x, 80, x + 60, 150], radius=10, fill=(0, 82, 160, 190))
+    d.text((x + 8, 84), "12", font=ImageFont.truetype(BOLD, 44), fill=(255, 255, 255, 230))
+    d.text((x + 74, 92), "CENTRE-VILLE", font=ImageFont.truetype(BOLD, 34), fill=(0, 60, 120, 210))
+im.save(os.path.join(OUT, "frost.png"))
+
+# salissures en bas des vitres + coulures
+dw, dh = 512, 256
+yg = np.linspace(1, 0, dh)[:, None]
+dn = np.tile(tile_noise(256, 3, 40, 81), (1, 2))[:256, :512]
+streak = np.clip(np.tile(tile_noise(512, 40, 200, 82)[:1, :512], (dh, 1)), -1, 2)
+dirt = np.clip(yg ** 2.2 * (0.55 + 0.25 * dn) + 0.10 * np.clip(streak, 0, 2) * yg ** 0.9, 0, 1)
+rgba = np.zeros((dh, dw, 4)); rgba[..., 0] = 90; rgba[..., 1] = 84; rgba[..., 2] = 74
+rgba[..., 3] = dirt * 120
+Image.fromarray(rgba.astype(np.uint8), "RGBA").save(os.path.join(OUT, "dirt.png"))
+
+# plan de quartier (panneau d'information)
+mp = Image.new("RGB", (400, 600), (240, 243, 246)); d = ImageDraw.Draw(mp)
+d.rectangle([0, 0, 400, 56], fill=(0, 82, 160)); d.text((16, 10), "PLAN DU QUARTIER", font=ImageFont.truetype(BOLD, 28), fill=(255, 255, 255))
+rnd = random.Random(5)
+for i in range(9):
+    d.line([(rnd.randint(0, 400), 56 + i * 60), (rnd.randint(0, 400), 90 + i * 60)], fill=(255, 255, 255), width=14)
+    d.line([(rnd.randint(0, 400), 56 + i * 60), (rnd.randint(0, 400), 90 + i * 60)], fill=(255, 214, 120), width=5)
+for i in range(18):
+    x, y = rnd.randint(10, 340), rnd.randint(70, 540)
+    d.rounded_rectangle([x, y, x + rnd.randint(30, 60), y + rnd.randint(20, 50)], radius=4, fill=(205, 214, 222))
+d.ellipse([180, 280, 220, 320], fill=(220, 40, 40)); d.text((228, 288), "Vous êtes ici", font=ImageFont.truetype(BOLD, 22), fill=(40, 40, 40))
+mp.save(os.path.join(OUT, "map.png"))
+print("ok v2")
+
+# dallage (pavés 50x25 cm avec joints)
+n = 1024
+yy, xx = np.mgrid[0:n, 0:n].astype(np.float32)
+pw, ph = n / 2.0, n / 4.0   # 2 pavés en x, 4 en y sur la tuile
+row = np.floor(yy / ph)
+xo = (xx + (row % 2) * pw * 0.5) % pw
+yo = yy % ph
+edge = np.minimum(np.minimum(xo, pw - xo), np.minimum(yo, ph - yo))
+joint = np.clip(1.0 - edge / 5.0, 0, 1)
+cell = (np.floor((xx + (row % 2) * pw * 0.5) / pw) * 7 + row * 13) % 5
+tone = 0.50 + 0.025 * (cell - 2)
+nz = tile_noise(n, 6, 60, 91) * 0.02 + tile_noise(n, 80, 400, 92) * 0.015
+v = (tone + nz) * (1 - 0.55 * joint)
+Image.fromarray((np.clip(np.stack([v, v, v * 0.98], -1), 0, 1) * 255).astype(np.uint8)).save(os.path.join(OUT, "paving_a.png"))
+h = -joint * 3.0 + tile_noise(n, 80, 400, 93) * 0.35
+Image.fromarray(to_normal(h, 0.8)).save(os.path.join(OUT, "paving_n.png"))
+print("ok paving")

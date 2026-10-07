@@ -15,7 +15,9 @@ Ouvrir le dossier dans Godot 4.4+ et lancer (F5). Au premier lancement, laisser 
 | 1 | Sortir / ranger le mortier |
 | Clic droit (maintenu) | Viser : bras tendu, réticule, flou périphérique, léger tremblement |
 | Clic gauche (en visant) | Tirer (6 obus : on ramène le tube, allumage au briquet, on retend, départ) |
-| F | Coup de pied (arrêt de bus cassable : fissures, puis éclatement au 3ᵉ coup) |
+| 2 | Pierres : clic droit = trajectoire, clic gauche = lancer |
+| Molette | Changer d'objet |
+| F | Coup de pied (arrêt de bus cassable : fissures, puis éclatement) |
 | R | Recharger les 6 obus (test) |
 | H | Masquer l'aide |
 | Échap | Libérer la souris |

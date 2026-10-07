@@ -34,13 +34,17 @@
 | **Souris** | Regarder |
 | **V** | Vue 1ʳᵉ / 3ᵉ personne |
 | **1** | Sortir / ranger le mortier |
-| **Clic droit (maintenu)** | Viser : bras tendu, réticule, flou sur les bords, léger tremblement |
-| **Clic gauche (en visant)** | Tirer (6 obus : on ramène le tube, allumage au briquet, on retend le bras, départ) |
-| **F** | Coup de pied (casse l'arrêt de bus : fissures puis éclatement au 3ᵉ coup) |
+| **2** | Sortir / ranger les **pierres** (lancer) |
+| **Molette** | Changer d'objet |
+| **Clic droit (maintenu)** | Viser : mortier = bras tendu + réticule ; pierres = **trajectoire en pointillés** et cercle d'impact |
+| **Clic gauche** | Mortier (en visant) : tirer, 6 obus. Pierres : lancer (illimité) |
+| **F** | Coup de pied (3 coups cassent une vitre) |
 | **R** | Recharger les 6 obus (pour tester) |
 | **H** | Afficher / masquer l'aide |
 
-L'arrêt de bus est devant toi, à 13 m : marche jusqu'à lui, place-toi **à 1 m d'une vitre**, regarde-la et appuie sur **F** trois fois.
+L'arrêt de bus est devant toi, de l'autre côté de la route : traverse, puis soit :
+- **lance des pierres** (touche **2**, clic droit pour voir la trajectoire, clic gauche pour lancer) : chaque impact ajoute des fissures et fait tomber des éclats, la vitre finit par exploser après 3 à 5 pierres ;
+- **donne des coups de pied** : place-toi à 1 m d'une vitre, regarde-la et appuie sur **F**.
 
 ## 6. Problèmes fréquents
 

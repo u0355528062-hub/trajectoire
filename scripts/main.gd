@@ -6,6 +6,8 @@ var player: Player
 
 func _ready() -> void:
 	_build_environment()
+	add_child(Skyline.new())
+	add_child(Ambient.new())
 	_build_ground()
 	var bus := BusStop.new()
 	add_child(bus)
@@ -49,10 +51,10 @@ func _build_environment() -> void:
 	env.ssr_fade_out = 2.0
 
 	env.glow_enabled = true
-	env.glow_intensity = 0.7
+	env.glow_intensity = 0.5
 	env.glow_strength = 1.1
 	env.glow_bloom = 0.08
-	env.glow_hdr_threshold = 1.0
+	env.glow_hdr_threshold = 1.25
 	env.glow_hdr_scale = 2.0
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
 	env.set_glow_level(1, 0.6)
@@ -64,16 +66,16 @@ func _build_environment() -> void:
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.62, 0.50, 0.48)
 	env.fog_light_energy = 1.0
-	env.fog_density = 0.0012
-	env.fog_sun_scatter = 0.35
+	env.fog_density = 0.0007
+	env.fog_sun_scatter = 0.1
 	env.fog_aerial_perspective = 0.35
 	env.fog_sky_affect = 0.0
 	env.volumetric_fog_enabled = true
-	env.volumetric_fog_density = 0.004
+	env.volumetric_fog_density = 0.0022
 	env.volumetric_fog_albedo = Color(0.85, 0.82, 0.82)
 	env.volumetric_fog_emission = Color(0.02, 0.025, 0.05)
 	env.volumetric_fog_emission_energy = 0.5
-	env.volumetric_fog_anisotropy = 0.45
+	env.volumetric_fog_anisotropy = 0.3
 	env.volumetric_fog_length = 80.0
 	env.volumetric_fog_gi_inject = 1.0
 

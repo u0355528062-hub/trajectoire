@@ -14,8 +14,15 @@ var model: Node3D
 var skeleton: Skeleton3D
 var head_meshes: Array[MeshInstance3D] = []
 signal kick_impact(point: Vector3)
+signal footstep(speed: float)
+signal landed(speed: float)
 
-const KICK_DUR := 0.85
+var twist := 0.0 # torsion supplémentaire du bassin (lancer)
+var _prev_ph := {"L": 0.0, "R": 0.0}
+var _was_air := false
+var _air_vy := 0.0
+
+const KICK_DUR := 1.0
 var kick_t := -1.0
 var _kick_fired := false
 var _whoosh: AudioStreamPlayer3D
@@ -244,6 +251,11 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 	air = move_toward(air, 0.0 if grounded else 1.0, delta * 7.0)
 
 	var moving := speed > 0.15 and grounded
+	if not grounded:
+		_air_vy = vy
+	if _was_air and grounded:
+		landed.emit(absf(_air_vy))
+	_was_air = not grounded
 	_walk_w = move_toward(_walk_w, 1.0 if moving else 0.0, delta * 6.0)
 	var period := lerpf(1.02, 0.66, run_t)
 	if moving:
@@ -254,11 +266,19 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 	var w := _walk_w
 	var breath := sin(t_idle * 1.6) * 0.5 + 0.5
 	var ku := -1.0
-	var kk := 0.0
+	var kk := 0.0        # intensité globale (cloche)
+	var k_ant := 0.0     # préparation : transfert de poids
+	var k_cham := 0.0    # genou levé
+	var k_str := 0.0     # extension
+	var k_rec := 0.0     # retour
 	if kick_t >= 0.0:
 		kick_t += delta
 		ku = kick_t / KICK_DUR
 		kk = sin(PI * clampf(ku, 0.0, 1.0))
+		k_ant = smoothstep(0.0, 0.24, ku)
+		k_cham = smoothstep(0.2, 0.44, ku)
+		k_str = smoothstep(0.42, 0.53, ku)
+		k_rec = smoothstep(0.64, 1.0, ku)
 		if ku >= 0.52 and not _kick_fired:
 			_kick_fired = true
 			kick_impact.emit(foot_world("R"))
@@ -266,23 +286,32 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 			kick_t = -1.0
 			ku = -1.0
 			kk = 0.0
+			k_ant = 0.0
+			k_cham = 0.0
+			k_str = 0.0
+			k_rec = 0.0
+	var kfx := k_ant * (1.0 - k_rec)  # poids transféré sur la jambe d'appui, jusqu'au retour
 
 	# --- bassin / colonne
 	var dy := -(0.02 + 0.05 * run_t) * w
 	# marche : le bassin est le plus haut en milieu d'appui ; course : le plus bas (rebond)
 	var bob := cos(4.0 * PI * (phase - beta * 0.5))
 	dy += w * bob * (0.014 * (1.0 - run_t) - 0.04 * run_t)
-	dy -= 0.1 * air + 0.035 * kk
+	dy -= 0.1 * air + 0.03 * kfx + 0.02 * k_cham * (1.0 - k_rec)
 	var root_rest: Vector3 = skeleton.get_bone_rest(bone["root"]).origin
-	skeleton.set_bone_pose_position(bone["root"], root_rest + Vector3(0, dy, 0))
-	var yaw := sin(TAU * phase) * 0.11 * w
+	# coup de pied : le bassin se décale sur la jambe gauche (+x) puis lance la hanche vers l'avant
+	var shift := 0.05 * kfx
+	var lunge := 0.07 * k_str * (1.0 - k_rec)
+	skeleton.set_bone_pose_position(bone["root"], root_rest + Vector3(shift, dy, lunge))
+	var kyaw := lerpf(-0.18 * k_cham, 0.32, k_str) * (1.0 - k_rec) if kick_t >= 0.0 else 0.0
+	var yaw := sin(TAU * phase) * 0.11 * w + kyaw + twist
 	var roll := cos(TAU * phase) * 0.035 * w
 	_lean = lerpf(_lean, (0.03 + 0.24 * run_t) * w + 0.05 * clampf(-vy * 0.15, 0.0, 1.0) * air, minf(1.0, delta * 6.0))
 	skeleton.set_bone_pose_rotation(bone["root"], Quaternion(Vector3.UP, yaw) * Quaternion(Vector3.BACK, roll))
 	var spine := ["spine05", "spine04", "spine03", "spine02", "spine01"]
 	for i in spine.size():
 		var share := 1.0 / spine.size()
-		var rx := _lean * share + kick * 0.05 + (breath - 0.5) * 0.004 - 0.05 * kk
+		var rx := _lean * share + kick * 0.05 + (breath - 0.5) * 0.004 - 0.06 * k_cham * (1.0 - k_rec) - 0.06 * k_str * (1.0 - k_rec)
 		var ry := -yaw * 1.5 * share
 		var rz := -roll * 1.2 * share
 		if i == 0:
@@ -314,31 +343,34 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 		var target := foot_rest + Vector3(0, lift * w, z * w)
 		var fpitch := pitch_f * w
 		if side == "R" and ku >= 0.0:
-			var cham := Vector3(-0.19, 0.68, 0.36)
-			var strike := Vector3(-0.17, 0.80, 0.86)
-			var e := 0.0
-			if ku < 0.38:
-				e = ku / 0.38
-				e = e * e * (3.0 - 2.0 * e)
-				target = foot_rest.lerp(cham, e)
-				fpitch = lerpf(0.0, 0.55, e)
-			elif ku < 0.52:
-				e = (ku - 0.38) / 0.14
-				e = e * e * (3.0 - 2.0 * e)
-				target = cham.lerp(strike, e)
-				fpitch = lerpf(0.55, -1.15, e)
-			elif ku < 0.6:
-				target = strike
-				fpitch = -1.15
+			var wind := foot_rest + Vector3(0.0, 0.04, -0.07)
+			var cham := Vector3(-0.2, 0.76, 0.30)
+			var strike := Vector3(-0.16, 0.86, 0.86)
+			var cham2 := Vector3(-0.21, 0.66, 0.36)
+			if ku < 0.24:
+				target = foot_rest.lerp(wind, k_ant)
+				fpitch = 0.15 * k_ant
+			elif ku < 0.44:
+				target = wind.lerp(cham, k_cham)
+				fpitch = lerpf(0.15, 0.7, k_cham)
+			elif ku < 0.64:
+				var path := cham.lerp(strike, k_str)
+				path.y += sin(PI * k_str) * 0.05   # petite courbe : le pied part en arc
+				target = path
+				fpitch = lerpf(0.7, -1.2, k_str)
 			else:
-				e = (ku - 0.6) / 0.4
-				e = e * e * (3.0 - 2.0 * e)
-				target = strike.lerp(foot_rest, e)
-				fpitch = lerpf(-1.15, 0.0, e)
+				var k2 := smoothstep(0.64, 0.82, ku)
+				var k3 := smoothstep(0.8, 1.0, ku)
+				target = strike.lerp(cham2, k2).lerp(foot_rest, k3)
+				fpitch = lerpf(lerpf(-1.2, 0.5, k2), 0.0, k3)
 		# en l'air : jambes repliées
 		target += Vector3(0, 0.22 * air, (0.12 if is_l else -0.06) * air)
 		var hip_n := "upperleg01_" + side
 		var pole := Vector3(0.12 if is_l else -0.12, 0.0, 1.0)
+		# empreintes de pas
+		if moving and grounded and w > 0.5 and ph < float(_prev_ph[side]) - 0.5:
+			footstep.emit(speed)
+		_prev_ph[side] = ph
 		_solve_limb(hip_n, "lowerleg01_" + side, "foot_" + side, target, pole)
 		_global("foot_" + side, Quaternion(Vector3.RIGHT, fpitch - 0.25 * air))
 		var toe := "toe1-1_" + side
@@ -360,6 +392,7 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 		var cl := "clavicle_" + side
 		var ph := fposmod(phase + (0.5 if is_l else 0.0), 1.0)
 		var sw := -sin(TAU * ph) * swing
+		sw += (0.75 if not is_l else -0.55) * kfx * (1.0 - 0.3 * k_str)
 		var adduct := 0.5 + 0.05 * breath * (1.0 - w) - 0.35 * air - 0.28 * kk
 		_local(cl, Quaternion.IDENTITY)
 		_local(up, Quaternion(Vector3.BACK, -sgn * adduct) * Quaternion(Vector3.RIGHT, sw - 0.5 * air))
