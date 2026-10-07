@@ -242,7 +242,7 @@ func _update_preview(palm: Vector3, tgt: Array) -> void:
 		var vn := v + Vector3(0, -9.8 * dt, 0)
 		var pn := p + (v + vn) * 0.5 * dt
 		if not hit:
-			var q := PhysicsRayQueryParameters3D.create(p, pn, 1)
+			var q := PhysicsRayQueryParameters3D.create(p, pn, 1 | 32)
 			q.exclude = [exclude_rid]
 			var r := space.intersect_ray(q)
 			if r:
@@ -272,6 +272,9 @@ func _release() -> void:
 	var s := Stone.new()
 	get_tree().current_scene.add_child(s)
 	s.setup(_seed, _rng.randf_range(0.04, 0.062))
+	s.collision_mask = 1 | 16 | 32 | 64   # sol/abribus, manifestants, poubelles, cartons
+	if human.get_parent() is PhysicsBody3D:
+		s.add_collision_exception_with(human.get_parent())
 	s.global_position = rel_pos
 	s.linear_velocity = v
 	s.angular_velocity = Vector3(_rng.randf_range(-12, 12), _rng.randf_range(-12, 12), _rng.randf_range(-12, 12))

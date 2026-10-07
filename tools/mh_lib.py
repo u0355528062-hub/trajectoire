@@ -106,7 +106,6 @@ class Gltf:
             "POSITION": self.accessor(P.astype("<f4"), 5126, "VEC3", 34962, True),
             "NORMAL": self.accessor(N.astype("<f4"), 5126, "VEC3", 34962),
             "TEXCOORD_0": self.accessor(UV.astype("<f4"), 5126, "VEC2", 34962),
-            "TEXCOORD_1": self.accessor(UV.astype("<f4"), 5126, "VEC2", 34962),
             "JOINTS_0": self.accessor(J.astype("<u2"), 5123, "VEC4", 34962),
             "WEIGHTS_0": self.accessor(W.astype("<f4"), 5126, "VEC4", 34962),
         }

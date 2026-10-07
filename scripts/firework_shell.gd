@@ -143,6 +143,7 @@ func _burst() -> void:
 	_done = true
 	var scene := get_tree().current_scene
 	var pos := global_position
+	get_tree().call_group("crowd", "on_event", "burst", {"pos": pos})
 	var root := Node3D.new()
 	scene.add_child(root)
 	root.global_position = pos

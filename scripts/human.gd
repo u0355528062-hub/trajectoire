@@ -3,21 +3,48 @@ extends Node3D
 ## Personnage réaliste : modèle skinné (MakeHuman, CC0) généré par tools/build_character.py.
 ## Matériaux, tête masquable en 1re personne, animation procédurale (IK jambes/bras).
 
-const MODEL_PATH := "res://assets/character/character.glb"
 const DIR := "res://assets/character/"
 const HEAD_LAYER := 2 # calque masqué par la caméra 1re personne
 
 const PALM_TO_WRIST := 0.075   # centre de la paume -> articulation du poignet
 const PALM_SIGN := -1.0        # signe de la normale de paume mesurée sur le modèle
 
+## Variante de corps (fichier assets/character/<variant>.glb) et tenue, à fixer avant l'ajout à la scène.
+var variant := "male_a"
+var outfit := {}
+const DEFAULT_OUTFIT := {
+	"top": "hoodie", "top_color": Color(0.17, 0.19, 0.24), "hood": false, "vest": false,
+	"pants_color": Color(1, 1, 1), "pants_tex": true, "shoe_color": Color(0.2, 0.21, 0.25),
+	"head": "beanie", "head_color": Color(0.06, 0.06, 0.08), "face": "", "face_color": Color(0.05, 0.05, 0.06),
+	"backpack": false, "bag_color": Color(0.1, 0.1, 0.12),
+}
+static var _mat_cache := {}
+
 var model: Node3D
 var skeleton: Skeleton3D
 var head_meshes: Array[MeshInstance3D] = []
+var _mesh_by_name := {}
 signal kick_impact(point: Vector3)
 signal footstep(speed: float)
 signal landed(speed: float)
 
 var twist := 0.0 # torsion supplémentaire du bassin (lancer)
+# --- commandes d'expression (PNJ surtout)
+var look_target := Vector3.ZERO
+var look_w := 0.0        # 0 = regard selon la caméra, 1 = suit look_target
+var jaw := 0.0           # ouverture de la bouche (parole, cris)
+var crouch := 0.0        # 0 debout -> 1 accroupi
+var hop := 0.0           # petit saut (joie)
+var nod := 0.0           # hochement « oui »
+var shake := 0.0         # « non » de la tête
+var lean_extra := 0.0    # inclinaison du buste (+ en avant)
+var idle_sway := 1.0     # transfert de poids au repos
+var step_in_place := 0.0 # > 0.5 : petits pas sur place (demi-tour sans avancer)
+var sway_seed := 0.0
+var _ly := 0.0
+var _lp := 0.0
+var _blink := 0.0
+var _next_blink := 2.5
 var _prev_ph := {"L": 0.0, "R": 0.0}
 var _was_air := false
 var _air_vy := 0.0
@@ -47,7 +74,7 @@ func _tex(file: String) -> Texture2D:
 
 
 func _ready() -> void:
-	var scene: PackedScene = load(MODEL_PATH)
+	var scene: PackedScene = load(DIR + variant + ".glb")
 	var inst := scene.instantiate()
 	model = Node3D.new()
 	model.name = "Model"
@@ -85,44 +112,125 @@ func _std(color: Color, rough: float, normal_file := "", normal_scale := 1.0, uv
 	return m
 
 
+func _cached(key: String, maker: Callable) -> Material:
+	if not _mat_cache.has(key):
+		_mat_cache[key] = maker.call()
+	return _mat_cache[key]
+
+
+func _cloth(kind: String, color: Color) -> Material:
+	return _cached(kind + str(color), func() -> Material:
+		match kind:
+			"knit":
+				return _std(color, 0.96, "knit_n.png", 0.2, 6.0)
+			"cotton":
+				return _std(color, 0.9, "knit_n.png", 0.12, 9.0)
+			"nylon":
+				var m := _std(color, 0.6, "nylon_n.png", 0.15, 5.0)
+				m.metallic_specular = 0.45
+				return m
+			"rib":
+				return _std(color, 1.0, "rib_n.png", 0.8, 6.0)
+			"twill":
+				return _std(color, 0.85, "denim_n.png", 0.25, 6.0)
+			"bandana":
+				var b := _std(color, 0.9, "knit_n.png", 0.1, 3.0)
+				b.albedo_texture = _tex("bandana_a.png")
+				b.uv1_scale = Vector3(3, 3, 1)
+				return b
+			"jeans":
+				var j := _std(color, 0.88, "denim_n.png", 0.12, 3.0)
+				j.albedo_texture = _tex("denim_a.png")
+				return j
+			"pants":
+				return _std(color, 0.9, "knit_n.png", 0.15, 7.0)
+			"shoes":
+				var sh := _std(color, 0.62, "canvas_n.png", 0.12, 6.0)
+				sh.vertex_color_use_as_albedo = true
+				return sh
+			"vest":
+				var v := _std(Color(0.92, 0.92, 0.9), 0.62, "canvas_n.png", 0.15, 8.0)
+				v.vertex_color_use_as_albedo = true
+				v.metallic_specular = 0.5
+				v.emission_enabled = true
+				v.emission = Color(0.05, 0.045, 0.0)
+				return v
+			"hair":
+				var h := _std(color, 0.55, "hair_n.png", 0.9, 4.0)
+				h.metallic_specular = 0.7
+				return h
+		return _std(color, 0.9))
+
+
 func _apply_materials(root: Node) -> void:
-	var skin := StandardMaterial3D.new()
-	skin.albedo_texture = _tex("skin_albedo.png")
-	skin.roughness = 0.52
-	skin.metallic_specular = 0.45
-	skin.normal_enabled = true
-	skin.normal_texture = _tex("skin_n.png")
-	skin.normal_scale = 0.1
-	skin.subsurf_scatter_enabled = true
-	skin.subsurf_scatter_strength = 0.22
-
-	var eye := StandardMaterial3D.new()
-	eye.albedo_texture = _tex("eye_brown.png")
-	eye.albedo_color = Color(1.25, 1.25, 1.2)
-	eye.roughness = 0.22
-	eye.metallic_specular = 0.5
-
-	var hoodie := _std(Color(0.17, 0.19, 0.24), 0.96, "knit_n.png", 0.2, 6.0)
-	var jeans := _std(Color.WHITE, 0.88, "denim_n.png", 0.12, 3.0)
-	jeans.albedo_texture = _tex("denim_a.png")
-	var beanie := _std(Color(0.06, 0.06, 0.08), 1.0, "rib_n.png", 0.8, 6.0)
-	var shoes := _std(Color.WHITE, 0.62, "canvas_n.png", 0.12, 6.0)
-	shoes.vertex_color_use_as_albedo = true
-
+	var o := DEFAULT_OUTFIT.duplicate()
+	o.merge(outfit, true)
+	outfit = o
+	var skin: Material = _cached("skin_" + variant, func() -> Material:
+		var m := StandardMaterial3D.new()
+		m.albedo_texture = _tex("skin_" + variant + ".png")
+		m.roughness = 0.52
+		m.metallic_specular = 0.45
+		m.normal_enabled = true
+		m.normal_texture = _tex("skin_n.png")
+		m.normal_scale = 0.1
+		m.subsurf_scatter_enabled = true
+		m.subsurf_scatter_strength = 0.22
+		return m)
+	var eye: Material = _cached("eye", func() -> Material:
+		var m := StandardMaterial3D.new()
+		m.albedo_texture = _tex("eye_brown.png")
+		m.albedo_color = Color(1.25, 1.25, 1.2)
+		m.roughness = 0.22
+		m.metallic_specular = 0.5
+		return m)
+	var top: String = o["top"]
+	var head_item: String = o["head"]
+	var face: String = o["face"]
+	var hood: bool = o["hood"] and top == "hoodie"
+	if hood:
+		head_item = ""
+	if face == "balaclava":
+		head_item = "" if head_item == "cap" else head_item
+	var top_kind := {"hoodie": "knit", "jacket": "nylon", "tshirt": "cotton"}.get(top, "knit") as String
+	var top_mat := _cloth(top_kind, o["top_color"])
 	var table := {
 		"Body": skin, "Head": skin, "Eyes": eye,
-		"Hoodie": hoodie, "Jeans": jeans, "Beanie": beanie, "Shoes": shoes,
+		"Hoodie": top_mat, "Hood": top_mat, "Jacket": top_mat, "Tshirt": top_mat,
+		"Vest": _cloth("vest", Color.WHITE),
+		"Jeans": _cloth("jeans" if o["pants_tex"] else "pants", o["pants_color"]),
+		"Shoes": _cloth("shoes", o["shoe_color"]),
+		"Beanie": _cloth("rib", o["head_color"]),
+		"Cap": _cloth("twill", o["head_color"]), "CapBrim": _cloth("twill", o["head_color"]),
+		"Balaclava": _cloth("rib", o["face_color"]),
+		"Bandana": _cloth("bandana", o["face_color"]),
+		"Backpack": _cloth("nylon", o["bag_color"]),
+		"Hair": _cloth("hair", o.get("hair_color", Color(0.12, 0.08, 0.05))),
+		"Ponytail": _cloth("hair", o.get("hair_color", Color(0.12, 0.08, 0.05))),
 	}
+	var visible_set := {
+		"Body": true, "Head": true, "Eyes": true, "Jeans": true, "Shoes": true,
+		"Hoodie": top == "hoodie", "Hood": hood, "Jacket": top == "jacket", "Tshirt": top == "tshirt",
+		"Vest": o["vest"] and top != "jacket",
+		"Beanie": head_item == "beanie", "Cap": head_item == "cap", "CapBrim": head_item == "cap",
+		"Balaclava": face == "balaclava", "Bandana": face == "bandana",
+		"Backpack": o["backpack"],
+		"Hair": head_item == "" and not hood and face != "balaclava",
+		"Ponytail": not hood and face != "balaclava",
+	}
+	const HEAD_PARTS := ["Head", "Eyes", "Beanie", "Cap", "CapBrim", "Balaclava", "Bandana", "Hood", "Hair", "Ponytail"]
 	for mi in _meshes(root):
 		var nm := String(mi.name)
+		_mesh_by_name[nm] = mi
 		if table.has(nm):
 			mi.material_override = table[nm]
-		if nm in ["Head", "Eyes", "Beanie"]:
+		mi.visible = visible_set.get(nm, true)
+		if nm in HEAD_PARTS:
 			mi.layers = HEAD_LAYER
 			head_meshes.append(mi)
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		var small := nm in ["Eyes", "CapBrim", "Ponytail", "Bandana"]
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if small else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		mi.extra_cull_margin = 1.0
-
 
 
 # ----------------------------------------------------------------- squelette
@@ -132,7 +240,7 @@ func _cache_bones() -> void:
 		var n := skeleton.get_bone_name(i)
 		bone[n] = i
 		rest[n] = skeleton.get_bone_global_rest(i).origin
-	var f := FileAccess.open(DIR + "rig.json", FileAccess.READ)
+	var f := FileAccess.open(DIR + "rig_" + variant + ".json", FileAccess.READ)
 	var info: Dictionary = JSON.parse_string(f.get_as_text())
 	for side: String in ["L", "R"]:
 		var ff := Vector3(info["hand_f_" + side][0], info["hand_f_" + side][1], info["hand_f_" + side][2])
@@ -162,6 +270,27 @@ func start_kick() -> void:
 
 func foot_world(side := "R") -> Vector3:
 	return skeleton.global_transform * _gp("foot_" + side)
+
+
+func head_world() -> Vector3:
+	return skeleton.global_transform * _gp("head")
+
+
+## Repère réel de la paume (après animation) : {pos, f (doigts), p (normale de paume), thumb}
+func palm(side: String) -> Dictionary:
+	var q := _gq("wrist_" + side)
+	var gb := skeleton.global_transform.basis
+	var f: Vector3 = (gb * (q * hand_f[side])).normalized()
+	var p: Vector3 = (gb * (q * palm_n[side])).normalized()
+	var w := skeleton.global_transform * _gp("wrist_" + side)
+	# repère monde direct : main droite -> pouce = f x p ; main gauche -> p x f
+	var thumb := f.cross(p) if side == "R" else p.cross(f)
+	return {"pos": w + f * PALM_TO_WRIST + p * 0.012, "f": f, "p": p, "thumb": thumb.normalized()}
+
+
+## Longueur bras + avant-bras (pour adapter les poses à la morphologie)
+func arm_length() -> float:
+	return (rest["lowerarm01_R"] - rest["upperarm01_R"]).length() + (rest["wrist_R"] - rest["lowerarm01_R"]).length()
 
 
 func kick_back(amount := 1.0) -> void:
@@ -226,10 +355,12 @@ func _solve_limb(upper: String, lower: String, end: String, target: Vector3, pol
 	_aim(lower, rest[end] - rest[lower], e - m)
 
 
-func _curl_fingers(side: String, amount: float, thumb := 0.4) -> void:
+func _curl_fingers(side: String, amount: float, thumb := 0.4, index_ext := 0.0) -> void:
 	var axis: Vector3 = hand_f[side].cross(palm_n[side]).normalized()
 	for fi in range(1, 6):
 		var k := thumb if fi == 1 else 1.0
+		if fi == 2:
+			k *= 1.0 - index_ext
 		var spread := 0.0
 		for seg in range(1, 4):
 			var nm := "finger%d-%d_%s" % [fi, seg, side]
@@ -250,7 +381,7 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 	look_pitch = lerpf(look_pitch, pitch, minf(1.0, delta * 10.0))
 	air = move_toward(air, 0.0 if grounded else 1.0, delta * 7.0)
 
-	var moving := speed > 0.15 and grounded
+	var moving := (speed > 0.15 or step_in_place > 0.5) and grounded
 	if not grounded:
 		_air_vy = vy
 	if _was_air and grounded:
@@ -300,7 +431,8 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 	dy -= 0.1 * air + 0.03 * kfx + 0.02 * k_cham * (1.0 - k_rec)
 	var root_rest: Vector3 = skeleton.get_bone_rest(bone["root"]).origin
 	# coup de pied : le bassin se décale sur la jambe gauche (+x) puis lance la hanche vers l'avant
-	var shift := 0.05 * kfx
+	var shift := 0.05 * kfx + sin(t_idle * 0.31 + sway_seed) * 0.022 * (1.0 - w) * idle_sway * (1.0 - crouch)
+	dy += hop - 0.42 * crouch
 	var lunge := 0.07 * k_str * (1.0 - k_rec)
 	skeleton.set_bone_pose_position(bone["root"], root_rest + Vector3(shift, dy, lunge))
 	var kyaw := lerpf(-0.18 * k_cham, 0.32, k_str) * (1.0 - k_rec) if kick_t >= 0.0 else 0.0
@@ -311,16 +443,47 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 	var spine := ["spine05", "spine04", "spine03", "spine02", "spine01"]
 	for i in spine.size():
 		var share := 1.0 / spine.size()
-		var rx := _lean * share + kick * 0.05 + (breath - 0.5) * 0.004 - 0.06 * k_cham * (1.0 - k_rec) - 0.06 * k_str * (1.0 - k_rec)
+		var rx := _lean * share + kick * 0.05 + (breath - 0.5) * 0.004 - 0.06 * k_cham * (1.0 - k_rec) - 0.06 * k_str * (1.0 - k_rec) + (0.55 * crouch + lean_extra) * share
 		var ry := -yaw * 1.5 * share
 		var rz := -roll * 1.2 * share
 		if i == 0:
 			rx -= 0.0
 		_local(spine[i], Quaternion(Vector3.UP, ry) * Quaternion(Vector3.RIGHT, rx) * Quaternion(Vector3.BACK, rz))
 	var hp := clampf(-look_pitch * 0.55, -0.9, 0.7)
+	var ty := 0.0
+	var tp := hp
+	if look_w > 0.001:
+		var hpos := skeleton.global_transform * _gp("head")
+		var d := _dir_to_skel(look_target - hpos)
+		var ly := clampf(atan2(d.x, d.z), -1.35, 1.35)
+		var lp := clampf(-atan2(d.y, Vector2(d.x, d.z).length()), -0.75, 0.6)
+		ty = ly * look_w
+		tp = lerpf(hp, lp, look_w)
+	_ly = lerpf(_ly, ty, minf(1.0, delta * 5.0))
+	_lp = lerpf(_lp, tp, minf(1.0, delta * 5.0))
+	var nod_a := sin(t_idle * 8.5) * 0.13 * nod
+	var shake_a := sin(t_idle * 7.5) * 0.3 * shake
+	var crouch_comp := -0.4 * crouch - lean_extra * 0.5  # garde le regard vers l'avant quand on se penche
 	for nm in ["neck01", "neck02", "neck03"]:
-		_local(nm, Quaternion(Vector3.RIGHT, hp * 0.18 - _lean * 0.12))
-	_local("head", Quaternion(Vector3.RIGHT, hp * 0.46 - _lean * 0.1))
+		_local(nm, Quaternion(Vector3.UP, _ly * 0.16) * Quaternion(Vector3.RIGHT, _lp * 0.18 - _lean * 0.12 + crouch_comp * 0.2))
+	_local("head", Quaternion(Vector3.UP, _ly * 0.4 + shake_a) * Quaternion(Vector3.RIGHT, _lp * 0.46 - _lean * 0.1 + nod_a + crouch_comp * 0.3))
+	if bone.has("jaw"):
+		_local("jaw", Quaternion(Vector3.RIGHT, 0.3 * clampf(jaw, 0.0, 1.0)))
+	# yeux : suivent un peu la cible ; clignements
+	for sd: String in ["L", "R"]:
+		if bone.has("eye_" + sd):
+			_local("eye_" + sd, Quaternion(Vector3.UP, clampf(ty - _ly, -0.3, 0.3) * 0.8) * Quaternion(Vector3.RIGHT, clampf(tp - _lp, -0.2, 0.2) * 0.8))
+	_next_blink -= delta
+	if _next_blink <= 0.0:
+		_blink = 1.0
+		_next_blink = randf_range(2.0, 6.0)
+	_blink = move_toward(_blink, 0.0, delta * 7.0)
+	var lid := sin(PI * _blink)
+	for sd: String in ["L", "R"]:
+		if bone.has("orbicularis03_" + sd):
+			_local("orbicularis03_" + sd, Quaternion(Vector3.RIGHT, 0.55 * lid))
+		if bone.has("orbicularis04_" + sd):
+			_local("orbicularis04_" + sd, Quaternion(Vector3.RIGHT, -0.18 * lid))
 
 	# --- jambes (IK) : appui plat, balancier en arc
 	for side: String in ["L", "R"]:
@@ -340,7 +503,7 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 			z = stride * (off - 1.0 + e)
 			lift = pow(sin(PI * u), 0.85) * lerpf(0.09, 0.30, run_t)
 			pitch_f = lerpf(-0.35, 0.22, e)
-		var target := foot_rest + Vector3(0, lift * w, z * w)
+		var target := foot_rest + Vector3(0, lift * w + hop * 0.9, z * w)
 		var fpitch := pitch_f * w
 		if side == "R" and ku >= 0.0:
 			var wind := foot_rest + Vector3(0.0, 0.04, -0.07)
@@ -416,6 +579,8 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 		var palm_pos := _to_skel(tg["pos"])
 		var wrist := palm_pos - f_w * PALM_TO_WRIST - p_w * 0.012
 		var pole := Vector3(0.5 * sgn, -1.0, -0.45)
+		if tg.has("pole"):
+			pole = _dir_to_skel(tg["pole"]).normalized()
 		_solve_limb(up, lo, wr, wrist, pole)
 		var br := _frame(hand_f[side], palm_n[side])
 		var bt := _frame(f_w, p_w)
@@ -424,12 +589,16 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 			for i in 3:
 				var ik_q := skeleton.get_bone_pose_rotation(bone[ids[i]])
 				skeleton.set_bone_pose_rotation(bone[ids[i]], fk_q[i].slerp(ik_q, wt))
-		_curl_fingers(side, lerpf(fk_curl, tg.get("curl", 0.9), wt))
+		_curl_fingers(side, lerpf(fk_curl, tg.get("curl", 0.9), wt), 0.4, tg.get("index", 0.0) * wt)
 
 
 func _frame(f: Vector3, p: Vector3) -> Basis:
+	if f.length_squared() < 1e-8:
+		f = Vector3.UP
 	var y := f.normalized()
 	var z := p - y * p.dot(y)
+	if z.length_squared() < 1e-6:   # doigts et paume alignés : repère de secours
+		z = y.cross(Vector3.RIGHT if absf(y.x) < 0.9 else Vector3.BACK)
 	z = z.normalized()
 	var x := y.cross(z)
 	return Basis(x, y, z)

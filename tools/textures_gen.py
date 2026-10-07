@@ -76,76 +76,98 @@ def rasterize(Pb, Nb, TV, TT, VT):
     return np.concatenate(idx_l), np.concatenate(pos_l), np.concatenate(nrm_l), seen
 
 
-def skin_color(P, N, head):
-    P = P - np.array([0, 0.022, 0])  # repères définis sans l'épaisseur de semelle
+# repères de la tête de référence (homme « male_a », hauteurs sans semelle)
+E_REF = np.array([0.0, 1.692, 0.129])   # milieu des yeux
+M_REF_Y = 1.6285                         # centre des lèvres
+
+
+def to_ref(P, ctx):
+    """Ramène des points du personnage dans le repère de la tête de référence (traits du visage)."""
+    E = ctx["eye"]
+    s = ctx["hscale"]
+    Q = E_REF + (P - E) / s
+    # sous les yeux : on recale verticalement sur la bouche réelle
+    below = P[:, 1] < E[1]
+    k = (M_REF_Y - E_REF[1]) / (ctx["mouth_y"] - E[1])
+    Q[below, 1] = E_REF[1] + (P[below, 1] - E[1]) * k
+    return Q
+
+
+def skin_color(P, N, ctx):
+    Pv = P
+    P = to_ref(P, ctx)
     x, y, z = P[:, 0], P[:, 1], P[:, 2]
     ax = np.abs(x)
-    n1 = fbm3(P, 6.0, 3)
-    n2 = fbm3(P + 11.3, 90.0, 3)
-    col = np.array([0.80, 0.58, 0.47])[None, :] * np.ones((len(P), 1))
+    n1 = fbm3(Pv, 6.0, 3)
+    n2 = fbm3(Pv + 11.3, 90.0, 3)
+    base = np.array(ctx["skin"])
+    col = base[None, :] * np.ones((len(P), 1))
     col *= (0.93 + 0.14 * n1)[:, None]
-    # rougeurs : joues, nez, oreilles, coudes, genoux, phalanges
-    def blob(c, r, amt):
-        d = np.sqrt(((P - np.array(c)) ** 2).sum(1))
+    dark = 1.0 - float(np.mean(base))  # peaux foncées : rougeurs plus discrètes
+    def blob(Q, c, r, amt):
+        d = np.sqrt(((Q - np.array(c)) ** 2).sum(1))
         return amt * smooth(r, 0.0, d)
     red = 0
     for sx in (1, -1):
-        red = red + blob((sx * 0.045, 1.655, 0.125), 0.035, 0.35)
-        red = red + blob((sx * 0.080, 1.675, 0.040), 0.030, 0.55)
-        red = red + blob((sx * 0.42, 1.19, -0.02), 0.045, 0.35)
-        red = red + blob((sx * 0.16, 0.50, 0.08), 0.05, 0.25)
-    red = red + blob((0.0, 1.655, 0.170), 0.022, 0.45)
+        red = red + blob(P, (sx * 0.045, 1.655, 0.125), 0.035, 0.35)
+        red = red + blob(P, (sx * 0.080, 1.675, 0.040), 0.030, 0.55)
+    for c in ctx["elbows"] + ctx["knees"]:
+        red = red + blob(Pv, c, 0.05, 0.3)
+    red = red + blob(P, (0.0, 1.655, 0.170), 0.022, 0.45)
+    red *= (1.0 - dark * 0.6)
     col = col * (1 - red[:, None] * 0.25) + red[:, None] * np.array([0.30, 0.04, 0.03])[None, :] * 0.35
     col[:, 1] *= 1 - 0.1 * red
-    # taches de rousseur légères
-    fr = smooth(0.78, 0.86, vnoise3(P + 5.5, 420.0)) * smooth(1.58, 1.66, y) * (z > 0.0)
+    fr = smooth(0.78, 0.86, vnoise3(P + 5.5, 420.0)) * smooth(1.58, 1.66, y) * (z > 0.0) * ctx.get("freckles", 1.0)
     col *= (1 - 0.07 * fr)[:, None]
-    # pores / grain
     col *= (0.97 + 0.06 * n2)[:, None]
 
-    face = (N[:, 2] > -0.2) & (z > 0.08) & (y > 1.55) & (y < 1.80)
+    head_zone = (P[:, 1] > 1.5) & (Pv[:, 1] > ctx["neck_y"])
+    face = (N[:, 2] > -0.2) & (z > 0.08) & (y > 1.55) & (y < 1.80) & head_zone
     # lèvres
-    cx, cy, rx, ry = 0.0, 1.6285, 0.0235, 0.0105
-    q = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2
+    rx, ry = 0.0235, 0.0105 * ctx.get("lip_h", 1.0)
+    q = (x / rx) ** 2 + ((y - M_REF_Y) / ry) ** 2
     lip = smooth(1.0, 0.7, q) * face * (z > 0.12)
-    lip_col = np.array([0.62, 0.30, 0.29])
+    lip_col = np.array(ctx["lip"])
     col = col * (1 - 0.85 * lip[:, None]) + lip_col[None, :] * 0.85 * lip[:, None]
-    mline = np.exp(-((y - 1.6277) / 0.0007) ** 2) * smooth(0.026, 0.020, ax) * face
+    mline = np.exp(-((y - (M_REF_Y - 0.0008)) / 0.0007) ** 2) * smooth(0.026, 0.020, ax) * face
     col *= (1 - 0.55 * mline)[:, None]
+    hair_col = np.array(ctx["hair"])
     # sourcils
     brow = 0
+    bth = ctx.get("brow", 1.0)
     for sx in (1, -1):
         t = np.clip((ax - 0.011) / 0.043, 0, 1)
         yb = 1.7185 + 0.010 * np.sin(np.pi * np.clip(t * 0.85, 0, 1)) - 0.004 * t
-        th = 0.0040 + 0.0042 * (1 - t)
+        th = (0.0040 + 0.0042 * (1 - t)) * bth
         inb = (sx * x > 0.011) & (ax < 0.056)
         strokes = 0.55 + 0.45 * vnoise3(P * np.array([1.0, 0.2, 1.0]) + 3.1, 700.0)
         brow = brow + inb * smooth(th, th * 0.55, np.abs(y - yb)) * strokes
     brow = np.clip(brow, 0, 1) * face * (z > 0.10)
-    hair_col = np.array([0.13, 0.085, 0.06])
     col = col * (1 - 0.88 * brow[:, None]) + hair_col[None, :] * 0.88 * brow[:, None]
-    # barbe naissante
-    jaw = smooth(1.700, 1.640, y) * smooth(1.55, 1.585, y)
-    beard = face * ((ax < 0.075) & (y < 1.66)) * (z > 0.045)
-    around_mouth = smooth(0.034, 0.020, np.sqrt((x / 1.2) ** 2 + (y - 1.628) ** 2)) * 0.0
-    dens = np.clip(smooth(1.665, 1.60, y) * (1 - lip) * smooth(0.078, 0.06, ax) + 0.0, 0, 1)
-    dots = smooth(0.52, 0.64, vnoise3(P + 9.9, 1500.0))
-    stub = dens * dots * (beard | (face & (y < 1.60)))
-    col = col * (1 - 0.33 * stub[:, None]) + hair_col[None, :] * 0.33 * stub[:, None]
-    # cheveux sur le crâne (visibles sous le bonnet)
+    # barbe (de naissante à fournie)
+    bd = ctx.get("beard", 0.0)
+    if bd > 0:
+        beard = face * ((ax < 0.075) & (y < 1.66)) * (z > 0.045)
+        dens = np.clip(smooth(1.665, 1.60, y) * (1 - lip) * smooth(0.078, 0.06, ax), 0, 1)
+        dots = smooth(0.52 - 0.25 * bd, 0.64 - 0.2 * bd, vnoise3(P + 9.9, 1500.0))
+        stub = dens * dots * (beard | (face & (y < 1.60)))
+        amt = 0.33 + 0.45 * max(0.0, bd - 0.5)
+        col = col * (1 - amt * stub[:, None]) + hair_col[None, :] * amt * stub[:, None]
+    # cheveux sur le crâne
     hy = 1.775 - 0.115 * np.clip((0.16 - z) / 0.2, 0, 1) - 0.045 * np.clip((ax - 0.04) / 0.04, 0, 1)
     ear = np.sqrt((ax - 0.082) ** 2 + (y - 1.675) ** 2 + (z - 0.04) ** 2)
-    hair = smooth(hy - 0.006, hy + 0.006, y) * smooth(0.032, 0.040, ear) * (y < 1.83)
-    hair *= 1 - face * smooth(1.755, 1.768, 1.775 - y) * 0  # le front reste sous le bonnet
+    hair = smooth(hy - 0.006, hy + 0.006, y) * smooth(0.032, 0.040, ear) * (y < 1.83) * head_zone
     strands = 0.6 + 0.4 * vnoise3(P * np.array([1.0, 3.0, 1.0]) + 1.7, 500.0)
     hair_tex = hair_col[None, :] * (0.6 + 0.8 * strands)[:, None]
     col = col * (1 - 0.95 * hair[:, None]) + hair_tex * 0.95 * hair[:, None]
     return np.clip(col, 0, 1)
 
 
-def bake_skin(path, Pb, Nb, TV, TT, VT, head):
+def bake_skin(path, Pb, Nb, TV, TT, VT, ctx, size=2048):
+    global SIZE
+    SIZE = size
     pid, pos, nrm, seen = rasterize(Pb, Nb, TV, TT, VT)
-    col = skin_color(pos, nrm / np.maximum(np.linalg.norm(nrm, axis=1, keepdims=True), 1e-9), head)
+    col = skin_color(pos, nrm / np.maximum(np.linalg.norm(nrm, axis=1, keepdims=True), 1e-9), ctx)
     img = np.zeros((SIZE * SIZE, 3), dtype=np.float32)
     img[pid] = col
     img = img.reshape(SIZE, SIZE, 3)
@@ -160,7 +182,7 @@ def bake_skin(path, Pb, Nb, TV, TT, VT, head):
         fill = m & (cnt > 0)
         img[fill] = acc[fill] / cnt[fill][:, None]
         cov = cov | fill
-    img[~cov] = [0.8, 0.58, 0.47]
+    img[~cov] = ctx["skin"]
     Image.fromarray((img * 255).astype(np.uint8)).save(path)
 
 
@@ -214,6 +236,19 @@ def write_cloth_textures(out):
     m = 1024  # pores à l'échelle de l'UV du corps (pas de répétition)
     h = tile_noise(m, 180, 480, 7) + 0.6 * tile_noise(m, 40, 120, 8)
     Image.fromarray(to_normal(h, 0.8)).save(out + "/skin_n.png")
+    # bandana / keffieh (motif en niveaux de gris, teinté à l'exécution)
+    g1 = (np.sin(xx / n * 2 * np.pi * 24) > 0.55) | (np.sin(yy / n * 2 * np.pi * 24) > 0.55)
+    g2 = ((np.floor(xx / n * 48) + np.floor(yy / n * 48)) % 2 == 0) & ~g1
+    pat = np.where(g1, 0.12, np.where(g2, 0.95, 0.75))
+    pat = pat * (0.9 + 0.1 * tile_noise(n, 40, 160, 15))
+    Image.fromarray((np.clip(np.stack([pat, pat, pat], -1), 0, 1) * 255).astype(np.uint8)).save(out + "/bandana_a.png")
+    # cheveux : mèches fines
+    h = np.tile(tile_noise(n, 60, 250, 16), (1, 1))
+    h = np.repeat(h[:, ::8], 8, axis=1)[:, :n] * 0.4 + tile_noise(n, 80, 250, 17) * 0.15
+    Image.fromarray(to_normal(h, 1.2)).save(out + "/hair_n.png")
+    # nylon (doudoune, sac)
+    h = np.sin((xx + yy) / n * 2 * np.pi * 90) * 0.15 + tile_noise(n, 40, 200, 18) * 0.25
+    Image.fromarray(to_normal(h, 0.6)).save(out + "/nylon_n.png")
     # toile des baskets
     cv = np.sin(xx / n * 150 * 2 * np.pi) * np.sin(yy / n * 150 * 2 * np.pi)
     h = cv * 0.5 + tile_noise(n, 20, 80, 9) * 0.3

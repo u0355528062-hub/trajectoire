@@ -35,16 +35,34 @@
 | **V** | Vue 1ʳᵉ / 3ᵉ personne |
 | **1** | Sortir / ranger le mortier |
 | **2** | Sortir / ranger les **pierres** (lancer) |
+| **3** | Sortir le **briquet + journal** (mettre le feu à une poubelle) |
+| **4** | Sortir un **fumigène** |
 | **Molette** | Changer d'objet |
-| **Clic droit (maintenu)** | Viser : mortier = bras tendu + réticule ; pierres = **trajectoire en pointillés** et cercle d'impact |
-| **Clic gauche** | Mortier (en visant) : tirer, 6 obus. Pierres : lancer (illimité) |
-| **F** | Coup de pied (3 coups cassent une vitre) |
-| **R** | Recharger les 6 obus (pour tester) |
+| **Clic droit (maintenu)** | Viser : mortier = bras tendu + réticule ; pierres / journal = **trajectoire en pointillés** ; fumigène = le **brandir** au-dessus de la tête |
+| **Clic gauche** | Mortier (en visant) : tirer, 6 obus. Pierres : lancer. Journal : allumer, puis lancer. Fumigène : craquer, puis lancer |
+| **E** | Poubelle : ouvrir / fermer. **Maintenir E** : la basculer sur ses roues et la pousser, relâcher pour la poser |
+| **G** | Appeler la foule (« Venez ! ») |
+| **F** | Coup de pied (3 coups cassent une vitre, pousse une poubelle) |
+| **R** | Recharger obus et fumigènes (pour tester) |
 | **H** | Afficher / masquer l'aide |
 
 L'arrêt de bus est devant toi, de l'autre côté de la route : traverse, puis soit :
 - **lance des pierres** (touche **2**, clic droit pour voir la trajectoire, clic gauche pour lancer) : chaque impact ajoute des fissures et fait tomber des éclats, la vitre finit par exploser après 3 à 5 pierres ;
 - **donne des coups de pied** : place-toi à 1 m d'une vitre, regarde-la et appuie sur **F**.
+
+### Mettre le feu à une poubelle
+
+1. Approche-toi d'une poubelle (la verte est juste devant toi au départ), appuie sur **E** : le couvercle s'ouvre.
+2. Appuie sur **3** (briquet + journal), puis **clic gauche** : ton personnage allume le journal.
+3. Maintiens **clic droit** : la trajectoire s'affiche. Vise l'intérieur de la poubelle et **clic gauche** pour lancer.
+4. Le feu prend : des manifestants viennent regarder, filmer, et certains apportent des cartons pour l'entretenir.
+   Referme le couvercle (**E**) pour l'éteindre.
+
+### Casser l'abribus avec la foule
+
+Va près de l'abribus et appuie sur **G** : ton personnage crie « Venez ! ». Selon leur caractère et
+l'ambiance, certains manifestants accourent pour donner des coups de pied dans les vitres ou lancer des
+pierres, d'autres refusent. Plus la soirée est chaude (feux d'artifice, vitres cassées, feux), plus ils te suivent.
 
 ## 6. Problèmes fréquents
 
@@ -52,12 +70,13 @@ L'arrêt de bus est devant toi, de l'autre côté de la route : traverse, puis s
 - **Message « Vulkan non supporté » / écran noir** : ton ordinateur est trop ancien pour le mode normal. Menu **Projet → Paramètres du projet → Rendu → Moteur de rendu** (« Rendering Method ») → choisis **gl_compatibility**, puis relance. (L'apparence sera un peu plus simple : moins de reflets et d'ombres douces.)
 - **La souris ne bouge pas la caméra** : clique une fois dans la fenêtre du jeu.
 - **Rien ne s'est importé / images manquantes** : ferme Godot, rouvre le projet et attends la fin de la barre de progression en bas à droite.
-- **Un son ne marche pas** : tous les sons sont fabriqués par le code, aucun fichier audio. Vérifie le volume du PC.
+- **Un son ne marche pas** : vérifie le volume du PC. Les voix et la foule sont dans `assets/audio/` (fichiers .ogg) ; si Godot les signale manquants, laisse-le terminer l'import (barre en bas à droite).
+- **Le jeu rame avec la foule** : la foule compte 27 personnages animés. Ferme les autres programmes, ou dans `scripts/crowd.gd` supprime quelques lignes de la liste `cfg` (une ligne = un manifestant).
 
 ## 7. Où est quoi (si tu veux modifier plus tard)
 
-- `main.tscn` : la scène lancée (ciel, lumière, sol, arrêt de bus, joueur).
-- `scripts/` : le comportement. `player.gd` (déplacements, caméra), `human.gd` (corps, marche, course, coup de pied), `mortar.gd` (visée, tir), `bus_stop.gd` (arrêt de bus cassable), `hud.gd` (interface).
+- `main.tscn` : la scène lancée (ciel, lumière, sol, arrêt de bus, poubelles, foule, joueur).
+- `scripts/` : le comportement. `player.gd` (déplacements, caméra, objets), `human.gd` (corps, marche, course, coup de pied), `mortar.gd` (visée, tir), `bus_stop.gd` (arrêt de bus cassable), `hud.gd` (interface), `crowd.gd` (la foule : cortège, chants, réactions), `npc.gd` (un manifestant : poses, voix, comportements), `trash_bin.gd` (poubelle et feu), `igniter.gd` (briquet), `flare_tool.gd` / `flare.gd` (fumigène).
 - `assets/` : le personnage (généré depuis des données libres MakeHuman, CC0) et les textures.
 - `tools/` : les programmes Python qui génèrent le personnage et les textures (inutiles pour jouer).
 

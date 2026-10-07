@@ -76,7 +76,8 @@ func setup(seed_: int, radius: float) -> void:
 	pm.friction = 0.8
 	pm.bounce = 0.28
 	physics_material_override = pm
-	linear_damp = 0.02
+	linear_damp_mode = RigidBody3D.DAMP_MODE_REPLACE   # la pierre suit la trajectoire affichée
+	linear_damp = 0.0
 	angular_damp = 0.3
 	body_entered.connect(_on_body)
 	add_to_group("stones")
@@ -98,6 +99,8 @@ func _on_body(body: Node) -> void:
 		var bus: BusStop = body.get_meta("bus")
 		bus.stone_hit(body.get_meta("pane_index"), global_position, speed, _prev_vel.normalized())
 		return
+	if body is Npc and speed > 3.0 and _age < 3.0:
+		(body as Npc).on_stone_hit(_prev_vel)
 	var now := Time.get_ticks_msec() / 1000.0
 	if speed > 2.0 and now - _last_sound > 0.12:
 		_last_sound = now

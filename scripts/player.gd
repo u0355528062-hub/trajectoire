@@ -1,14 +1,16 @@
 class_name Player
 extends CharacterBody3D
-## Joueur : déplacement, caméra 1re/3e personne, inventaire (1 mortier, 2 pierres), coup de pied.
+## Joueur : déplacement, caméra 1re/3e personne, inventaire (1 mortier, 2 pierres,
+## 3 briquet + journal, 4 fumigène), coup de pied, poubelles (E), appel à la foule (G).
 
 signal view_changed(first_person: bool)
-signal item_changed(index: int)         # 0 = mains libres, 1 = mortier, 2 = pierres
+signal item_changed(index: int)         # 0 = mains libres, 1 mortier, 2 pierres, 3 briquet, 4 fumigène
 signal ammo_changed(count: int, maximum: int)
 signal message(text: String)
 signal stage_changed(label: String, progress: float)
 signal aim_changed(on: bool)
 signal near_breakable_changed(near: bool)
+signal flares_changed(count: int, maximum: int)
 
 const WALK_SPEED := 1.75
 const RUN_SPEED := 5.2
@@ -20,6 +22,8 @@ const EYE_HEIGHT := 1.70
 var human: Human
 var mortar: Mortar
 var thrower: Thrower
+var igniter: Igniter
+var flare_tool: FlareTool
 var cam_yaw: Node3D
 var cam_pitch: Node3D
 var spring: SpringArm3D
@@ -38,6 +42,16 @@ var _land_dip := 0.0
 var _steps: Array[AudioStreamPlayer3D] = []
 var _step_i := 0
 var _rng := RandomNumberGenerator.new()
+var _tool_hands := Callable()
+var _grab_bin: TrashBin
+var _grab_prev := 0
+var _e_t := -1.0
+var _e_bin: TrashBin
+var near_bin: TrashBin
+var _call_t := -1.0
+var _call_cd := 0.0
+var _aim_evt := 0.0
+var _voice: AudioStreamPlayer3D
 
 
 func _ready() -> void:
@@ -51,6 +65,7 @@ func _ready() -> void:
 	col.shape = cap
 	col.position.y = 0.88
 	add_child(col)
+	collision_mask = 1 | 16 | 32 | 64
 	floor_snap_length = 0.25
 	floor_max_angle = deg_to_rad(50.0)
 
@@ -62,7 +77,7 @@ func _ready() -> void:
 	mortar.ammo_changed.connect(func(c, m): ammo_changed.emit(c, m))
 	mortar.stage_changed.connect(func(l, p): stage_changed.emit(l, p))
 	mortar.message.connect(func(t): message.emit(t))
-	mortar.fired.connect(func(): _shake = 1.0)
+	mortar.fired.connect(_on_mortar_fired)
 	mortar.aim_point_provider = Callable(self, "_aim_point")
 
 	thrower = Thrower.new()
@@ -70,6 +85,25 @@ func _ready() -> void:
 	thrower.aim_target_provider = Callable(self, "_aim_target")
 	thrower.exclude_rid = get_rid()
 	thrower.thrown.connect(func(): _shake = 0.25)
+
+	igniter = Igniter.new()
+	igniter.attach_to(human)
+	igniter.aim_target_provider = Callable(self, "_aim_target")
+	igniter.exclude_rid = get_rid()
+	igniter.message.connect(func(t): message.emit(t))
+	igniter.thrown.connect(func(): _shake = 0.25)
+
+	flare_tool = FlareTool.new()
+	flare_tool.attach_to(human)
+	flare_tool.aim_target_provider = Callable(self, "_aim_target")
+	flare_tool.message.connect(func(t): message.emit(t))
+	flare_tool.count_changed.connect(func(c, m): flares_changed.emit(c, m))
+	human.hand_provider = Callable(self, "_hands")
+	_tool_hands = Callable(mortar, "_hand_targets")
+	_voice = AudioStreamPlayer3D.new()
+	_voice.position.y = 1.65
+	_voice.unit_size = 8.0
+	add_child(_voice)
 
 	human.kick_impact.connect(_on_kick_impact)
 	human.footstep.connect(_on_footstep)
@@ -113,6 +147,10 @@ func _register_inputs() -> void:
 		"toggle_view": [KEY_V],
 		"slot_1": [KEY_1, KEY_KP_1],
 		"slot_2": [KEY_2, KEY_KP_2],
+		"slot_3": [KEY_3, KEY_KP_3],
+		"slot_4": [KEY_4, KEY_KP_4],
+		"interact": [KEY_E],
+		"call_crowd": [KEY_G],
 		"reload_cheat": [KEY_R],
 		"kick": [KEY_F],
 	}
@@ -135,29 +173,35 @@ func _register_inputs() -> void:
 		InputMap.action_add_event("fire", mb)
 
 
-func _active() -> Node:
-	match current_item:
-		1: return mortar
-		2: return thrower
-	return null
+func _tools_busy() -> bool:
+	return mortar.busy or thrower.busy or igniter.busy or flare_tool.busy
 
 
 func _busy() -> bool:
-	return mortar.busy or thrower.busy or human.kick_t >= 0.0
+	return _tools_busy() or human.kick_t >= 0.0 or _grab_bin != null
 
 
-## 0 = mains libres, 1 = mortier, 2 = pierres
+## 0 = mains libres, 1 = mortier, 2 = pierres, 3 = briquet + journal, 4 = fumigène
 func select_item(i: int) -> void:
-	if mortar.busy or thrower.busy or i == current_item:
+	if _tools_busy() or i == current_item:
 		return
 	mortar.set_equipped(i == 1)
 	thrower.set_equipped(i == 2)
-	if i == 1:
-		thrower.hide_now()
-		human.hand_provider = Callable(mortar, "_hand_targets")
-	elif i == 2:
+	igniter.set_equipped(i == 3)
+	flare_tool.set_equipped(i == 4)
+	if i != 1 and i != 0:
 		mortar.hide_now()
-		thrower.claim_hands()
+	if i != 2 and i != 0:
+		thrower.hide_now()
+	if i != 3:
+		igniter.hide_now()
+	if i != 4:
+		flare_tool.hide_now()
+	match i:
+		1: _tool_hands = Callable(mortar, "_hand_targets")
+		2: _tool_hands = Callable(thrower, "_hand_targets")
+		3: _tool_hands = Callable(igniter, "_hand_targets")
+		4: _tool_hands = Callable(flare_tool, "_hand_targets")
 	current_item = i
 	if aiming:
 		aiming = false
@@ -174,25 +218,34 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseButton and event.pressed and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 		var dirn := 1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else -1
-		select_item(posmod(current_item + dirn, 3))
+		if _grab_bin == null:
+			select_item(posmod(current_item + dirn, 5))
 	elif event.is_action_pressed("toggle_view"):
 		first_person = not first_person
 		view_changed.emit(first_person)
-	elif event.is_action_pressed("slot_1"):
+	elif _grab_bin == null and event.is_action_pressed("slot_1"):
 		select_item(0 if current_item == 1 else 1)
-	elif event.is_action_pressed("slot_2"):
+	elif _grab_bin == null and event.is_action_pressed("slot_2"):
 		select_item(0 if current_item == 2 else 2)
-	elif event.is_action_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		if current_item == 1:
-			mortar.try_fire()
-		elif current_item == 2:
-			thrower.throw_stone()
+	elif _grab_bin == null and event.is_action_pressed("slot_3"):
+		select_item(0 if current_item == 3 else 3)
+	elif _grab_bin == null and event.is_action_pressed("slot_4"):
+		select_item(0 if current_item == 4 else 4)
+	elif event.is_action_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and _grab_bin == null:
+		match current_item:
+			1: mortar.try_fire()
+			2: thrower.throw_stone()
+			3: igniter.use()
+			4: flare_tool.use()
 	elif event.is_action_pressed("kick") and not aiming and not _busy() and is_on_floor():
 		_kick_yaw = _yaw
 		human.start_kick()
+	elif event.is_action_pressed("call_crowd"):
+		call_crowd()
 	elif event.is_action_pressed("reload_cheat"):
 		mortar.reload_all()
-		message.emit("Obus rechargés")
+		flare_tool.reload_all()
+		message.emit("Obus et fumigènes rechargés")
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
@@ -203,20 +256,25 @@ func _physics_process(delta: float) -> void:
 	var wants_run := Input.is_action_pressed("run") and iv.y <= 0.3 and iv.length() > 0.1
 	_run_t = move_toward(_run_t, 1.0 if wants_run else 0.0, delta * 4.0)
 	var target_speed := lerpf(WALK_SPEED, RUN_SPEED, _run_t)
-	if mortar.busy or thrower.busy or aiming:
+	if _tools_busy() or (aiming and current_item != 4):
 		target_speed = minf(target_speed, WALK_SPEED * 0.55)
+		_run_t = 0.0
+	if _grab_bin != null:
+		target_speed = minf(target_speed, WALK_SPEED * 0.9)
 		_run_t = 0.0
 	var kicking := human.kick_t >= 0.0
 	if kicking:
 		target_speed = 0.0
 		_run_t = 0.0
 
-	var want_aim := current_item != 0 and Input.is_action_pressed("aim") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not kicking
+	var want_aim := current_item != 0 and Input.is_action_pressed("aim") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not kicking and _grab_bin == null
 	if want_aim != aiming:
 		aiming = want_aim
-		aim_changed.emit(aiming)
+		aim_changed.emit(aiming and current_item in [1, 2, 3])
 		mortar.set_aim(aiming and current_item == 1)
 		thrower.set_aim(aiming and current_item == 2)
+		igniter.set_aim(aiming and current_item == 3)
+		flare_tool.set_aim(aiming and current_item == 4)
 	cam_yaw.rotation.y = _yaw
 	var basis_yaw := Basis(Vector3.UP, _yaw)
 	var wish := basis_yaw * Vector3(iv.x, 0.0, iv.y)
@@ -229,14 +287,15 @@ func _physics_process(delta: float) -> void:
 
 	if is_on_floor():
 		velocity.y = 0.0
-		if Input.is_action_just_pressed("jump") and not kicking:
+		if Input.is_action_just_pressed("jump") and not kicking and _grab_bin == null:
 			velocity.y = JUMP_VELOCITY
 	else:
 		velocity.y -= GRAVITY * delta
 	move_and_slide()
+	_push_bodies()
 
 	# --- orientation du corps
-	var face_cam := first_person or current_item != 0
+	var face_cam := first_person or current_item != 0 or _grab_bin != null
 	var target_yaw := human.rotation.y
 	if kicking:
 		target_yaw = _kick_yaw
@@ -255,9 +314,24 @@ func _physics_process(delta: float) -> void:
 		_near = near
 		near_breakable_changed.emit(near)
 
+	# --- poubelles (E : ouvrir/fermer, maintenir : déplacer) ; appel à la foule
+	_update_bins(delta)
+	_call_cd = maxf(_call_cd - delta, 0.0)
+	if _call_t >= 0.0:
+		_call_t += delta
+		if _call_t > 1.7:
+			_call_t = -1.0
+	# la foule voit où l'on vise avec le mortier
+	_aim_evt -= delta
+	if current_item == 1 and mortar.aim_t > 0.6 and _aim_evt <= 0.0:
+		_aim_evt = 0.3
+		get_tree().call_group("crowd", "on_event", "mortar_aim", {"pos": mortar.mouth_world(), "dir": mortar.axis_world()})
+
 	# --- animation
 	mortar.step(delta)
 	thrower.step(delta)
+	igniter.step(delta)
+	flare_tool.step(delta)
 	var speed := Vector3(velocity.x, 0, velocity.z).length()
 	var run_blend := clampf((speed - WALK_SPEED) / (RUN_SPEED - WALK_SPEED), 0.0, 1.0)
 	human.animate(delta, speed, run_blend, is_on_floor(), velocity.y, _pitch)
@@ -285,8 +359,144 @@ func _on_kick_impact(point: Vector3) -> void:
 	for n in get_tree().get_nodes_in_group("breakable"):
 		if n.has_method("kick") and n.kick(point + fwd * 0.12, fwd):
 			hit = true
+			get_tree().call_group("crowd", "on_event", "kick_bus", {"pos": point})
+	for n in get_tree().get_nodes_in_group("kickable"):
+		if n.has_method("kick") and n.kick(point + fwd * 0.12, fwd):
+			hit = true
 	if hit:
 		_shake = 0.7
+
+
+func _on_mortar_fired() -> void:
+	_shake = 1.0
+	get_tree().call_group("crowd", "on_event", "mortar_fire", {"pos": mortar.mouth_world(), "dir": mortar.axis_world(), "player": true})
+
+
+## Pousser une poubelle ou un carton en marchant dedans
+func _push_bodies() -> void:
+	for i in get_slide_collision_count():
+		var c := get_slide_collision(i)
+		var col := c.get_collider()
+		var n := -c.get_normal()
+		n.y = 0.0
+		if col is TrashBin and col != _grab_bin:
+			(col as TrashBin).push(n, Vector3(velocity.x, 0, velocity.z).length() + 0.6)
+		elif col is RigidBody3D and not (col as RigidBody3D).freeze:
+			(col as RigidBody3D).apply_central_impulse(n * 0.6)
+
+
+func _update_bins(delta: float) -> void:
+	# poubelle la plus proche, devant le joueur
+	near_bin = null
+	if _grab_bin == null:
+		var best := 1.9
+		var fwd := -cam_yaw.global_basis.z
+		for b in get_tree().get_nodes_in_group("bins"):
+			var bin := b as TrashBin
+			var d := bin.global_position - global_position
+			d.y = 0.0
+			var l := d.length()
+			if l < best and (l < 0.9 or fwd.dot(d / maxf(l, 0.01)) > 0.2):
+				best = l
+				near_bin = bin
+	if Input.is_action_just_pressed("interact") and _grab_bin == null:
+		_e_t = 0.0
+		_e_bin = near_bin
+	if _e_t >= 0.0:
+		if Input.is_action_pressed("interact"):
+			_e_t += delta
+			if _e_t > 0.32 and _grab_bin == null and _e_bin != null and is_instance_valid(_e_bin) and not _tools_busy() and human.kick_t < 0.0:
+				_start_grab(_e_bin)
+		else:
+			if _grab_bin != null:
+				_end_grab()
+			elif _e_t <= 0.32 and _e_bin != null and is_instance_valid(_e_bin):
+				_e_bin.toggle_lid()
+			_e_t = -1.0
+	if _grab_bin != null:
+		var fwd2 := Basis(Vector3.UP, human.rotation.y) * Vector3(0, 0, -1)
+		_grab_bin.drag_to(global_position + fwd2 * 1.22, human.rotation.y, delta)
+
+
+func _start_grab(bin: TrashBin) -> void:
+	_grab_prev = current_item
+	if current_item != 0:
+		select_item(0)
+	_grab_bin = bin
+	bin.grab(self)
+
+
+func _end_grab() -> void:
+	if _grab_bin == null:
+		return
+	_grab_bin.release()
+	_grab_bin = null
+	if _grab_prev != 0:
+		select_item(_grab_prev)
+
+
+func call_crowd() -> void:
+	if _call_cd > 0.0:
+		return
+	_call_cd = 3.5
+	_call_t = 0.0
+	_voice.stream = AudioLib.stream("player_call_%d" % _rng.randi_range(0, 2))
+	_voice.volume_db = 2.0
+	_voice.play()
+	var p := global_position
+	get_tree().create_timer(0.35).timeout.connect(func():
+		get_tree().call_group("crowd", "on_event", "call", {"pos": p, "dir": -cam_yaw.global_basis.z}))
+
+
+## Mains : outil en cours, puis poubelle tenue ou geste d'appel par-dessus
+func _hands() -> Array:
+	var out: Array = [null, null]
+	if _tool_hands.is_valid():
+		out = _tool_hands.call()
+	if _grab_bin != null:
+		var fwd := Basis(Vector3.UP, human.rotation.y) * Vector3(0, 0, -1)
+		out = [{"pos": _grab_bin.handle_world(0.13) + Vector3.UP * 0.03, "f": fwd, "p": Vector3.DOWN, "curl": 0.95, "w": 1.0},
+			{"pos": _grab_bin.handle_world(-0.13) + Vector3.UP * 0.03, "f": fwd, "p": Vector3.DOWN, "curl": 0.95, "w": 1.0}]
+	elif _call_t >= 0.0:
+		var cx := human.chest_xf()
+		var up := (cx.basis * Vector3(0, 1, 0)).normalized()
+		var fwd2 := (cx.basis * Vector3(0, 0, 1)).normalized()
+		var left := (cx.basis * Vector3(1, 0, 0)).normalized()
+		var sh := human.shoulder_world("L")
+		var w := clampf(_call_t / 0.25, 0.0, 1.0) * clampf((1.7 - _call_t) / 0.3, 0.0, 1.0)
+		var wave := sin(_call_t * 9.0)
+		# bras levé vers l'avant, la main fait signe de venir
+		var pos := sh + up * (0.36 + 0.08 * wave) + fwd2 * (0.32 - 0.1 * wave) + left * 0.08
+		out[1] = {"pos": pos, "f": (up * (0.8 + 0.3 * wave) + fwd2 * (0.4 - 0.5 * wave)).normalized(), "p": -fwd2, "curl": 0.15 + 0.3 * maxf(wave, 0.0), "w": w}
+	return out
+
+
+## Invite contextuelle : [touches, texte] ou []
+func context_prompt() -> Array:
+	if _grab_bin != null:
+		return [["E"], "Relâcher pour poser la poubelle"]
+	match current_item:
+		1:
+			return [["CLIC GAUCHE"], "Tirer"] if aiming else [["CLIC DROIT"], "Maintenir pour viser"]
+		2:
+			return [["CLIC GAUCHE"], "Lancer"]
+		3:
+			if not igniter.lit:
+				return [["CLIC GAUCHE"], "Allumer le journal"]
+			return [["CLIC GAUCHE"], "Lancer la torche"] if aiming else [["CLIC DROIT", "CLIC GAUCHE"], "Viser · Lancer"]
+		4:
+			if flare_tool.flare == null:
+				return [["R"], "Plus de fumigènes"]
+			if not flare_tool.is_lit():
+				return [["CLIC GAUCHE"], "Craquer le fumigène"]
+			return [["CLIC DROIT", "CLIC GAUCHE"], "Brandir · Lancer"]
+	return []
+
+
+func interact_prompt() -> String:
+	if _grab_bin != null or near_bin == null:
+		return ""
+	return ("Fermer" if near_bin.lid_open else "Ouvrir") + " · maintenir : déplacer"
 
 
 func _aim_point() -> Vector3:
@@ -298,7 +508,7 @@ func _aim_target() -> Array:
 	var from := camera.global_position
 	var fwd := -camera.global_basis.z
 	var to := from + fwd * 45.0
-	var q := PhysicsRayQueryParameters3D.create(from + fwd * 0.6, to, 1)
+	var q := PhysicsRayQueryParameters3D.create(from + fwd * 0.6, to, 1 | 32)
 	q.exclude = [get_rid()]
 	var r := get_world_3d().direct_space_state.intersect_ray(q)
 	if r:
@@ -309,7 +519,7 @@ func _aim_target() -> Array:
 func _update_camera(delta: float, speed: float) -> void:
 	_fp_blend = move_toward(_fp_blend, 1.0 if first_person else 0.0, delta * 6.0)
 	var e := _fp_blend * _fp_blend * (3.0 - 2.0 * _fp_blend)
-	var k := clampf(maxf(mortar.aim_t, thrower.aim_t), 0.0, 1.0)
+	var k := clampf(maxf(maxf(mortar.aim_t, thrower.aim_t), igniter.aim_t), 0.0, 1.0)
 	k = k * k * (3.0 - 2.0 * k)
 	cam_pitch.rotation.x = _pitch
 	spring.spring_length = lerpf(lerpf(3.1, 1.75, k), 0.0, e)

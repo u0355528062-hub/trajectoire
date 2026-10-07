@@ -1,3 +1,4 @@
 .godot/
 *.import
 /shots/
+__pycache__/

@@ -1,0 +1,1260 @@
+class_name Crowd
+extends Node3D
+## Chef d'orchestre de la foule : crée les manifestants (cortège avec banderole, pancartes,
+## mégaphone et fumigènes ; groupes qui discutent ; « black bloc » cagoulé près de l'abribus ;
+## promeneurs), fait marcher et chanter le cortège, gère les conversations, le budget de voix,
+## les obstacles, et distribue les réactions aux événements (tirs, bouquets, vitres, feu, appel).
+
+const MAX_VOICES := 7
+const AREA_MIN := Vector2(-38.0, -24.0)
+const AREA_MAX := Vector2(38.0, 17.0)
+const VARIANTS := ["male_a", "male_b", "male_c", "male_d", "male_e", "female_a", "female_b", "female_c", "female_d"]
+const CHANTS := ["chant_lacherien", "chant_ensemble", "chant_rue", "chant_onestla"]
+
+var npcs: Array[Npc] = []
+var player: Player
+var bus: BusStop
+var excitement := 0.3
+var rally_active := false
+var _rally_t := 0.0
+var _rally_far_t := 0.0
+var _slots := {}
+var voices := 0
+
+# --- cortège
+var _route := PackedVector3Array()
+var _route_cum := PackedFloat32Array()
+var _route_total := 1.0
+var cortege_s := 0.0
+var cortege_speed := 0.0
+var _cortege_moving := true
+var _cortege_timer := 0.0
+var _cortege_phase_len := 35.0
+var chanting := false
+var leader_speaking := false
+var _chant := ""
+var _chant_t := 0.0
+var _chant_env: Array = []
+var _chant_beats: Array = []
+var _beat_i := 0
+var _next_chant := 5.0
+var _chant_seq := -1.0
+var _later_chant_delay := 1.6
+var _chant_idx := 0
+var _chant_player: AudioStreamPlayer3D
+var _murmur: AudioStreamPlayer3D
+var _bed: AudioStreamPlayer
+var _claps: AudioStreamPlayer3D
+var _banner: Banner
+var leader: Npc
+var _banner_l: Npc
+var _banner_r: Npc
+
+# --- discussions
+var _chats: Array = []
+var _rings := {}
+var _later: Array = []
+var _sound_cd := {}
+var _rng := RandomNumberGenerator.new()
+var _time := 0.0
+var _bump_cd := 0.0
+var _cheer_cd := 0.0
+var _static_circles: Array = []
+
+
+func setup(p: Player, b: BusStop) -> void:
+	player = p
+	bus = b
+
+
+func _ready() -> void:
+	add_to_group("crowd")
+	_rng.seed = 4242
+	_build_route()
+	_static_circles = [
+		[Vector3(-4.8, 0, -11.3), 0.35], [Vector3(3.4, 0, -11.6), 0.25], [Vector3(-3.4, 0, -11.6), 0.25],
+		[Vector3(3.55, 0, -13.3), 0.55], [Vector3(2.55, 0, -12.45), 0.35], [Vector3(-2.75, 0, -12.0), 0.22],
+	]
+	_spawn_all()
+	_build_audio()
+	_banner = Banner.new()
+	add_child(_banner)
+
+
+# =================================================================== cortège : parcours
+func _build_route() -> void:
+	var ctrl := [Vector3(-30, 0, -7.2), Vector3(-10, 0, -7.4), Vector3(10, 0, -7.4), Vector3(30, 0, -7.2),
+		Vector3(36, 0, 0.5), Vector3(30, 0, 9.5), Vector3(10, 0, 10.0), Vector3(-10, 0, 10.0), Vector3(-30, 0, 9.5), Vector3(-36, 0, 0.5)]
+	var n := ctrl.size()
+	_route.clear()
+	for i in n:
+		var p0: Vector3 = ctrl[(i - 1 + n) % n]
+		var p1: Vector3 = ctrl[i]
+		var p2: Vector3 = ctrl[(i + 1) % n]
+		var p3: Vector3 = ctrl[(i + 2) % n]
+		var steps := int(p1.distance_to(p2) / 0.5) + 1
+		for s in steps:
+			var t := float(s) / steps
+			var t2 := t * t
+			var t3 := t2 * t
+			var p := 0.5 * ((2.0 * p1) + (-p0 + p2) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2 + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3)
+			_route.append(p)
+	_route_cum.clear()
+	var acc := 0.0
+	_route_cum.append(0.0)
+	for i in range(1, _route.size() + 1):
+		acc += _route[i - 1].distance_to(_route[i % _route.size()])
+		_route_cum.append(acc)
+	_route_total = acc
+	cortege_s = _route_s_near(Vector3(-13, 0, -7.3))
+
+
+func _route_s_near(p: Vector3) -> float:
+	var best := 0
+	var bd := INF
+	for i in _route.size():
+		var d := _route[i].distance_squared_to(p)
+		if d < bd:
+			bd = d
+			best = i
+	return _route_cum[best]
+
+
+func route_at(s: float) -> Array:
+	s = fposmod(s, _route_total)
+	var lo := 0
+	var hi := _route.size()
+	while hi - lo > 1:
+		var mid := (lo + hi) >> 1
+		if _route_cum[mid] <= s:
+			lo = mid
+		else:
+			hi = mid
+	var a := _route[lo]
+	var b := _route[(lo + 1) % _route.size()]
+	var seg := maxf(_route_cum[lo + 1] - _route_cum[lo], 0.001)
+	var u := (s - _route_cum[lo]) / seg
+	var tan := (b - a).normalized()
+	return [a.lerp(b, u), tan]
+
+
+func march_target(n: Npc) -> Array:
+	var wob := Vector2(sin(_time * 0.31 + n.idx) * 0.14, sin(_time * 0.23 + n.idx * 1.7) * 0.22)
+	if n.prop == "banner" or n == leader:
+		wob = Vector2(0, sin(_time * 0.4 + n.idx) * 0.05)
+	var r := route_at(cortege_s - n.slot.y - wob.y)
+	var p: Vector3 = r[0]
+	var tan: Vector3 = r[1]
+	var right := tan.cross(Vector3.UP).normalized()
+	p += right * (n.slot.x + wob.x)
+	return [p, tan]
+
+
+func cortege_center() -> Vector3:
+	var r := route_at(cortege_s - 2.6)
+	return (r[0] as Vector3) + Vector3.UP * 1.5
+
+
+# =================================================================== création des PNJ
+func _outfit(rng: RandomNumberGenerator, female: bool, masked: String, vest: bool) -> Dictionary:
+	var cols := [Color(0.05, 0.05, 0.06), Color(0.12, 0.14, 0.2), Color(0.32, 0.33, 0.32), Color(0.5, 0.11, 0.12),
+		Color(0.14, 0.27, 0.17), Color(0.58, 0.48, 0.32), Color(0.17, 0.24, 0.45), Color(0.4, 0.28, 0.19),
+		Color(0.7, 0.68, 0.64), Color(0.45, 0.17, 0.3), Color(0.8, 0.52, 0.1), Color(0.08, 0.2, 0.3)]
+	var tops := ["hoodie", "hoodie", "jacket", "jacket", "tshirt"]
+	var top: String = tops[rng.randi() % tops.size()]
+	var heads := ["", "", "beanie", "cap", "beanie"]
+	var o := {
+		"top": top, "top_color": cols[rng.randi() % cols.size()], "hood": false, "vest": vest,
+		"pants_tex": rng.randf() < 0.65, "pants_color": [Color(1, 1, 1), Color(0.07, 0.07, 0.08), Color(0.25, 0.23, 0.2), Color(0.18, 0.2, 0.24)][rng.randi() % 4],
+		"shoe_color": [Color(0.2, 0.21, 0.25), Color(0.85, 0.85, 0.83), Color(0.06, 0.06, 0.06), Color(0.45, 0.3, 0.2)][rng.randi() % 4],
+		"head": heads[rng.randi() % heads.size()], "head_color": cols[rng.randi() % cols.size()],
+		"face": "", "face_color": Color(0.05, 0.05, 0.06), "backpack": rng.randf() < 0.3,
+		"bag_color": [Color(0.04, 0.04, 0.05), Color(0.1, 0.12, 0.2), Color(0.12, 0.18, 0.12), Color(0.3, 0.08, 0.1), Color(0.25, 0.18, 0.12)][rng.randi() % 5],
+		"hair_color": [Color(0.05, 0.035, 0.025), Color(0.12, 0.08, 0.05), Color(0.3, 0.2, 0.1), Color(0.02, 0.02, 0.02)][rng.randi() % 4],
+	}
+	if not o["pants_tex"]:
+		o["pants_color"] = [Color(0.07, 0.07, 0.08), Color(0.2, 0.2, 0.22), Color(0.25, 0.22, 0.17)][rng.randi() % 3]
+	if masked == "bloc":
+		o["top"] = "hoodie" if rng.randf() < 0.7 else "jacket"
+		o["top_color"] = Color(0.04, 0.04, 0.045)
+		o["hood"] = rng.randf() < 0.6
+		o["face"] = "balaclava"
+		o["face_color"] = Color(0.03, 0.03, 0.035)
+		o["pants_tex"] = false
+		o["pants_color"] = Color(0.05, 0.05, 0.06)
+		o["shoe_color"] = Color(0.06, 0.06, 0.06)
+		o["vest"] = false
+	elif masked == "balaclava":
+		o["face"] = "balaclava"
+		o["face_color"] = [Color(0.04, 0.04, 0.05), Color(0.25, 0.25, 0.27)][rng.randi() % 2]
+	elif masked == "bandana":
+		o["face"] = "bandana"
+		o["face_color"] = [Color(0.7, 0.1, 0.1), Color(0.08, 0.08, 0.1), Color(0.15, 0.2, 0.45)][rng.randi() % 3]
+	if top == "hoodie" and masked == "" and rng.randf() < 0.15:
+		o["hood"] = true
+	return o
+
+
+func _spawn_all() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 777
+	# [rôle, accessoire, n° pancarte, masque, gilet, emplacement/zone, groupe, fumeur]
+	var cfg := [
+		["march", "banner", 0, "", false, Vector2(-1.5, 0.0), -1, false],
+		["march", "banner", 0, "bandana", false, Vector2(1.5, 0.0), -1, false],
+		["march", "megaphone", 0, "", true, Vector2(-2.7, -1.6), -1, false],
+		["march", "sign", 1, "", false, Vector2(-1.2, 1.5), -1, false],
+		["march", "sign", 3, "", true, Vector2(1.2, 1.6), -1, false],
+		["march", "", 0, "", false, Vector2(0.0, 1.4), -1, false],
+		["march", "flare", 0, "balaclava", false, Vector2(-1.4, 2.9), -1, false],
+		["march", "sign", 2, "", false, Vector2(0.1, 2.9), -1, false],
+		["march", "", 0, "bandana", false, Vector2(1.3, 3.0), -1, false],
+		["march", "sign", 4, "", false, Vector2(-0.6, 4.3), -1, false],
+		["march", "flare", 0, "", false, Vector2(0.8, 4.4), -1, false],
+		["march", "", 0, "", true, Vector2(-1.7, 4.5), -1, false],
+		["march", "", 0, "", false, Vector2(1.9, 4.6), -1, false],
+		["chat", "", 0, "", false, Vector2.ZERO, 0, true],
+		["chat", "", 0, "", true, Vector2.ZERO, 0, false],
+		["chat", "", 0, "", false, Vector2.ZERO, 0, false],
+		["chat", "", 0, "", false, Vector2.ZERO, 1, false],
+		["chat", "", 0, "balaclava", false, Vector2.ZERO, 1, true],
+		["chat", "", 0, "", false, Vector2.ZERO, 2, false],
+		["chat", "", 0, "", true, Vector2.ZERO, 2, false],
+		["chat", "", 0, "", false, Vector2.ZERO, 2, true],
+		["bloc", "mortar", 0, "bloc", false, Vector2.ZERO, -1, false],
+		["bloc", "flare", 0, "bloc", false, Vector2.ZERO, -1, false],
+		["bloc", "", 0, "bloc", false, Vector2.ZERO, -1, true],
+		["bloc", "", 0, "bloc", false, Vector2.ZERO, -1, false],
+		["loner", "sign", 2, "", false, Vector2.ZERO, -1, false],
+		["loner", "", 0, "", false, Vector2.ZERO, -1, false],
+	]
+	var chat_centers := [Vector3(-4.6, 0, -1.4), Vector3(7.6, 0, 2.6), Vector3(-9.0, 0, 4.0)]
+	for g in chat_centers.size():
+		_chats.append({"center": chat_centers[g], "members": [], "speaker": null, "next": 2.0 + g * 1.7, "last": null, "reply": -1.0, "listener": null})
+	var bloc_home := [Vector3(6.0, 0, -13.2), Vector3(7.3, 0, -12.4), Vector3(5.2, 0, -14.3), Vector3(7.0, 0, -14.5)]
+	var loner_home := [Vector3(1.0, 0, 6.5), Vector3(12.0, 0, -2.5)]
+	var bloc_i := 0
+	var loner_i := 0
+	for i in cfg.size():
+		var c: Array = cfg[i]
+		var n := Npc.new()
+		n.idx = i
+		n.crowd = self
+		n.role = c[0]
+		n.prop = c[1]
+		n.sign_idx = c[2]
+		var vi := (i * 4 + 1) % VARIANTS.size()
+		n.variant = VARIANTS[vi]
+		n.female = n.variant.begins_with("female")
+		n.voice = "f1" if n.female else ("m1" if i % 2 == 0 else "m2")
+		n.vpitch = rng.randf_range(0.96, 1.1) if n.female else rng.randf_range(0.92, 1.07)
+		n.outfit = _outfit(rng, n.female, c[3], c[4])
+		n.slot = c[5]
+		n.group = c[6]
+		n.smoker = c[7]
+		n.bold = rng.randf_range(0.2, 0.8)
+		n.curious = rng.randf_range(0.3, 0.95)
+		n.calm = rng.randf_range(0.2, 0.9)
+		var pos := Vector3.ZERO
+		match n.role:
+			"march":
+				var r := route_at(cortege_s - n.slot.y)
+				pos = (r[0] as Vector3) + (r[1] as Vector3).cross(Vector3.UP).normalized() * n.slot.x
+				n.rotation.y = atan2(-(r[1] as Vector3).x, -(r[1] as Vector3).z)
+				if n.prop == "megaphone":
+					leader = n
+				if n.prop == "banner":
+					n.banner_side = 1.0 if n.slot.x < 0.0 else -1.0
+					if n.slot.x < 0.0:
+						_banner_l = n
+					else:
+						_banner_r = n
+			"chat":
+				var ch: Dictionary = _chats[n.group]
+				(ch["members"] as Array).append(n)
+				pos = (ch["center"] as Vector3) + Vector3(rng.randf_range(-0.8, 0.8), 0, rng.randf_range(-0.8, 0.8))
+				n.curious = rng.randf_range(0.4, 0.95)
+			"bloc":
+				pos = bloc_home[bloc_i % bloc_home.size()]
+				bloc_i += 1
+				n.bold = rng.randf_range(0.65, 1.0)
+				n.calm = rng.randf_range(0.5, 0.95)
+			_:
+				pos = loner_home[loner_i % loner_home.size()]
+				loner_i += 1
+		n.home_pos = pos
+		n.position = Vector3(pos.x, ground_y(pos), pos.z)
+		add_child(n)
+		npcs.append(n)
+
+
+func _build_audio() -> void:
+	_chant_player = AudioStreamPlayer3D.new()
+	_chant_player.unit_size = 16.0
+	_chant_player.max_distance = 160.0
+	_chant_player.volume_db = 1.0
+	add_child(_chant_player)
+	_chant_player.finished.connect(_on_chant_done)
+	_murmur = AudioStreamPlayer3D.new()
+	_murmur.stream = AudioLib.stream("crowd_murmur", true)
+	_murmur.unit_size = 9.0
+	_murmur.max_distance = 120.0
+	_murmur.volume_db = -5.0
+	add_child(_murmur)
+	_murmur.play()
+	_claps = AudioStreamPlayer3D.new()
+	_claps.stream = AudioLib.stream("claps_group", true)
+	_claps.unit_size = 9.0
+	_claps.volume_db = -60.0
+	add_child(_claps)
+	_claps.play()
+	_bed = AudioStreamPlayer.new()
+	_bed.stream = AudioLib.stream("crowd_murmur", true)
+	_bed.volume_db = -27.0
+	add_child(_bed)
+	_bed.play(12.0)
+
+
+# =================================================================== boucle
+func _physics_process(delta: float) -> void:
+	_time += delta
+	_bump_cd = maxf(_bump_cd - delta, 0.0)
+	_cheer_cd = maxf(_cheer_cd - delta, 0.0)
+	excitement = move_toward(excitement, 0.3, delta * 0.006)
+	_run_later()
+	_update_cortege(delta)
+	_update_chats(delta)
+	_update_rally(delta)
+	_update_bumps()
+	var cam := get_viewport().get_camera_3d()
+	var cp := cam.global_position if cam else Vector3.ZERO
+	for n in npcs:
+		var d := n.global_position.distance_to(cp)
+		var every := 1 if d < 22.0 else (2 if d < 45.0 else 3)
+		n.tick(delta, every)
+	if _banner_l and _banner_r and _banner_l.pole_node and _banner_r.pole_node:
+		var a := _banner_r.pole_node.global_transform * Vector3(0, 1.4, 0)
+		var b := _banner_l.pole_node.global_transform * Vector3(0, 1.4, 0)
+		_banner.set_poles(a, b)
+
+
+func _run_later() -> void:
+	var i := 0
+	while i < _later.size():
+		var e: Array = _later[i]
+		if _time >= float(e[0]):
+			_later.remove_at(i)
+			var cb: Callable = e[1]
+			if cb.is_valid():
+				cb.call()
+		else:
+			i += 1
+
+
+func later(dt: float, cb: Callable) -> void:
+	_later.append([_time + dt, cb])
+
+
+# ------------------------------------------------------------------- cortège
+func _update_cortege(delta: float) -> void:
+	_cortege_timer += delta
+	if _cortege_timer > _cortege_phase_len:
+		_cortege_timer = 0.0
+		_cortege_moving = not _cortege_moving
+		_cortege_phase_len = _rng.randf_range(30.0, 55.0) if _cortege_moving else _rng.randf_range(14.0, 22.0)
+		if not _cortege_moving and not chanting and _chant_seq < 0.0:
+			_next_chant = 1.5
+	# l'arrière ne doit pas être largué
+	var lag := 0.0
+	for n in npcs:
+		if n.role == "march" and n.state == "home":
+			var t: Vector3 = march_target(n)[0]
+			lag = maxf(lag, Vector2(t.x - n.global_position.x, t.z - n.global_position.z).length())
+	var want := 0.55 if _cortege_moving else 0.0
+	if lag > 2.5:
+		want *= clampf(1.0 - (lag - 2.5) / 3.0, 0.0, 1.0)
+	cortege_speed = move_toward(cortege_speed, want, delta * 0.25)
+	cortege_s = fposmod(cortege_s + cortege_speed * delta, _route_total)
+	var cc := cortege_center()
+	_chant_player.global_position = cc
+	_murmur.global_position = cc
+	_claps.global_position = cc
+	# chants : le meneur lance au mégaphone, la foule reprend
+	if _chant_seq >= 0.0:
+		_chant_seq += delta
+		if _chant_seq > float(_later_chant_delay) and not chanting:
+			_start_chant_track()
+	elif not chanting:
+		_next_chant -= delta
+		if _next_chant <= 0.0:
+			_start_chant_seq()
+	if chanting:
+		_chant_t += delta
+		while _beat_i < _chant_beats.size() and float(_chant_beats[_beat_i]) <= _chant_t:
+			_beat_i += 1
+	leader_speaking = leader != null and leader.speaking()
+	var clap_target := -6.0 if chanting else -60.0
+	_claps.volume_db = move_toward(_claps.volume_db, clap_target, delta * (30.0 if chanting else 20.0))
+
+
+
+func _start_chant_seq() -> void:
+	_chant_idx = (_chant_idx + 1 + _rng.randi() % 2) % CHANTS.size()
+	_chant_seq = 0.0
+	_later_chant_delay = 1.6
+	if leader:
+		var d := leader.say("megaphone_%d" % _chant_idx, true, 4.0)
+		leader._voice.unit_size = 14.0
+		_later_chant_delay = d + 0.35
+
+
+func _start_chant_track() -> void:
+	_chant = CHANTS[_chant_idx]
+	_chant_player.stream = AudioLib.stream(_chant)
+	_chant_player.play()
+	_chant_env = AudioLib.env(_chant)
+	_chant_beats = AudioLib.beats(_chant)
+	_beat_i = 0
+	_chant_t = 0.0
+	chanting = true
+	_chant_seq = -1.0
+
+
+func _on_chant_done() -> void:
+	chanting = false
+	_chant_t = 0.0
+	_next_chant = _rng.randf_range(9.0, 20.0)
+
+
+func beat_pulse(i: int) -> float:
+	if not chanting or _beat_i == 0:
+		return 0.0
+	var lagt := (i % 5) * 0.015
+	var b := float(_chant_beats[_beat_i - 1])
+	var dt := _chant_t - b - lagt
+	if dt < 0.0:
+		return 0.0 if _beat_i < 2 else exp(-(_chant_t - float(_chant_beats[_beat_i - 2])) * 5.0)
+	return exp(-dt * 5.0)
+
+
+func chant_jaw(i: int) -> float:
+	if not chanting:
+		return 0.0
+	return AudioLib.env_at(_chant_env, _chant_t - (i % 4) * 0.02) * (0.75 + 0.2 * ((i * 37) % 10) / 10.0)
+
+
+# ------------------------------------------------------------------- discussions
+func _update_chats(delta: float) -> void:
+	for ch in _chats:
+		var members: Array = ch["members"]
+		var avail: Array = []
+		for m in members:
+			var n := m as Npc
+			if n.state == "home":
+				avail.append(n)
+		var spk: Npc = ch["speaker"]
+		if spk and (not is_instance_valid(spk) or not spk.speaking()):
+			ch["speaker"] = null
+			spk = null
+		if float(ch["reply"]) >= 0.0:
+			ch["reply"] = float(ch["reply"]) - delta
+			if float(ch["reply"]) < 0.0 and avail.size() >= 2:
+				var last: Npc = ch["last"]
+				var cand: Array = avail.filter(func(x): return x != last)
+				if not cand.is_empty():
+					var r: Npc = cand[_rng.randi() % cand.size()]
+					var d := r.say(AudioLib.pick(r.voice, "reply"), false)
+					ch["speaker"] = r
+					ch["listener"] = last
+					ch["next"] = d + _rng.randf_range(0.6, 2.0)
+					ch["last"] = r
+				ch["reply"] = -1.0
+			continue
+		if spk != null:
+			continue
+		ch["next"] = float(ch["next"]) - delta
+		if float(ch["next"]) > 0.0 or avail.size() < 2:
+			continue
+		var last2: Npc = ch["last"]
+		var cand2: Array = avail.filter(func(x): return x != last2)
+		var s: Npc = cand2[_rng.randi() % cand2.size()]
+		var d2 := s.say(AudioLib.pick(s.voice, "talk"), false)
+		ch["speaker"] = s
+		ch["listener"] = last2 if last2 and avail.has(last2) else avail.filter(func(x): return x != s)[0]
+		ch["last"] = s
+		if _rng.randf() < 0.6:
+			ch["reply"] = d2 + _rng.randf_range(0.25, 0.7)
+		else:
+			ch["next"] = d2 + _rng.randf_range(1.5, 4.0)
+
+
+func chat_spot(n: Npc) -> Array:
+	var ch: Dictionary = _chats[n.group]
+	var members: Array = ch["members"]
+	var i := members.find(n)
+	var cnt := members.size()
+	var center: Vector3 = ch["center"]
+	var ang := TAU * i / cnt + n.group * 0.9
+	var rad := 0.62 + 0.12 * cnt
+	return [center + Vector3(cos(ang), 0, sin(ang)) * rad, center + Vector3.UP * 1.55]
+
+
+func chat_speaker(g: int) -> Npc:
+	if g < 0 or g >= _chats.size():
+		return null
+	return _chats[g]["speaker"]
+
+
+func chat_listener_target(n: Npc) -> Npc:
+	var ch: Dictionary = _chats[n.group]
+	var l: Npc = ch["listener"]
+	if l and l != n:
+		return l
+	for m in ch["members"]:
+		if m != n:
+			return m
+	return null
+
+
+# ------------------------------------------------------------------- voix
+func voice_ok(n: Npc, loud: bool) -> bool:
+	return voices < MAX_VOICES and near_listener(n.global_position, 40.0 if loud else 17.0)
+
+
+func voice_started() -> void:
+	voices += 1
+
+
+func voice_done() -> void:
+	voices = maxi(voices - 1, 0)
+
+
+func near_listener(p: Vector3, r: float) -> bool:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return true
+	return cam.global_position.distance_to(p) < r
+
+
+func _crowd_sound(name: String, pos: Vector3, vol := 0.0, cd := 4.0) -> void:
+	if _time < float(_sound_cd.get(name, -99.0)):
+		return
+	_sound_cd[name] = _time + cd
+	AudioLib.play_at(self, name, pos, vol, 14.0)
+
+
+# =================================================================== espace
+func player_pos() -> Vector3:
+	return player.global_position if player else Vector3.ZERO
+
+
+func ground_y(p: Vector3) -> float:
+	if bus:
+		var l := bus.to_local(p)
+		if absf(l.x) <= 2.6 and l.z >= -1.45 and l.z <= 1.65:
+			return 0.08
+	if p.z >= -10.9 and p.z <= -3.9:
+		return 0.02
+	return 0.0
+
+
+func clamp_area(p: Vector3) -> Vector3:
+	p.x = clampf(p.x, AREA_MIN.x, AREA_MAX.x)
+	p.z = clampf(p.z, AREA_MIN.y, AREA_MAX.y)
+	if bus:
+		var l := bus.to_local(p)
+		var hx := 2.3
+		var hz := 1.2
+		if absf(l.x) < hx and absf(l.z) < hz:
+			if hx - absf(l.x) < hz - absf(l.z):
+				l.x = signf(l.x if l.x != 0.0 else 1.0) * (hx + 0.1)
+			else:
+				l.z = signf(l.z if l.z != 0.0 else 1.0) * (hz + 0.1)
+			p = bus.to_global(l)
+	return p
+
+
+## Chemin autour de l'abribus (seul gros obstacle) : 0, 1 ou 2 coins
+func plan(from: Vector3, to: Vector3) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	if bus == null:
+		out.append(to)
+		return out
+	var a := _to2(bus.to_local(from))
+	var b := _to2(bus.to_local(to))
+	var h := Vector2(2.35, 1.25)
+	if not _seg_hits_rect(a, b, h * 0.98):
+		out.append(to)
+		return out
+	var corners := [Vector2(-h.x, -h.y), Vector2(h.x, -h.y), Vector2(h.x, h.y), Vector2(-h.x, h.y)]
+	var best: Array = []
+	var best_len := INF
+	for i in 4:
+		var c: Vector2 = corners[i] * 1.06
+		if not _seg_hits_rect(a, c, h * 0.98) and not _seg_hits_rect(c, b, h * 0.98):
+			var L := a.distance_to(c) + c.distance_to(b)
+			if L < best_len:
+				best_len = L
+				best = [c]
+		for j in [(i + 1) % 4, (i + 3) % 4]:
+			var c2: Vector2 = corners[j] * 1.06
+			if not _seg_hits_rect(a, c, h * 0.98) and not _seg_hits_rect(c2, b, h * 0.98):
+				var L2 := a.distance_to(c) + c.distance_to(c2) + c2.distance_to(b)
+				if L2 < best_len:
+					best_len = L2
+					best = [c, c2]
+	for c in best:
+		var v: Vector2 = c
+		out.append(bus.to_global(Vector3(v.x, 0, v.y)))
+	out.append(to)
+	return out
+
+
+func _to2(v: Vector3) -> Vector2:
+	return Vector2(v.x, v.z)
+
+
+func _seg_hits_rect(a: Vector2, b: Vector2, h: Vector2) -> bool:
+	# Liang-Barsky
+	var d := b - a
+	var t0 := 0.0
+	var t1 := 1.0
+	var p := [-d.x, d.x, -d.y, d.y]
+	var q := [a.x + h.x, h.x - a.x, a.y + h.y, h.y - a.y]
+	for i in 4:
+		var pi_: float = p[i]
+		var qi: float = q[i]
+		if absf(pi_) < 1e-9:
+			if qi < 0.0:
+				return false
+		else:
+			var t := qi / pi_
+			if pi_ < 0.0:
+				t0 = maxf(t0, t)
+			else:
+				t1 = minf(t1, t)
+			if t0 > t1:
+				return false
+	return true
+
+
+func separation(n: Npc) -> Vector3:
+	var p := n.global_position
+	var acc := Vector3.ZERO
+	for o in npcs:
+		if o == n:
+			continue
+		var d := Vector3(p.x - o.global_position.x, 0, p.z - o.global_position.z)
+		var l := d.length()
+		if l < 0.85:
+			if l < 0.01:
+				d = Vector3(cos(n.idx), 0, sin(n.idx))
+				l = 0.01
+			acc += d / l * (0.85 - l) / 0.85
+	if player:
+		var pp := player.global_position
+		var d2 := Vector3(p.x - pp.x, 0, p.z - pp.z)
+		var l2 := d2.length()
+		if l2 < 1.1 and l2 > 0.01:
+			acc += d2 / l2 * (1.1 - l2) / 1.1 * 1.6
+	return acc
+
+
+func resolve(n: Npc, p: Vector3) -> Vector3:
+	# abribus
+	if bus:
+		var l := bus.to_local(p)
+		var hx := 2.15
+		var hz := 1.05
+		if absf(l.x) < hx and absf(l.z) < hz:
+			if hx - absf(l.x) < hz - absf(l.z):
+				l.x = signf(l.x if l.x != 0.0 else 1.0) * hx
+			else:
+				l.z = signf(l.z if l.z != 0.0 else 1.0) * hz
+			var g := bus.to_global(l)
+			p.x = g.x
+			p.z = g.z
+	for c in _static_circles:
+		p = _push_circle(p, c[0], c[1] + 0.25)
+	for b in get_tree().get_nodes_in_group("bins"):
+		var bin := b as TrashBin
+		var r := 0.55
+		if bin.burning and not n.fire_ok:
+			r = 0.85 + bin.heat * 0.7
+		p = _push_circle(p, bin.global_position, r)
+	if player:
+		p = _push_circle(p, player.global_position, 0.48)
+	p.x = clampf(p.x, AREA_MIN.x - 4.0, AREA_MAX.x + 4.0)
+	p.z = clampf(p.z, AREA_MIN.y - 4.0, AREA_MAX.y + 4.0)
+	return p
+
+
+func _push_circle(p: Vector3, c: Vector3, r: float) -> Vector3:
+	var d := Vector2(p.x - c.x, p.z - c.z)
+	var l := d.length()
+	if l < r:
+		if l < 0.001:
+			d = Vector2(1, 0)
+			l = 1.0
+		var q := Vector2(c.x, c.z) + d / l * r
+		p.x = q.x
+		p.z = q.y
+	return p
+
+
+## Point intéressant à regarder pour un PNJ désœuvré
+func interest_point(n: Npc) -> Vector3:
+	var r := _rng.randf()
+	var p := n.global_position
+	if r < 0.25:
+		return cortege_center()
+	if r < 0.45:
+		for b in get_tree().get_nodes_in_group("bins"):
+			var bin := b as TrashBin
+			if bin.burning and bin.global_position.distance_to(p) < 30.0:
+				return bin.fire_center()
+	if r < 0.6 and player and player.global_position.distance_to(p) < 16.0:
+		return player.global_position + Vector3.UP * 1.6
+	if r < 0.75 and bus:
+		return bus.global_position + Vector3.UP * 1.3
+	if r < 0.9:
+		var o: Npc = npcs[_rng.randi() % npcs.size()]
+		if o != n and o.global_position.distance_to(p) < 15.0:
+			return o.head_pos()
+	return p + Vector3(_rng.randf_range(-8, 8), _rng.randf_range(0.5, 3.0), _rng.randf_range(-8, 8))
+
+
+func flare_budget_ok() -> bool:
+	var lit := 0
+	for n in npcs:
+		if n.flare and n.flare.lit:
+			lit += 1
+	return lit < 3
+
+
+func mortar_ok(n: Npc) -> bool:
+	if rally_active:
+		return false
+	if player and player.global_position.distance_to(n.global_position) < 3.5:
+		return false
+	for o in npcs:
+		if o != n and o.state == "mortar":
+			return false
+	return true
+
+
+func safe_sky_dir(n: Npc) -> Vector3:
+	var c := Vector3.ZERO
+	var cnt := 0
+	for o in npcs:
+		if o.global_position.distance_to(n.global_position) < 15.0:
+			c += o.global_position
+			cnt += 1
+	var away := n.global_position - (c / maxf(cnt, 1))
+	away.y = 0.0
+	if away.length() < 0.5:
+		away = Vector3(0, 0, -1)
+	return (away.normalized() * 0.35).rotated(Vector3.UP, _rng.randf_range(-0.6, 0.6))
+
+
+# =================================================================== feu
+func ring_point(n: Npc, bin: TrashBin) -> Vector3:
+	var lst: Array = _rings.get(bin, [])
+	lst = lst.filter(func(x): return is_instance_valid(x) and (x as Npc).state in ["watch", "feed", "react"] and (x as Npc).data.get("bin") == bin)
+	if not lst.has(n):
+		lst.append(n)
+	_rings[bin] = lst
+	var i := lst.find(n)
+	var cnt := maxi(lst.size(), 5)
+	var base := float(bin.get_instance_id() % 100) * 0.1
+	var ang := base + TAU * i / cnt
+	var rad := 2.0 + bin.heat * 0.8 + (0.6 if i >= 9 else 0.0) + (n.idx % 3) * 0.12
+	var p := bin.global_position + Vector3(cos(ang), 0, sin(ang)) * rad
+	return clamp_area(p)
+
+
+func watchers(bin: TrashBin) -> int:
+	var c := 0
+	for n in npcs:
+		if n.state in ["watch", "feed"] and n.data.get("bin") == bin:
+			c += 1
+	return c
+
+
+func reserve_burnable(n: Npc, near: Vector3, r: float) -> Burnable:
+	var best: Burnable = null
+	var bd := r
+	for o in get_tree().get_nodes_in_group("burnables"):
+		var b := o as Burnable
+		if b.held or b.in_bin != null or b.lit or b._dying:
+			continue
+		if b.reserved_by != null and is_instance_valid(b.reserved_by) and b.reserved_by != n:
+			continue
+		var d := b.global_position.distance_to(near)
+		if d < bd and b.global_position.y < 1.0:
+			bd = d
+			best = b
+	if best:
+		best.reserved_by = n
+	return best
+
+
+# =================================================================== abribus
+func attack_slot(n: Npc) -> Dictionary:
+	if bus == null:
+		return {}
+	var cands: Array = []
+	for i in bus.pane_count():
+		if not bus.pane_alive(i):
+			continue
+		var c := bus.pane_center(i)
+		var kick_ok := i <= 3
+		if kick_ok:
+			for off in [-0.28, 0.28]:
+				var lp: Vector3
+				var lf: Vector3
+				if i <= 2:
+					lp = Vector3(bus.pane_local_x(i) + off, 0, -1.55)
+					lf = Vector3(bus.pane_local_x(i) + off, 1.0, -0.75)
+				else:
+					lp = Vector3(-2.65, 0, off)
+					lf = Vector3(-1.85, 1.0, off)
+				cands.append({"kind": "kick", "pane": i, "pos": bus.to_global(lp), "face": bus.to_global(lf), "target": bus.to_global(lf), "key": "k%d%s" % [i, off]})
+		for xo in [-3.2, -1.4, 0.4, 2.2]:
+			var lp2 := Vector3(xo + float(i) * 0.15, 0, 6.2 + float(i % 2) * 0.9)
+			var tgt := c + Vector3(_rng.randf_range(-0.2, 0.2), _rng.randf_range(-0.35, 0.25), 0)
+			cands.append({"kind": "throw", "pane": i, "pos": bus.to_global(lp2), "face": tgt, "target": tgt, "key": "t%d%s" % [i, xo]})
+	var taken := {}
+	for k in _slots:
+		if is_instance_valid(k) and k != n:
+			taken[(_slots[k] as Dictionary)["key"]] = true
+	var best: Dictionary = {}
+	var bs := INF
+	for c2 in cands:
+		var cd: Dictionary = c2
+		if taken.has(cd["key"]):
+			continue
+		var score: float = (cd["pos"] as Vector3).distance_to(n.global_position)
+		if cd["kind"] == "kick":
+			score -= 6.0 * n.bold
+		else:
+			score -= 3.0 * (1.0 - n.bold)
+		score += _rng.randf_range(0.0, 3.0)
+		if score < bs:
+			bs = score
+			best = cd
+	if not best.is_empty():
+		_slots[n] = best
+	return best
+
+
+func free_slot(n: Npc) -> void:
+	_slots.erase(n)
+
+
+func _update_rally(delta: float) -> void:
+	if not rally_active:
+		return
+	_rally_t += delta
+	var near_bus := player != null and bus != null and player.global_position.distance_to(bus.global_position) < 18.0
+	_rally_far_t = 0.0 if near_bus else _rally_far_t + delta
+	if _rally_t > 75.0 or _rally_far_t > 12.0 or (bus and bus.all_broken()):
+		rally_active = false
+		_slots.clear()
+		return
+	# les spectateurs encouragent
+	if _cheer_cd <= 0.0:
+		_cheer_cd = _rng.randf_range(2.5, 5.0)
+		var cands: Array = npcs.filter(func(x): return (x as Npc).state == "home" and (x as Npc).global_position.distance_to(bus.global_position) < 26.0)
+		if not cands.is_empty():
+			var c: Npc = cands[_rng.randi() % cands.size()]
+			c.react(c._prop_cheer_pose()[0], 2.0, bus.global_position + Vector3.UP * 1.2, {"voice": "allez" if _rng.randf() < 0.5 else "ouais", "prm": c._prop_cheer_pose()[1]})
+
+
+func _update_bumps() -> void:
+	if player == null or _bump_cd > 0.0:
+		return
+	var pv := Vector3(player.velocity.x, 0, player.velocity.z)
+	if pv.length() < 3.0:
+		return
+	for n in npcs:
+		if n.global_position.distance_to(player.global_position) < 0.75 and not n.busy():
+			_bump_cd = 3.0
+			n.human.kick_back(0.7)
+			n.react("refuse", 1.8, player.global_position + Vector3.UP * 1.6, {"voice": "warn", "voice_p": 0.7})
+			return
+
+
+# =================================================================== événements
+func on_event(type: String, d: Dictionary) -> void:
+	match type:
+		"mortar_aim":
+			_ev_mortar_aim(d)
+		"mortar_fire":
+			_ev_mortar_fire(d)
+		"burst":
+			_ev_burst(d)
+		"glass_hit":
+			_ev_glass_hit(d)
+		"glass_break":
+			_ev_glass_break(d)
+		"bus_destroyed":
+			excitement = minf(excitement + 0.2, 1.0)
+			_crowd_sound("applause", bus.global_position + Vector3(0, 1, 5), 0.0, 6.0)
+		"fire_start":
+			_ev_fire_start(d)
+		"fire_flare":
+			_ev_fire_flare(d)
+		"lid":
+			for n in _near(d["pos"], 8.0):
+				if n.state == "home" and n.react_cd <= 0.0 and _rng.randf() < 0.5:
+					n.look(d["pos"], 1.0)
+		"flare_lit":
+			if d.get("player", false):
+				_ev_player_flare(d["pos"], 0.45)
+		"flare_raise":
+			_ev_player_flare(d["pos"], 0.5)
+			_gather(d["pos"], 3, 22.0)
+		"call":
+			_ev_call(d)
+		"kick_bus":
+			for n in _near(d["pos"], 22.0):
+				if n.state == "home" and n.react_cd <= 0.0 and _rng.randf() < 0.35:
+					var pc := n._prop_cheer_pose()
+					n.react(pc[0] if n.bold > 0.55 else n._prop_rest_pose(), 1.6, d["pos"] + Vector3.UP, {"voice": "allez", "voice_p": 0.3 * n.bold, "prm": pc[1] if n.bold > 0.55 else {}})
+
+
+func _near(p: Vector3, r: float) -> Array[Npc]:
+	var out: Array[Npc] = []
+	for n in npcs:
+		if n.global_position.distance_to(p) < r:
+			out.append(n)
+	return out
+
+
+func _ev_mortar_aim(d: Dictionary) -> void:
+	var o: Vector3 = d["pos"]
+	var dir: Vector3 = (d["dir"] as Vector3).normalized()
+	var elev := asin(clampf(dir.y, -1.0, 1.0))
+	var flat := Vector3(dir.x, 0, dir.z).normalized()
+	var cheered := 0
+	for n in npcs:
+		if n.prop == "banner":
+			continue
+		var v := n.global_position + Vector3.UP * 1.2 - o
+		var dist := v.length()
+		if dist > 34.0:
+			continue
+		var along := v.dot(dir)
+		var lateral := (v - dir * along).length()
+		if elev < 0.5 and along > 0.3 and lateral < 1.3 + along * 0.1:
+			if not n.busy() and n.state != "dodge":
+				n.dodge(o, flat)
+		elif elev > 0.55 and dist < 20.0 and n.react_cd <= 0.0 and n.state == "home" and _rng.randf() < 0.3 and cheered < 4:
+			cheered += 1
+			var sky := o + dir * 30.0
+			if _rng.randf() < 0.35 and n.prop == "":
+				n.react("film", _rng.randf_range(3.0, 5.0), sky, {"prm": {"dir": n._wbd((sky - n.head_pos()).normalized())}, "face": false})
+			else:
+				var pc := n._prop_cheer_pose()
+				n.react(pc[0], 2.5, player.global_position + Vector3.UP * 1.6, {"voice": "allez" if _rng.randf() < 0.6 else "ouais", "voice_p": 0.45, "prm": pc[1]})
+		elif dist < 9.0 and n.state == "home" and n.react_cd <= 0.0 and _rng.randf() < 0.25:
+			n.look(player.global_position + Vector3.UP * 1.6, 1.0)
+
+
+func _ev_mortar_fire(d: Dictionary) -> void:
+	var o: Vector3 = d["pos"]
+	var dir: Vector3 = (d["dir"] as Vector3).normalized()
+	var elev := asin(clampf(dir.y, -1.0, 1.0))
+	var panicked := 0
+	for n in npcs:
+		if n == d.get("npc"):
+			continue
+		var v := n.global_position + Vector3.UP * 1.2 - o
+		var dist := v.length()
+		if dist > 40.0:
+			continue
+		var along := v.dot(dir)
+		var lateral := (v - dir * along).length()
+		if elev < 0.45 and along > 0.0 and lateral < 2.0 + along * 0.12 and dist < 28.0 and n.prop != "banner":
+			n.panic(o + dir * along, 1.0)
+			panicked += 1
+		elif dist < 9.0 and n.react_cd <= 0.0:
+			n.startle(o)
+	if panicked >= 2:
+		_crowd_sound("panic", o + dir * 8.0, 0.0, 5.0)
+		excitement = minf(excitement + 0.1, 1.0)
+
+
+func _ev_burst(d: Dictionary) -> void:
+	var p: Vector3 = d["pos"]
+	var count := 0
+	var voiced := 0
+	var low := p.y < 7.0
+	for n in npcs:
+		var dist := n.global_position.distance_to(p)
+		if dist > 110.0:
+			continue
+		if low and dist < 8.0 and n.prop != "banner":
+			later(_rng.randf_range(0.05, 0.25), func(): if is_instance_valid(n): n.panic(p, 1.2))
+			continue
+		count += 1
+		var delay := _rng.randf_range(0.1, 0.6)
+		var r := _rng.randf()
+		var want_voice := voiced < 3 and _rng.randf() < 0.3
+		if want_voice:
+			voiced += 1
+		if n.busy():
+			later(delay, func(): if is_instance_valid(n): n.look(p, 1.0))
+			continue
+		later(delay, func():
+			if not is_instance_valid(n):
+				return
+			var dur := _rng.randf_range(2.5, 4.5)
+			var opt := {"face": false, "voice": "wow" if _rng.randf() < 0.6 else "ouais", "voice_p": 1.0 if want_voice else 0.0}
+			if r < 0.3:
+				var pc := n._prop_cheer_pose()
+				opt["prm"] = pc[1]
+				opt["hop"] = _rng.randf() < 0.35
+				n.react(pc[0], dur, p, opt)
+			elif r < 0.5 and n.prop == "":
+				opt["prm"] = {"dir": n._wbd((p - n.head_pos()).normalized())}
+				n.react("film", dur + 1.5, p, opt)
+			elif r < 0.62:
+				n.react("head", dur, p, opt)
+			elif r < 0.75:
+				opt["prm"] = {"dir": n._wbd((p - n.human.shoulder_world("R")).normalized())}
+				n.react("point", dur * 0.7, p, opt)
+			elif r < 0.85:
+				n.react("clap", dur, p, opt)
+			else:
+				n.react(n._prop_rest_pose(), dur, p, opt))
+	if count >= 5:
+		var c := _centroid_near(p, 60.0)
+		if low:
+			_crowd_sound("panic", c, -2.0, 4.0)
+		else:
+			_crowd_sound("awe" if _rng.randf() < 0.55 else "cheer_small", c, -3.0, 3.5)
+			if _rng.randf() < 0.3:
+				later(1.2, func(): _crowd_sound("applause", c, -6.0, 6.0))
+	excitement = minf(excitement + 0.04, 1.0)
+
+
+func _centroid_near(p: Vector3, r: float) -> Vector3:
+	var c := Vector3.ZERO
+	var k := 0
+	for n in npcs:
+		if n.global_position.distance_to(p) < r:
+			c += n.global_position
+			k += 1
+	return (c / k + Vector3.UP * 1.5) if k > 0 else p
+
+
+func _ev_glass_hit(d: Dictionary) -> void:
+	var p: Vector3 = d["pos"]
+	for n in _near(p, 26.0):
+		if n.state == "home" and n.react_cd <= 0.0 and _rng.randf() < 0.45:
+			if n.bold > 0.6 and _rng.randf() < 0.3:
+				var pc := n._prop_cheer_pose()
+				n.react(pc[0], 1.8, p, {"voice": "allez", "voice_p": 0.5, "prm": pc[1]})
+			else:
+				n.look(p, 1.0)
+
+
+func _ev_glass_break(d: Dictionary) -> void:
+	var p: Vector3 = d["pos"]
+	excitement = minf(excitement + 0.15, 1.0)
+	var count := 0
+	var voiced := 0
+	for n in npcs:
+		var dist := n.global_position.distance_to(p)
+		if dist > 38.0:
+			continue
+		count += 1
+		if n.state == "rally":
+			if voiced < 3:
+				voiced += 1
+				later(_rng.randf_range(0.2, 0.6), func(): if is_instance_valid(n): n.say_cat("broke", true))
+			n.hop(2)
+			continue
+		if n.busy():
+			n.look(p, 1.0)
+			continue
+		var delay := _rng.randf_range(0.05, 0.4)
+		if dist < 4.5:
+			later(delay, func(): if is_instance_valid(n): n.startle(p))
+			continue
+		var want_voice := voiced < 3 and _rng.randf() < 0.35
+		if want_voice:
+			voiced += 1
+		later(delay, func():
+			if not is_instance_valid(n):
+				return
+			var opt := {"voice": "broke" if _rng.randf() < 0.6 else "ouais", "voice_p": 1.0 if want_voice else 0.0}
+			if n.bold > 0.45 or _rng.randf() < 0.3:
+				var pc := n._prop_cheer_pose()
+				opt["prm"] = pc[1]
+				opt["hop"] = _rng.randf() < 0.5
+				n.react(pc[0], 2.8, p, opt)
+			elif n.curious > 0.6 and _rng.randf() < 0.5 and n.role != "march":
+				n.state = "goto_look"
+				n.state_t = 0.0
+				n.data = {"look": p}
+				var away := (n.global_position - p)
+				away.y = 0.0
+				n.go(clamp_area(p + away.normalized() * 6.0), false, 0.5)
+				n.set_act("film", {"dir": Vector3(0, 0, 1)}, 2.0)
+			else:
+				n.react("head", 2.5, p, opt))
+	if count >= 3:
+		_crowd_sound("cheer_big", _centroid_near(p, 30.0), 0.0, 3.0)
+	if bus and bus.all_broken():
+		later(1.0, func(): on_event("bus_destroyed", {}))
+
+
+func _ev_fire_start(d: Dictionary) -> void:
+	var bin: TrashBin = d["bin"]
+	var p: Vector3 = d["pos"]
+	excitement = minf(excitement + 0.1, 1.0)
+	var watchers_n := watchers(bin)
+	var feeders := 0
+	var voiced := 0
+	var cands := _near(p, 32.0)
+	cands.shuffle()
+	for n in cands:
+		if n.busy() or n.prop in ["banner", "megaphone"] or n.role == "march" and _rng.randf() < 0.75:
+			if n.state == "home" and n.react_cd <= 0.0:
+				n.look(p, 1.0)
+			continue
+		if n.curious < 0.3 or _rng.randf() > 0.75 or watchers_n >= 11:
+			if n.react_cd <= 0.0 and n.state == "home":
+				n.react(n._prop_rest_pose(), 2.0, p, {})
+			continue
+		watchers_n += 1
+		if n.bold > 0.5 and feeders < 3 and n.prop == "" and _rng.randf() < 0.55:
+			feeders += 1
+			n.feed_fire(bin)
+		else:
+			n.watch_fire(bin, ring_point(n, bin))
+		if voiced < 2 and _rng.randf() < 0.5:
+			voiced += 1
+			later(_rng.randf_range(0.3, 1.2), func(): if is_instance_valid(n): n.say_cat("fire", true))
+	if _rng.randf() < 0.7:
+		later(0.6, func(): _crowd_sound("awe", p + Vector3.UP, -6.0, 6.0))
+
+
+func _ev_fire_flare(d: Dictionary) -> void:
+	var bin: TrashBin = d["bin"]
+	var voiced := 0
+	for n in npcs:
+		if n.state == "watch" and n.data.get("bin") == bin:
+			n.data["next"] = _rng.randf_range(2.5, 4.5)
+			var pc := n._prop_cheer_pose()
+			n.set_act(pc[0] if _rng.randf() < 0.6 else "head", pc[1], 4.0)
+			if voiced < 2 and _rng.randf() < 0.4:
+				voiced += 1
+				n.say_cat("fire" if _rng.randf() < 0.5 else "ouais", true)
+	# de nouveaux curieux arrivent quand ça flambe
+	if watchers(bin) < 8:
+		for n in _near(d["pos"], 25.0):
+			if n.state == "home" and n.role != "march" and n.curious > 0.5 and _rng.randf() < 0.3:
+				n.watch_fire(bin, ring_point(n, bin))
+
+
+func _ev_player_flare(p: Vector3, chance: float) -> void:
+	var voiced := 0
+	for n in _near(p, 16.0):
+		if n.state != "home" or n.react_cd > 0.0 or _rng.randf() > chance:
+			continue
+		var opt := {"voice": "ouais" if _rng.randf() < 0.5 else "allez", "voice_p": 1.0 if voiced < 2 else 0.0}
+		voiced += 1
+		if _rng.randf() < 0.3 and n.prop == "":
+			opt["prm"] = {"dir": n._wbd((p + Vector3.UP - n.head_pos()).normalized())}
+			n.react("film", 4.0, p + Vector3.UP, opt)
+		else:
+			var pc := n._prop_cheer_pose()
+			opt["prm"] = pc[1]
+			n.react(pc[0], 2.5, p + Vector3.UP * 1.2, opt)
+
+
+## Mouvement de foule : quelques curieux s'approchent pour voir (et filmer)
+func _gather(p: Vector3, count: int, r: float) -> void:
+	var n_ok := 0
+	var cands := _near(p, r)
+	cands.shuffle()
+	for n in cands:
+		if n_ok >= count:
+			break
+		if n.state != "home" or n.role == "march" or n.prop in ["banner", "megaphone", "mortar"]:
+			continue
+		if n.global_position.distance_to(p) < 4.0 or _rng.randf() > n.curious:
+			continue
+		n_ok += 1
+		var away := n.global_position - p
+		away.y = 0.0
+		var dest := p + away.normalized().rotated(Vector3.UP, _rng.randf_range(-0.5, 0.5)) * _rng.randf_range(2.8, 4.0)
+		n.state = "goto_look"
+		n.state_t = 0.0
+		n.data = {"look": p + Vector3.UP * 1.5}
+		n.go(clamp_area(dest), false, 0.5)
+
+
+func _ev_call(d: Dictionary) -> void:
+	var p: Vector3 = d["pos"]
+	if bus == null:
+		return
+	if bus.all_broken():
+		player.message.emit("L'abribus est déjà en morceaux !")
+		for n in _near(p, 15.0):
+			if n.state == "home" and _rng.randf() < 0.4:
+				var pc := n._prop_cheer_pose()
+				n.react(pc[0], 2.0, p + Vector3.UP * 1.6, {"voice": "ouais", "voice_p": 0.3, "prm": pc[1]})
+		return
+	var near_bus := p.distance_to(bus.global_position) < 22.0
+	var cap := 3 + int(excitement * 5.0) + (1 if near_bus else 0)
+	var joiners := 0
+	var already := 0
+	for n in npcs:
+		if n.state == "rally":
+			already += 1
+	var cands := _near(p, 28.0)
+	cands.sort_custom(func(a, b): return (a as Npc).global_position.distance_to(p) < (b as Npc).global_position.distance_to(p))
+	var refusers := 0
+	for n in cands:
+		if n.state == "rally":
+			continue
+		if n.prop in ["banner", "megaphone"] or n.state in ["mortar", "panic", "feed"]:
+			if n.react_cd <= 0.0:
+				n.look(p + Vector3.UP * 1.6, 1.0)
+			continue
+		var dist := n.global_position.distance_to(p)
+		var pj := 0.12 + n.bold * 0.6 + excitement * 0.3 + (0.25 if n.role == "bloc" else 0.0) - dist * 0.012
+		if n.role == "march":
+			pj -= 0.15
+		if joiners + already < cap and _rng.randf() < pj:
+			joiners += 1
+			var delay := _rng.randf_range(0.2, 0.9)
+			later(delay, func():
+				if is_instance_valid(n):
+					n.say_cat("join", true)
+					n.rally(bus))
+		elif dist < 14.0 and refusers < 3 and _rng.randf() < 0.55:
+			refusers += 1
+			later(_rng.randf_range(0.3, 1.0), func():
+				if is_instance_valid(n):
+					n.react("refuse", 2.4, p + Vector3.UP * 1.6, {"voice": "refuse", "voice_p": 0.7})
+					n.human.shake = 1.0
+					get_tree().create_timer(1.2).timeout.connect(func(): if is_instance_valid(n): n.human.shake = 0.0))
+		elif n.state == "home" and n.react_cd <= 0.0:
+			n.look(p + Vector3.UP * 1.6, 1.0)
+	if joiners > 0:
+		rally_active = true
+		_rally_t = 0.0
+		_rally_far_t = 0.0
+		excitement = minf(excitement + 0.1, 1.0)
+		later(0.8, func(): _crowd_sound("cheer_small", p + Vector3.UP * 1.5, -2.0, 3.0))
+		player.message.emit(("%d manifestants te suivent !" % joiners) if joiners > 1 else "Un manifestant te suit !")
+	elif already > 0:
+		player.message.emit("Ils sont déjà avec toi !")
+	else:
+		player.message.emit("Personne ne te suit… pour l'instant")

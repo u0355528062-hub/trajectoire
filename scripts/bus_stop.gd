@@ -459,6 +459,35 @@ func _add_pane(size: Vector2, pos: Vector3, rot_y: float, frosted: bool) -> void
 			"overlays": overlays, "decor": overlays.duplicate(), "broken": false, "web": 0, "cracks": []})
 
 
+# ------------------------------------------------------------------ informations (PNJ)
+func pane_count() -> int:
+	return _panes.size()
+
+
+func pane_alive(i: int) -> bool:
+	return i >= 0 and i < _panes.size() and not _panes[i]["broken"]
+
+
+func pane_center(i: int) -> Vector3:
+	return (_panes[i]["node"] as Node3D).global_position
+
+
+func pane_local_x(i: int) -> float:
+	return (_panes[i]["node"] as Node3D).position.x
+
+
+func all_broken() -> bool:
+	for p in _panes:
+		if not p["broken"]:
+			return false
+	return true
+
+
+func _event(type: String, pos: Vector3) -> void:
+	if is_inside_tree():
+		get_tree().call_group("crowd", "on_event", type, {"pos": pos})
+
+
 # ------------------------------------------------------------------ interaction
 func _pane_at(point: Vector3, depth := 0.75) -> int:
 	var best := -1
@@ -478,7 +507,7 @@ func _pane_at(point: Vector3, depth := 0.75) -> int:
 
 
 ## Coup de pied : point (monde) et direction de poussée.
-func kick(point: Vector3, dir: Vector3) -> bool:
+func kick(point: Vector3, dir: Vector3, power := 1.0) -> bool:
 	var i := _pane_at(point)
 	if i < 0:
 		var pp := _sign_pivot.global_position
@@ -487,7 +516,7 @@ func kick(point: Vector3, dir: Vector3) -> bool:
 			_sound(&"glass_hit", point, -4.0)
 			return true
 		return false
-	_damage_pane(i, point, KICK_DAMAGE, dir)
+	_damage_pane(i, point, KICK_DAMAGE * power, dir)
 	return true
 
 
@@ -513,7 +542,9 @@ func _damage_pane(i: int, point: Vector3, amount: float, dir: Vector3) -> void:
 	var impact_w := node.to_global(Vector3(imp.x, imp.y, 0))
 	if p["damage"] >= BREAK_AT:
 		_shatter(p, imp, dir)
+		_event("glass_break", impact_w)
 		return
+	_event("glass_hit", impact_w)
 	_add_crack(p, imp, "crack_s%d.png" % _rng.randi_range(0, 3), _rng.randf_range(0.5, 0.85) + amount * 0.004)
 	var d: float = p["damage"]
 	if d >= 42.0 and p["web"] < 1:
