@@ -231,8 +231,8 @@ func _apply_materials(root: Node) -> void:
 		"Beanie": head_item == "beanie", "Cap": head_item == "cap", "CapBrim": head_item == "cap",
 		"Balaclava": face == "balaclava", "Bandana": face == "bandana",
 		"Backpack": o["backpack"],
-		"Hair": head_item == "" and not hood and face != "balaclava",
-		"Ponytail": not hood and face != "balaclava",
+		"Hair": head_item == "" and not hood and face != "balaclava" and not o.get("no_hair", false),
+		"Ponytail": not hood and face != "balaclava" and not o.get("no_hair", false),
 	}
 	const HEAD_PARTS := ["Head", "Eyes", "Beanie", "Cap", "CapBrim", "Balaclava", "Bandana", "Hood", "Hair", "Ponytail"]
 	for mi in _meshes(root):
@@ -280,6 +280,35 @@ func _cache_bones() -> void:
 					ids.append(bone[nm])
 			lists.append(ids)
 		_finger_idx[side] = lists
+
+
+## Accroche un nœud à un os (il suit l'animation). `offset` : position relative à l'origine de l'os
+## au repos (axes du squelette), `rot` : orientation relative au repos.
+func attach(bone_name: String, node: Node3D, offset := Vector3.ZERO, rot := Basis.IDENTITY) -> BoneAttachment3D:
+	var ba := BoneAttachment3D.new()
+	ba.bone_name = bone_name
+	skeleton.add_child(ba)
+	node.transform = Transform3D(rot * Basis.from_scale(node.scale), offset)
+	ba.add_child(node)
+	return ba
+
+
+## Accroche un nœud le long d'un segment d'os (de `bone_name` vers `child_bone`) à la fraction `t`.
+## L'axe +Y du nœud est aligné sur le segment.
+func attach_limb(bone_name: String, child_bone: String, node: Node3D, t := 0.0) -> BoneAttachment3D:
+	var a: Vector3 = rest[bone_name]
+	var b: Vector3 = rest[child_bone]
+	var d := (b - a).normalized()
+	var up := d
+	var rgt := up.cross(Vector3.BACK if absf(up.z) < 0.9 else Vector3.RIGHT).normalized()
+	var fwd := rgt.cross(up).normalized()
+	var ba := BoneAttachment3D.new()
+	ba.bone_name = bone_name
+	skeleton.add_child(ba)
+	var bs := Basis(rgt, up, fwd).scaled(node.scale)
+	node.transform = Transform3D(bs, (b - a) * t)
+	ba.add_child(node)
+	return ba
 
 
 func chest_xf() -> Transform3D:

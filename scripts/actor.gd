@@ -88,6 +88,7 @@ func _ready() -> void:
 	_pocket_style = "hoodie" if outfit.get("top", "hoodie") == "hoodie" else "jeans"
 	_walk_k = _rng.randf_range(0.88, 1.12)
 	_voice = AudioStreamPlayer3D.new()
+	_voice.bus = &"Voix"
 	_voice.position.y = 1.6
 	_voice.unit_size = 3.0
 	_voice.max_distance = 70.0
@@ -196,9 +197,10 @@ func _pose(name: String, t: float, p: Dictionary) -> Array:
 				l = _h(sl + Vector3(0.1, -0.32, 0.28) * k, Vector3(0, 0.6, 0.8), Vector3(0, 0.8, -0.6), 0.5)
 			return [r, l]
 		"film":
-			var dir: Vector3 = p.get("dir", Vector3(0, 0.05, 1))
-			var pos := eye + dir.normalized() * 0.4 * k + Vector3(0.05, -0.07, 0) + Vector3(sin(t * 1.3) * 0.006, sin(t * 1.7) * 0.006, 0)
-			return [_h(pos, Vector3(0, 1, 0), (eye - pos), 0.62, 0.0, Vector3(1, -1, -0.2)), null]
+			var dir := _film_dir(p.get("dir", Vector3(0, 0.05, 1)))
+			var pos := eye + dir * 0.4 * k + Vector3(0.05, -0.07, 0) + Vector3(sin(t * 1.3) * 0.006, sin(t * 1.7) * 0.006, 0)
+			var back := (eye - pos).normalized()
+			return [_h(pos, Vector3(0, 1, 0), back, 0.62, 0.0, Vector3(1, -1, -0.2)), null]
 		"selfie":
 			var pos2 := eye + Vector3(0.12, 0.18, 0.42) * k
 			return [_h(pos2, Vector3(0, 1, 0), (eye - pos2), 0.62, 0.0, Vector3(1, -0.8, 0)), null]
@@ -357,6 +359,19 @@ func _pose(name: String, t: float, p: Dictionary) -> Array:
 			if p.get("brace", false):
 				left5 = _h(sl + Vector3(0.12, -0.38, 0.12) * k, Vector3(0.4, -0.7, 0.6), Vector3(-1, 0, 0), 0.4, 0.0, Vector3(-1, -1, 0))
 			return [_h(pos5, Vector3(0, -0.15, 1).lerp((tg5 - pos5).normalized(), 0.35), Vector3(-1, 0, 0), 0.85, 0.0, Vector3(1, -0.7, -0.3)), left5]
+		"cuffed":
+			# mains menottées dans le dos
+			var cb := Vector3(0.0, sr.y - 0.62 * k, -0.18 * k)
+			return [_h(cb + Vector3(0.045, 0, 0), Vector3(0, -0.8, -0.2), Vector3(-1, 0, 0), 0.6, 0.0, Vector3(1, -1, 0.5)),
+				_h(cb + Vector3(-0.045, 0, 0), Vector3(0, -0.8, -0.2), Vector3(1, 0, 0), 0.6, 0.0, Vector3(-1, -1, 0.5))]
+		"resist":
+			# se débat : bras qui tirent dans tous les sens
+			var w1 := sin(t * 11.0)
+			var w2 := sin(t * 9.0 + 1.3)
+			return [_h(sr + Vector3(0.1 + w1 * 0.08, -0.28 + w2 * 0.12, 0.26 + w2 * 0.06) * k, Vector3(0.2, -0.3, 1), Vector3(-1, 0.2, 0), 0.7, 0.0, Vector3(1, -1, -0.2)),
+				_h(sl + Vector3(-0.1 + w2 * 0.08, -0.3 + w1 * 0.1, 0.22 + w1 * 0.06) * k, Vector3(-0.2, -0.3, 1), Vector3(1, 0.2, 0), 0.7, 0.0, Vector3(-1, -1, -0.2))]
+		"surrender":
+			return _sym(Vector3(0.14, 0.38, 0.08) * k + Vector3(0, sin(t * 3.0) * 0.012, 0), Vector3(0.1, 1, 0.2), Vector3(-0.2, 0, 1), 0.05, Vector3(1, -0.3, -0.3), sr, sl)
 		"reach":
 			var tg2: Vector3 = p.get("target", Vector3(0.1, 1.0, 0.6))
 			return [_h(tg2, Vector3(0, -0.2, 1), Vector3(0, 1, 0), 0.6, 0.0, Vector3(1, -1, -0.2)), null]
@@ -404,6 +419,20 @@ func _pose(name: String, t: float, p: Dictionary) -> Array:
 func _ease(x: float) -> float:
 	x = clampf(x, 0.0, 1.0)
 	return x * x * (3.0 - 2.0 * x)
+
+
+var _film_d := Vector3(0, 0.05, 1)
+
+
+## Direction de visée du téléphone, ramenée dans un cône devant le visage et lissée :
+## le téléphone ne passe jamais derrière la tête, même quand le corps n'a pas fini de se tourner.
+func _film_dir(want: Vector3) -> Vector3:
+	var w := want.normalized() if want.length() > 0.01 else Vector3(0, 0.05, 1)
+	var yaw := clampf(atan2(w.x, w.z), -0.75, 0.75)
+	var pitch := clampf(asin(clampf(w.y, -1.0, 1.0)), -0.45, 0.55)
+	var tgt := Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)).normalized()
+	_film_d = _film_d.slerp(tgt, 0.12).normalized()
+	return _film_d
 
 
 func _blend_h(a: Dictionary, b: Dictionary, u: float) -> Dictionary:

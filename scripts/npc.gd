@@ -57,6 +57,8 @@ func _ready() -> void:
 
 
 func _pre_tick(delta: float) -> void:
+	gas_level = maxf(gas_level - delta * 0.35, 0.0)
+	hostile = maxf(hostile - delta * 0.02, 0.0)
 	react_cd = maxf(react_cd - delta, 0.0)
 	_glance_cd = maxf(_glance_cd - delta, 0.0)
 	_look_cd = maxf(_look_cd - delta, 0.0)
@@ -199,8 +201,17 @@ func _place_props() -> void:
 			lighter.global_position = lp + (hand["p"] as Vector3) * 0.04
 			lighter.global_basis = Basis(Quaternion(Vector3.UP, (hand["thumb"] as Vector3)))
 	if cig:
-		var cp: Vector3 = (pr["pos"] as Vector3) + (pr["f"] as Vector3) * 0.075 + thumb * 0.012
-		var ax2: Vector3 = (-(pr["p"] as Vector3) + (pr["f"] as Vector3) * 0.3).normalized()
+		var in_hand := act in ["smoke_drag", "smoke_hold", "idle", "pocket", "crossed", "akimbo", "back"] and not phone_on
+		var cp: Vector3
+		var ax2: Vector3
+		if in_hand:
+			cp = (pr["pos"] as Vector3) + (pr["f"] as Vector3) * 0.075 + thumb * 0.012
+			ax2 = (-(pr["p"] as Vector3) + (pr["f"] as Vector3) * 0.3).normalized()
+		else:
+			# la main droite est occupée (téléphone, geste) : la cigarette reste au coin des lèvres
+			var mx := mouth_xf()
+			cp = mx * Vector3(0.016, 0.004, 0.012)
+			ax2 = (mx.basis * Vector3(0.35, -0.3, 1.0)).normalized()
 		cig.global_transform = Transform3D(Basis(Quaternion(Vector3.UP, ax2)), cp)
 		var cyc := fmod(_cig_t, 9.0)
 		if cyc > 1.8 and cyc < 3.4:   # on recrache la fumée
@@ -259,7 +270,7 @@ func _prop_cheer_pose() -> Array:
 
 
 func busy() -> bool:
-	return state in ["rally", "feed", "mortar", "panic", "dodge"]
+	return state in ["rally", "feed", "mortar", "panic", "dodge", "gassed", "hit", "sprayed", "arrested", "boarded", "rescue", "throwcop"]
 
 
 ## Réaction courte : pose, durée, point regardé, options {voice, loud, hop, face, run_to}
@@ -331,6 +342,18 @@ func _think(delta: float) -> void:
 			_think_rally(delta)
 		"mortar":
 			_think_mortar(delta)
+		"gassed":
+			_think_gassed(delta)
+		"hit":
+			_think_hit(delta)
+		"sprayed":
+			_think_sprayed(delta)
+		"arrested":
+			_think_arrested(delta)
+		"rescue":
+			_think_rescue(delta)
+		"throwcop":
+			_think_throwcop(delta)
 		"goto_look":
 			if not has_goal or state_t > 12.0:
 				react("film" if _rng.randf() < 0.5 else _idle_pose, _rng.randf_range(4.0, 8.0), data.get("look", global_position))
@@ -1263,3 +1286,307 @@ func _mortar_launch(axis: Vector3) -> void:
 				say_cat("ouais", true))
 	if crowd:
 		crowd.on_event("mortar_fire", {"pos": mouth, "dir": axis, "npc": self})
+
+
+# =================================================================== police : gaz, coups, arrestation, jets
+var hostile := 0.0            # a agressé la police : visé en priorité par les interpellations
+var gas_level := 0.0
+var _cough_t := 0.0
+var _escort_p := Vector3.ZERO
+var _escort_t := 0.0
+
+
+func _cough() -> void:
+	human.kick_back(0.5)
+	human.hunch = maxf(human.hunch, 0.6)
+	var nm := "cough_f_%d" % _rng.randi_range(0, 1) if female else "cough_m_%d" % _rng.randi_range(0, 2)
+	AudioLib.play_at(self, nm, head_pos(), -2.0, 6.0, vpitch)
+
+
+## Du gaz sur moi (appelé ~8 fois par seconde par les nuages)
+func on_gas(density: float, from: Vector3) -> void:
+	gas_level = maxf(gas_level, density)
+	if state == "gassed":
+		data["from"] = from
+		return
+	if state in ["arrested", "boarded", "hit", "sprayed", "mortar"] or density < 0.12:
+		return
+	# les cagoulés tiennent un peu plus : ils toussent sur place
+	var tough: bool = outfit.get("face", "") == "balaclava" and bold > 0.6 and _rng.randf() < 0.5
+	_drop_item()
+	state = "gassed"
+	state_t = 0.0
+	sub = "tough" if tough else "flee"
+	data = {"from": from}
+	stop_move()
+	if not tough:
+		var away := global_position - from
+		away.y = 0.0
+		away = away.normalized() if away.length() > 0.1 else Vector3(_rng.randf_range(-1, 1), 0, _rng.randf_range(-1, 1)).normalized()
+		var dest := global_position + away.rotated(Vector3.UP, _rng.randf_range(-0.5, 0.5)) * _rng.randf_range(13.0, 19.0)
+		go(crowd.clamp_area(dest) if crowd else dest, true, 0.8)
+	set_act("cover", {}, 6.0)
+	_cough_t = _rng.randf_range(0.2, 0.9)
+	if _rng.randf() < 0.7:
+		say_cat("gas", true)
+
+
+func _think_gassed(delta: float) -> void:
+	human.hunch = lerpf(human.hunch, 0.5, minf(1.0, delta * 3.0))
+	_cough_t -= delta
+	if _cough_t <= 0.0:
+		_cough_t = _rng.randf_range(1.1, 2.4)
+		_cough()
+		if _rng.randf() < 0.3:
+			say_cat("gas", true)
+	var from: Vector3 = data.get("from", global_position)
+	if sub == "flee" and (not has_goal) and gas_level > 0.1:
+		# toujours dans le gaz : on court plus loin
+		var away := global_position - from
+		away.y = 0.0
+		go(crowd.clamp_area(global_position + away.normalized() * 10.0) if crowd else global_position + away.normalized() * 10.0, true, 0.8)
+	if gas_level < 0.04 and (not has_goal or sub == "tough") and state_t > 2.5:
+		human.hunch = 0.0
+		state = "react"
+		state_t = 0.0
+		data = {"dur": _rng.randf_range(2.5, 4.5), "look": from + Vector3.UP * 1.5}
+		set_act("head" if _rng.randf() < 0.6 else _idle_pose, {}, 3.0)
+		return
+	if state_t > 24.0:
+		human.hunch = 0.0
+		go_home()
+
+
+## Coup de matraque / LBD / gazeuse / bousculade de la police
+func on_police_hit(kind: String, dir: Vector3, cop: Node3D) -> void:
+	if state in ["arrested", "boarded"]:
+		return
+	_drop_item()
+	stop_move()
+	var d := Vector3(dir.x, 0, dir.z)
+	d = d.normalized() if d.length() > 0.01 else -forward()
+	if kind == "spray":
+		state = "sprayed"
+		state_t = 0.0
+		data = {"from": cop.global_position if cop else global_position}
+		set_act("cover", {}, 8.0)
+		human.eye_open = 0.1
+		_cough_t = 0.4
+		say_cat("pain", true)
+		return
+	var down := kind == "lbd" or (kind == "baton" and _rng.randf() < 0.72) or (kind == "shove" and _rng.randf() < 0.35)
+	state = "hit"
+	state_t = 0.0
+	sub = "down" if down else "stagger"
+	data = {"dir": d, "dur": _rng.randf_range(2.2, 4.2), "cop": cop}
+	var dl := global_basis.inverse() * d
+	human.fall_dir = atan2(dl.x, dl.z)
+	human.kick_back(1.2)
+	set_act("cover" if down else "head", {}, 8.0)
+	say_cat("pain", true)
+	AudioLib.play_at(self, "body_fall" if down else "shove", global_position + Vector3.UP * 0.6, -3.0, 6.0)
+	if kind != "shove" and crowd:
+		hostile = maxf(hostile, 0.15)
+	get_tree().call_group("crowd", "on_event", "civil_hit", {"pos": global_position, "kind": kind, "who": self})
+
+
+func _think_hit(delta: float) -> void:
+	var dur: float = data.get("dur", 3.0)
+	if sub == "down":
+		human.fall = move_toward(human.fall, 1.0 if state_t < dur else 0.0, delta * (4.5 if state_t < dur else 1.0))
+		if state_t > dur + 1.0:
+			human.fall = 0.0
+			var cop: Node3D = data.get("cop")
+			panic(cop.global_position if cop and is_instance_valid(cop) else global_position - forward() * 3.0, 1.0)
+	else:
+		if state_t > 1.4:
+			var cop2: Node3D = data.get("cop")
+			panic(cop2.global_position if cop2 and is_instance_valid(cop2) else global_position - forward() * 3.0, 0.8)
+
+
+func _think_sprayed(delta: float) -> void:
+	human.hunch = lerpf(human.hunch, 0.6, minf(1.0, delta * 3.0))
+	human.eye_open = lerpf(human.eye_open, 0.1, minf(1.0, delta * 6.0))
+	_cough_t -= delta
+	if _cough_t <= 0.0:
+		_cough_t = _rng.randf_range(1.0, 2.0)
+		_cough()
+	# trébuche à l'aveugle
+	if not has_goal:
+		go(global_position + Vector3(_rng.randf_range(-3, 3), 0, _rng.randf_range(-3, 3)), false, 0.5)
+	if state_t > 7.0:
+		human.hunch = 0.0
+		human.eye_open = 1.0
+		go_home()
+
+
+# --- interpellation
+func on_grabbed(cop: Node3D) -> void:
+	_drop_item()
+	state = "arrested"
+	state_t = 0.0
+	sub = "struggle"
+	sub_t = 0.0
+	data = {"cop": cop}
+	stop_move()
+	set_act("resist", {}, 8.0)
+	look(cop.global_position + Vector3.UP * 1.6, 1.0)
+	say_cat("arrested", true)
+	get_tree().call_group("crowd", "on_event", "grab", {"pos": global_position, "who": self, "cop": cop})
+
+
+func on_cuffed(_cop: Node3D) -> void:
+	sub = "kneel"
+	sub_t = 0.0
+	set_act("cuffed", {}, 5.0)
+
+
+func escort_to(p: Vector3) -> void:
+	_escort_p = p
+	_escort_t = 0.0
+	if sub in ["kneel", "struggle", "stand"]:
+		sub = "escort"
+		sub_t = 0.0
+
+
+func on_boarded(_van: Node3D) -> void:
+	state = "boarded"
+	human.kneel = 0.0
+	visible = false
+	set_physics_process(false)
+	if crowd:
+		crowd.unregister_actor(self)
+	AudioLib.play_at(self, "door_close", global_position + Vector3.UP, -4.0, 8.0)
+	get_tree().call_group("crowd", "on_event", "boarded", {"pos": global_position})
+	queue_free()
+
+
+## Libéré par la foule
+func free_up() -> void:
+	if state != "arrested":
+		return
+	human.kneel = 0.0
+	human.hunch = 0.0
+	go_home()
+	panic(global_position - forward() * 3.0, 0.9)
+
+
+func _think_arrested(delta: float) -> void:
+	_escort_t += delta
+	match sub:
+		"struggle":
+			human.lean_extra = lerpf(human.lean_extra, -0.1, 0.1)
+			if fmod(state_t, 0.55) < delta:
+				human.kick_back(0.5)
+			if _rng.randf() < 0.01:
+				say_cat("arrested", true)
+		"kneel":
+			human.kneel = move_toward(human.kneel, 1.0, delta * 1.2)
+			human.hunch = lerpf(human.hunch, 0.35, 0.1)
+		"escort":
+			human.kneel = move_toward(human.kneel, 0.0, delta * 1.6)
+			human.hunch = lerpf(human.hunch, 0.25, 0.1)
+			follow(_escort_p, 1.35)
+			set_act("cuffed", {}, 5.0)
+			if _escort_t > 1.5:
+				sub = "stand"
+				sub_t = 0.0
+			if _rng.randf() < 0.004:
+				say_cat("arrested" if _rng.randf() < 0.7 else "free", true)
+		"stand":
+			human.kneel = move_toward(human.kneel, 0.0, delta * 1.6)
+			stop_move()
+			if sub_t > 10.0:
+				free_up()
+
+
+## Un manifestant décidé fonce libérer l'interpellé
+func rescue(cop: Node3D) -> void:
+	if busy() or cop == null:
+		return
+	state = "rescue"
+	state_t = 0.0
+	sub = "run"
+	data = {"cop": cop}
+	if _rng.randf() < 0.8:
+		say_cat("free", true)
+
+
+func _think_rescue(delta: float) -> void:
+	var cop: Node3D = data.get("cop")
+	if cop == null or not is_instance_valid(cop) or state_t > 12.0:
+		go_home()
+		return
+	var d := cop.global_position - global_position
+	d.y = 0.0
+	if d.length() > 1.3:
+		go(cop.global_position - d.normalized() * 0.9, true, 0.3)
+		set_act("fist", {"k": 0.6}, 5.0)
+		return
+	stop_move()
+	face(cop.global_position)
+	if sub == "run":
+		sub = "shove"
+		sub_t = 0.0
+		set_act("refuse", {}, 10.0)
+		human.kick_back(0.6)
+		if cop is Cop:
+			(cop as Cop).on_hit("shove", d.normalized(), 1.3, self)
+			var tgt: Node3D = (cop as Cop).arrestee
+			if tgt is Npc and _rng.randf() < 0.6:
+				(cop as Cop).arrestee = null
+				(cop as Cop).set_state("hold")
+				(tgt as Npc).free_up()
+		hostile = 1.0
+	elif sub_t > 0.8:
+		panic(cop.global_position, 1.0)
+
+
+# --- jets d'objets sur la police
+func throw_at(target: Node3D, kind := "") -> void:
+	if busy() or target == null:
+		return
+	if prop in ["banner", "megaphone", "mortar"] or (prop == "sign" and _rng.randf() < 0.6):
+		return
+	if kind == "":
+		var r := _rng.randf()
+		kind = "stone" if r < 0.5 else ("can" if r < 0.78 else ("bag" if r < 0.9 else ("bottle" if r < 0.96 else "pencil")))
+	state = "throwcop"
+	state_t = 0.0
+	sub = "wind"
+	sub_t = 0.0
+	data = {"t": target, "kind": kind}
+	stop_move()
+	face(target.global_position)
+	var dirb := _wbd((target.global_position + Vector3.UP * 1.2 - head_pos()).normalized())
+	set_act("throw", {"dir": dirb}, 10.0)
+
+
+func _think_throwcop(delta: float) -> void:
+	var tg: Node3D = data.get("t")
+	if tg == null or not is_instance_valid(tg) or state_t > 3.0:
+		go_home()
+		return
+	face(tg.global_position)
+	if sub == "wind" and sub_t >= 0.47:
+		sub = "done"
+		sub_t = 0.0
+		_launch_throwable(tg, data.get("kind", "stone"))
+	elif sub == "done" and sub_t > 0.8:
+		go_home()
+
+
+func _launch_throwable(tg: Node3D, kind: String) -> void:
+	var t := Throwable.make(kind)
+	t.thrower = self
+	get_tree().current_scene.add_child(t)
+	var pr := human.palm("R")
+	t.global_position = (pr["pos"] as Vector3) + Vector3.UP * 0.05
+	var aim := tg.global_position + Vector3(0, 1.25, 0)
+	t.linear_velocity = _ballistic(t.global_position, aim, 14.0 if kind != "pencil" else 10.0) * _rng.randf_range(0.97, 1.03)
+	t.angular_velocity = Vector3(_rng.randf_range(-9, 9), _rng.randf_range(-9, 9), _rng.randf_range(-9, 9))
+	t.add_collision_exception_with(self)
+	AudioLib.play_at(self, "toss", t.global_position, -4.0, 6.0)
+	hostile = minf(hostile + 0.7, 1.5)
+	if _rng.randf() < 0.45:
+		say_cat("throw" if _rng.randf() < 0.5 else "anger", true)

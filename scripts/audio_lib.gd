@@ -72,6 +72,7 @@ static func play_at(parent: Node, sound: String, pos: Vector3, vol := 0.0, unit 
 		return null
 	var a := AudioStreamPlayer3D.new()
 	a.stream = Sfx.get_stream(StringName(sound.substr(4))) if sound.begins_with("sfx:") else stream(sound)
+	a.bus = Settings.bus_for(sound)
 	a.volume_db = vol
 	a.unit_size = unit
 	a.pitch_scale = pitch

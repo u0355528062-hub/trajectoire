@@ -11,6 +11,8 @@ signal stage_changed(label: String, progress: float)
 signal aim_changed(on: bool)
 signal near_breakable_changed(near: bool)
 signal flares_changed(count: int, maximum: int)
+signal arrested                       # menotté : fin de partie
+signal hurt(kind: String)
 
 const WALK_SPEED := 1.75
 const RUN_SPEED := 5.2
@@ -60,12 +62,34 @@ var _lift_fired := false
 var _lift_prev := 0
 var _lift_yaw := 0.0
 var _lift_grip := Vector3.ZERO
+# --- état physique (mise à jour police)
+var gas_level := 0.0              # lacrymo respiré (0..1) : flou, toux, ralentissement
+var pepper_level := 0.0           # gazeuse reçue : yeux fermés, flou rouge
+var hit_flash := 0.0              # flash rouge après un coup
+var eye_close := 0.0              # paupières (0 ouvert .. 1 fermé)
+var injured_t := 0.0              # blessé : ralenti
+var down_t := 0.0                 # à terre
+var arrest_phase := ""            # "", "grabbed" (agrippé), "cuffed" (menotté)
+var struggle := 0.0               # jauge de lutte
+var arrest_cops: Array = []
+var invuln_t := 0.0               # après s'être libéré : pas de nouvelle prise tout de suite
+var wanted := 0.0                 # recherché (0..1) : les policiers le prennent pour cible
+var _gas_in := 0.0
+var _cough_t := 0.0
+var _hit_chain := 0.0
+var _arrest_t := 0.0
+var _cuff_t := 0.0
+var _down_e := 0.0
+var _cuffs: Node3D
+var _fall_dir := 0.0
+var _over_sent := false
 var _aim_evt := 0.0
 var _voice: AudioStreamPlayer3D
 
 
 func _ready() -> void:
 	_rng.randomize()
+	add_to_group("player")
 	_register_inputs()
 
 	var col := CollisionShape3D.new()
@@ -108,6 +132,7 @@ func _ready() -> void:
 	human.hand_provider = Callable(self, "_hands")
 	_tool_hands = Callable(mortar, "_hand_targets")
 	_voice = AudioStreamPlayer3D.new()
+	_voice.bus = &"Voix"
 	_voice.position.y = 1.65
 	_voice.unit_size = 8.0
 	add_child(_voice)
@@ -195,16 +220,22 @@ func select_item(i: int) -> void:
 	mortar.set_equipped(i == 1)
 	thrower.set_equipped(i == 2)
 	igniter.set_equipped(i == 3)
-	flare_tool.set_equipped(i == 4)
+	if i == 4:
+		flare_tool.set_equipped(true)
+	elif i == 0 and flare_tool.is_lit():
+		flare_tool.set_equipped(false, true)     # mains libres : le fumigène allumé reste dans la main
+	else:
+		flare_tool.set_equipped(false)
 	if i != 1 and i != 0:
 		mortar.hide_now()
 	if i != 2 and i != 0:
 		thrower.hide_now()
 	if i != 3:
 		igniter.hide_now()
-	if i != 4:
+	if i != 4 and not flare_tool.carrying:
 		flare_tool.hide_now()
 	match i:
+		0: _tool_hands = Callable(flare_tool, "_hand_targets") if flare_tool.carrying else Callable()
 		1: _tool_hands = Callable(mortar, "_hand_targets")
 		2: _tool_hands = Callable(thrower, "_hand_targets")
 		3: _tool_hands = Callable(igniter, "_hand_targets")
@@ -218,8 +249,9 @@ func select_item(i: int) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		_yaw -= event.relative.x * MOUSE_SENS
-		_pitch = clampf(_pitch - event.relative.y * MOUSE_SENS, deg_to_rad(-80.0), deg_to_rad(85.0))
+		var sens: float = MOUSE_SENS * float(Settings.d["sensitivity"])
+		_yaw -= event.relative.x * sens
+		_pitch = clampf(_pitch - event.relative.y * sens * (-1.0 if Settings.d["invert_y"] else 1.0), deg_to_rad(-80.0), deg_to_rad(85.0))
 	elif event is InputEventMouseButton and event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		get_viewport().set_input_as_handled()
@@ -244,6 +276,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			2: thrower.throw_stone()
 			3: igniter.use()
 			4: flare_tool.use()
+			0:
+				if flare_tool.carrying:
+					flare_tool.use()
 	elif event.is_action_pressed("kick") and not aiming and not _busy() and is_on_floor():
 		_kick_yaw = _yaw
 		human.start_kick()
@@ -253,7 +288,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		mortar.reload_all()
 		flare_tool.reload_all()
 		message.emit("Obus et fumigènes rechargés")
-	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and false:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
@@ -269,22 +304,25 @@ func _physics_process(delta: float) -> void:
 	if _grab_bin != null:
 		target_speed = minf(target_speed, WALK_SPEED * 0.9)
 		_run_t = 0.0
-	if igniter.busy or _lift_t >= 0.0:
-		target_speed = 0.0   # les deux pieds au sol pendant qu'on dépose / allume / redresse
+	if igniter.busy or _lift_t >= 0.0 or arrest_phase != "" or down_t > 0.0:
+		target_speed = 0.0   # les deux pieds au sol pendant qu'on dépose / allume / redresse / est maîtrisé
 		_run_t = 0.0
+	target_speed *= _status_speed()
 	var kicking := human.kick_t >= 0.0
 	if kicking:
 		target_speed = 0.0
 		_run_t = 0.0
 
-	var want_aim := current_item != 0 and Input.is_action_pressed("aim") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not kicking and _grab_bin == null
+	if current_item == 0 and _tool_hands.is_valid() and not flare_tool.carrying:
+		_tool_hands = Callable()
+	var want_aim := (current_item != 0 or flare_tool.carrying) and Input.is_action_pressed("aim") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not kicking and _grab_bin == null
 	if want_aim != aiming:
 		aiming = want_aim
 		aim_changed.emit(aiming and current_item in [1, 2])
 		mortar.set_aim(aiming and current_item == 1)
 		thrower.set_aim(aiming and current_item == 2)
 		igniter.set_aim(aiming and current_item == 3)
-		flare_tool.set_aim(aiming and current_item == 4)
+		flare_tool.set_aim(aiming and (current_item == 4 or flare_tool.carrying))
 	cam_yaw.rotation.y = _yaw
 	var basis_yaw := Basis(Vector3.UP, _yaw)
 	var wish := basis_yaw * Vector3(iv.x, 0.0, iv.y)
@@ -304,7 +342,7 @@ func _physics_process(delta: float) -> void:
 
 	if is_on_floor():
 		velocity.y = 0.0
-		if Input.is_action_just_pressed("jump") and not kicking and _grab_bin == null:
+		if Input.is_action_just_pressed("jump") and not kicking and _grab_bin == null and arrest_phase == "" and down_t <= 0.0:
 			velocity.y = JUMP_VELOCITY
 	else:
 		velocity.y -= GRAVITY * delta
@@ -338,6 +376,7 @@ func _physics_process(delta: float) -> void:
 	# --- poubelles (E : ouvrir/fermer, maintenir : déplacer) ; appel à la foule
 	_update_bins(delta)
 	_update_lift(delta)
+	_update_status(delta)
 	_call_cd = maxf(_call_cd - delta, 0.0)
 	if _call_t >= 0.0:
 		_call_t += delta
@@ -358,6 +397,188 @@ func _physics_process(delta: float) -> void:
 	var run_blend := clampf((speed - WALK_SPEED) / (RUN_SPEED - WALK_SPEED), 0.0, 1.0)
 	human.animate(delta, speed, run_blend, is_on_floor(), velocity.y, _pitch)
 	_update_camera(delta, speed)
+
+
+# =================================================================== état physique : gaz, coups, arrestation
+func _status_speed() -> float:
+	var k := 1.0
+	if injured_t > 0.0:
+		k *= 0.72
+	k *= 1.0 - 0.35 * gas_level
+	if pepper_level > 0.2:
+		k *= 0.6
+	return k
+
+
+## Appelé à chaque image par les nuages de gaz (densité 0..1 à la position du joueur)
+func apply_gas(density: float) -> void:
+	_gas_in = maxf(_gas_in, density)
+
+
+func apply_pepper(amount := 1.0) -> void:
+	if arrest_phase == "cuffed":
+		return
+	pepper_level = maxf(pepper_level, amount)
+	hit_flash = maxf(hit_flash, 0.3)
+	_shake = maxf(_shake, 0.4)
+	_voice_say("pain")
+	hurt.emit("pepper")
+
+
+func _voice_say(cat: String) -> void:
+	if _voice.playing:
+		return
+	var nm := AudioLib.pick("m1", cat)
+	if nm == "":
+		return
+	_voice.stream = AudioLib.stream(nm)
+	_voice.volume_db = 2.0
+	_voice.play()
+
+
+## Coup reçu (matraque, LBD, bousculade, projectile) ; `dir` : sens du choc
+func take_hit(kind: String, dir: Vector3, power := 1.0) -> void:
+	if arrest_phase == "cuffed" or invuln_t > 0.0 and kind == "shove":
+		return
+	var d := Vector3(dir.x, 0.0, dir.z)
+	d = d.normalized() if d.length() > 0.01 else Vector3.ZERO
+	hit_flash = 1.0 if kind in ["baton", "lbd"] else 0.45
+	_shake = 1.0
+	hurt.emit(kind)
+	match kind:
+		"baton":
+			velocity += d * 3.5 * power
+			injured_t = maxf(injured_t, 6.0)
+			_hit_chain += 1.0
+			AudioLib.play_at(self, "baton_hit_%d" % _rng.randi_range(0, 1), global_position + Vector3.UP, 0.0, 6.0)
+			_voice_say("pain")
+		"lbd":
+			velocity += d * 2.2 * power
+			injured_t = maxf(injured_t, 9.0)
+			_hit_chain += 0.9
+			AudioLib.play_at(self, "lbd_hit", global_position + Vector3.UP, 0.0, 6.0)
+			_voice_say("pain")
+		"shove":
+			velocity += d * 5.0 * power
+			_hit_chain += 0.5
+		_:
+			pass
+	human.kick_back(1.0)
+	if kind in ["baton", "lbd", "shove"] and (_hit_chain >= 1.9 or kind == "shove" and power > 1.2):
+		knock_down(d, 1.8)
+
+
+func knock_down(d: Vector3, dur := 1.6) -> void:
+	if down_t > 0.0 or arrest_phase != "":
+		return
+	down_t = dur
+	_hit_chain = 0.0
+	if _tools_busy():
+		pass
+	var dl := Basis(Vector3.UP, human.rotation.y).inverse() * (d if d.length() > 0.01 else -Basis(Vector3.UP, human.rotation.y).z)
+	_fall_dir = atan2(dl.x, dl.z)
+	AudioLib.play_at(self, "body_fall", global_position, -2.0, 6.0)
+
+
+## Un policier agrippe le joueur : séquence d'arrestation (lutte, puis menottes)
+func begin_arrest(cop: Node3D) -> bool:
+	if arrest_phase == "cuffed" or invuln_t > 0.0:
+		return false
+	if cop != null and not arrest_cops.has(cop):
+		arrest_cops.append(cop)
+	if arrest_phase == "":
+		arrest_phase = "grabbed"
+		struggle = 0.18
+		_arrest_t = 0.0
+		if current_item != 0:
+			_lift_prev = 0
+			if not _tools_busy():
+				select_item(0)
+		aiming = false
+		message.emit("Interpellation ! Débats-toi avec ESPACE")
+		_voice_say("arrested")
+		_shake = 0.8
+	return true
+
+
+func release_cop(cop: Node3D) -> void:
+	arrest_cops.erase(cop)
+
+
+func break_free() -> void:
+	if arrest_phase != "grabbed":
+		return
+	arrest_phase = ""
+	struggle = 0.0
+	invuln_t = 5.0
+	wanted = maxf(wanted, 0.5)
+	message.emit("Tu t'es libéré !")
+	_shake = 1.0
+	for c in arrest_cops:
+		if is_instance_valid(c) and c.has_method("on_player_broke_free"):
+			c.on_player_broke_free(global_position)
+	arrest_cops.clear()
+	velocity += -Basis(Vector3.UP, human.rotation.y).z * 2.0
+
+
+func _update_status(delta: float) -> void:
+	invuln_t = maxf(invuln_t - delta, 0.0)
+	injured_t = maxf(injured_t - delta, 0.0)
+	_hit_chain = maxf(_hit_chain - delta * 0.35, 0.0)
+	hit_flash = move_toward(hit_flash, 0.0, delta * 2.2)
+	pepper_level = move_toward(pepper_level, 0.0, delta * 0.11)
+	# gaz : monte vite, redescend lentement
+	var target := clampf(_gas_in, 0.0, 1.0)
+	gas_level = move_toward(gas_level, target, delta * (0.45 if target > gas_level else 0.11))
+	_gas_in = 0.0
+	var t := Time.get_ticks_msec() / 1000.0
+	var eyes := gas_level * (0.32 + 0.22 * sin(t * 2.7)) + pepper_level * 0.72
+	if arrest_phase == "cuffed":
+		eyes = maxf(eyes, 0.0)
+	eye_close = move_toward(eye_close, clampf(eyes, 0.0, 0.92), delta * 3.0)
+	# toux
+	_cough_t -= delta
+	if (gas_level > 0.3 or pepper_level > 0.4) and _cough_t <= 0.0 and down_t <= 0.0:
+		_cough_t = _rng.randf_range(1.2, 2.4)
+		AudioLib.play_at(self, "cough_m_%d" % _rng.randi_range(0, 2), global_position + Vector3.UP * 1.5, 0.0, 5.0)
+		human.kick_back(0.6)
+		human.hunch = 0.7
+	human.hunch = move_toward(human.hunch, 0.35 * maxf(gas_level, pepper_level) if gas_level > 0.3 or pepper_level > 0.3 else 0.0, delta * 1.5)
+	# à terre
+	if down_t > 0.0:
+		down_t -= delta
+	var fall_target := 1.0 if (down_t > 0.5 or arrest_phase == "cuffed" and false) else 0.0
+	_down_e = move_toward(_down_e, fall_target, delta * (4.0 if fall_target > _down_e else 1.4))
+	if _down_e > 0.001 or human.fall > 0.001:
+		human.fall = _down_e
+		human.fall_dir = _fall_dir
+	# arrestation
+	if arrest_phase == "grabbed":
+		_arrest_t += delta
+		if Input.is_action_just_pressed("jump"):
+			struggle += 0.15 + _rng.randf() * 0.05
+			_shake = maxf(_shake, 0.35)
+			human.kick_back(0.7)
+		struggle = maxf(struggle - delta * (0.14 + 0.1 * arrest_cops.size()), 0.0)
+		arrest_cops = arrest_cops.filter(func(c): return is_instance_valid(c))
+		if struggle >= 1.0:
+			break_free()
+		elif _arrest_t > 4.2 + (0.0 if arrest_cops.size() > 0 else 99.0):
+			arrest_phase = "cuffed"
+			_cuff_t = 0.0
+			AudioLib.play_at(self, "cuff_click", global_position + Vector3.UP, 0.0, 4.0)
+			message.emit("Menotté.")
+		elif arrest_cops.is_empty() and _arrest_t > 0.6:
+			arrest_phase = ""           # plus personne ne te tient
+			struggle = 0.0
+	elif arrest_phase == "cuffed":
+		_cuff_t += delta
+		human.kneel = move_toward(human.kneel, 1.0, delta * 1.1)
+		if _cuff_t > 2.2 and not _over_sent:
+			_over_sent = true
+			arrested.emit()
+	else:
+		human.kneel = move_toward(human.kneel, 0.0, delta * 2.0)
 
 
 func _on_footstep(speed: float) -> void:
@@ -553,8 +774,10 @@ func call_crowd() -> void:
 ## Mains : outil en cours, puis poubelle tenue ou geste d'appel par-dessus
 func _hands() -> Array:
 	var out: Array = [null, null]
-	if _tool_hands.is_valid():
+	if _tool_hands.is_valid() and arrest_phase == "" and down_t <= 0.0:
 		out = _tool_hands.call()
+	if arrest_phase != "" or down_t > 0.0 or gas_level > 0.4 or pepper_level > 0.35:
+		return _status_hands(out)
 	if _grab_bin != null:
 		var fwd := Basis(Vector3.UP, human.rotation.y) * Vector3(0, 0, -1)
 		out = [{"pos": _grab_bin.handle_world(0.13) + Vector3.UP * 0.03, "f": fwd, "p": Vector3.DOWN, "curl": 0.95, "w": 1.0},
@@ -583,6 +806,45 @@ func _hands() -> Array:
 	return out
 
 
+## Mains forcées par l'état : mains derrière le dos (arrêté), bras levés (au sol), mains sur le visage (gaz, gazeuse)
+func _status_hands(out: Array) -> Array:
+	var yb := Basis(Vector3.UP, human.rotation.y)
+	var fwd: Vector3 = yb * Vector3(0, 0, -1)
+	var rgt: Vector3 = yb * Vector3(1, 0, 0)
+	var up := Vector3.UP
+	var k := human.arm_length() / 0.58
+	if arrest_phase != "":
+		var shr := human.shoulder_world("R")
+		var shl := human.shoulder_world("L")
+		var back_r := shr - fwd * 0.12 * k - up * 0.5 * k - rgt * 0.02
+		var back_l := shl - fwd * 0.12 * k - up * 0.5 * k + rgt * 0.02
+		if arrest_phase == "cuffed":
+			back_r = (shr + shl) * 0.5 - fwd * 0.16 * k - up * 0.55 * k - rgt * 0.045
+			back_l = (shr + shl) * 0.5 - fwd * 0.16 * k - up * 0.55 * k + rgt * 0.045
+		var w := 1.0
+		var hr := {"pos": back_r, "f": -up * 0.7 - fwd * 0.2, "p": -rgt, "curl": 0.5, "w": w}
+		var hl := {"pos": back_l, "f": -up * 0.7 - fwd * 0.2, "p": rgt, "curl": 0.5, "w": w}
+		if arrest_phase == "grabbed":
+			# le bras droit se débat devant, le gauche est tiré en arrière
+			var tt := Time.get_ticks_msec() / 1000.0
+			hr = {"pos": shr + fwd * 0.28 * k - up * 0.1 * k + rgt * sin(tt * 13.0) * 0.09, "f": fwd * 0.5 + up * 0.3, "p": -rgt, "curl": 0.8, "w": 1.0}
+		return [hr, hl]
+	if down_t > 0.0:
+		var shr2 := human.shoulder_world("R")
+		var shl2 := human.shoulder_world("L")
+		return [{"pos": shr2 + fwd * 0.18 * k + up * 0.3 * k, "f": fwd * 0.3 + up * 0.8, "p": -rgt, "curl": 0.5, "w": 1.0},
+			{"pos": shl2 + fwd * 0.2 * k + up * 0.25 * k, "f": fwd * 0.3 + up * 0.8, "p": rgt, "curl": 0.5, "w": 1.0}]
+	# mains sur le visage
+	var hd := human.head_world()
+	var cw := clampf(maxf(gas_level - 0.3, pepper_level - 0.2) * 2.5, 0.0, 1.0)
+	var wob := sin(Time.get_ticks_msec() / 1000.0 * 7.0) * 0.012
+	var hr3 := {"pos": hd + fwd * 0.11 + rgt * 0.06 + up * (-0.02 + wob), "f": up * 0.8 - rgt * 0.3, "p": -fwd, "curl": 0.35, "w": cw}
+	var hl3 := {"pos": hd + fwd * 0.11 - rgt * 0.06 + up * (-0.02 - wob), "f": up * 0.8 + rgt * 0.3, "p": -fwd, "curl": 0.35, "w": cw}
+	if out[0] != null and cw < 0.6:
+		return out
+	return [hr3, hl3]
+
+
 ## Invite contextuelle : [touches, texte] ou []
 func context_prompt() -> Array:
 	if _grab_bin != null:
@@ -600,6 +862,9 @@ func context_prompt() -> Array:
 			if not flare_tool.is_lit():
 				return [["CLIC GAUCHE"], "Craquer le fumigène"]
 			return [["CLIC DROIT", "CLIC GAUCHE"], "Brandir · Lancer"]
+		0:
+			if flare_tool.carrying:
+				return [["CLIC DROIT", "CLIC GAUCHE"], "Fumigène en main : brandir · lancer"]
 	return []
 
 
@@ -646,12 +911,13 @@ func _update_camera(delta: float, speed: float) -> void:
 	# balancement de la tête en 1re personne + amorti à la réception
 	_land_dip = move_toward(_land_dip, 0.0, delta * 0.35)
 	var sp := clampf(speed / RUN_SPEED, 0.0, 1.0) * human._walk_w
-	var bob_y := sin(human.phase * TAU * 2.0) * (0.010 + 0.018 * _run_t) * sp * e
-	var bob_x := sin(human.phase * TAU) * (0.006 + 0.01 * _run_t) * sp * e
-	cam_yaw.position.y = EYE_HEIGHT + bob_y - _land_dip
+	var bob_k := 1.0 if Settings.d["head_bob"] else 0.0
+	var bob_y := sin(human.phase * TAU * 2.0) * (0.010 + 0.018 * _run_t) * sp * e * bob_k
+	var bob_x := sin(human.phase * TAU) * (0.006 + 0.01 * _run_t) * sp * e * bob_k
+	cam_yaw.position.y = EYE_HEIGHT + bob_y - _land_dip - 1.15 * _down_e - 0.62 * human.kneel
 	cam_pitch.position.x = bob_x
 	# champ de vision : s'ouvre en courant, se resserre en visant
-	var fov_target := lerpf(72.0 + 8.0 * _run_t, 46.0, k)
+	var fov_target := lerpf(float(Settings.d["fov"]) + 8.0 * _run_t, 46.0, k)
 	camera.fov = lerpf(camera.fov, fov_target, minf(1.0, delta * 7.0))
 	camera.cull_mask = 1 if e > 0.5 else 0xFFFFF
 
@@ -666,6 +932,6 @@ func _update_camera(delta: float, speed: float) -> void:
 	camera.rotation = sway
 
 	_shake = move_toward(_shake, 0.0, delta * 3.5)
-	var s := _shake * _shake * 0.02
+	var s := _shake * _shake * 0.02 * float(Settings.d["screen_shake"])
 	camera.h_offset = _rng.randf_range(-s, s)
 	camera.v_offset = _rng.randf_range(-s, s)

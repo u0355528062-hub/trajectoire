@@ -60,6 +60,9 @@ var _banner_r: Npc
 var _chats: Array = []
 var _rings := {}
 var fire_srcs: Array = []          # poubelles et feux au sol (cache par image)
+var police: Police
+var _throw_cd := 6.0
+var _rescuers := 0
 var _arson_cd := 140.0
 var _later: Array = []
 var _sound_cd := {}
@@ -305,13 +308,16 @@ func _spawn_all() -> void:
 
 
 func _build_audio() -> void:
+	Settings.ensure_buses()
 	_chant_player = AudioStreamPlayer3D.new()
+	_chant_player.bus = &"Ambiance"
 	_chant_player.unit_size = 16.0
 	_chant_player.max_distance = 160.0
 	_chant_player.volume_db = 1.0
 	add_child(_chant_player)
 	_chant_player.finished.connect(_on_chant_done)
 	_murmur = AudioStreamPlayer3D.new()
+	_murmur.bus = &"Ambiance"
 	_murmur.stream = AudioLib.stream("crowd_murmur", true)
 	_murmur.unit_size = 9.0
 	_murmur.max_distance = 120.0
@@ -319,12 +325,14 @@ func _build_audio() -> void:
 	add_child(_murmur)
 	_murmur.play()
 	_claps = AudioStreamPlayer3D.new()
+	_claps.bus = &"Ambiance"
 	_claps.stream = AudioLib.stream("claps_group", true)
 	_claps.unit_size = 9.0
 	_claps.volume_db = -60.0
 	add_child(_claps)
 	_claps.play()
 	_bed = AudioStreamPlayer.new()
+	_bed.bus = &"Ambiance"
 	_bed.stream = AudioLib.stream("crowd_murmur", true)
 	_bed.volume_db = -27.0
 	add_child(_bed)
@@ -344,6 +352,7 @@ func _physics_process(delta: float) -> void:
 	if _nav_dirty:
 		rebuild_nav()
 	_update_arson(delta)
+	_update_hostility(delta)
 	_update_cortege(delta)
 	_update_chats(delta)
 	_update_rally(delta)
@@ -541,8 +550,8 @@ func chat_listener_target(n: Npc) -> Npc:
 
 
 # ------------------------------------------------------------------- voix
-func voice_ok(n: Npc, loud: bool) -> bool:
-	return voices < MAX_VOICES and near_listener(n.global_position, 40.0 if loud else 17.0)
+func voice_ok(n: Actor, loud: bool) -> bool:
+	return voices < MAX_VOICES and near_listener(n.global_position, 70.0 if (loud and n is Cop) else (40.0 if loud else 17.0))
 
 
 func voice_started() -> void:
@@ -613,6 +622,22 @@ func remove_obstacle(node: Node3D) -> void:
 
 func mark_nav_dirty() -> void:
 	_nav_dirty = true
+
+
+func nav_dirty() -> void:
+	_nav_dirty = true
+
+
+## Un policier rejoint la simulation : il est animé et fait partie des obstacles mouvants
+func register_cop(c: Cop) -> void:
+	if not actors.has(c):
+		actors.append(c)
+
+
+func unregister_actor(a: Actor) -> void:
+	actors.erase(a)
+	if a is Npc:
+		npcs.erase(a)
 
 
 func rebuild_nav() -> void:
@@ -742,6 +767,10 @@ func resolve(n: Actor, p: Vector3) -> Vector3:
 		p = _push_circle(p, src.global_position, r)
 	if player:
 		p = _push_circle(p, player.global_position, 0.48)
+	if n is Cop:
+		p.x = clampf(p.x, -125.0, 125.0)
+		p.z = clampf(p.z, AREA_MIN.y - 12.0, AREA_MAX.y + 12.0)
+		return p
 	p.x = clampf(p.x, AREA_MIN.x - 4.0, AREA_MAX.x + 4.0)
 	p.z = clampf(p.z, AREA_MIN.y - 4.0, AREA_MAX.y + 4.0)
 	return p
@@ -929,18 +958,21 @@ func attack_slot(n: Npc) -> Dictionary:
 		if not bus.pane_alive(i):
 			continue
 		var c := bus.pane_center(i)
-		var kick_ok := i <= 3
-		if kick_ok:
-			for off in [-0.28, 0.28]:
+		# coups de pied : de derrière l'abribus ET de l'intérieur (côté rue)
+		for off in [-0.28, 0.28]:
+			for side in [0, 1]:
 				var lp: Vector3
 				var lf: Vector3
 				if i <= 2:
-					lp = Vector3(bus.pane_local_x(i) + off, 0, -1.55)
+					lp = Vector3(bus.pane_local_x(i) + off, 0, -1.55 if side == 0 else 0.1)
 					lf = Vector3(bus.pane_local_x(i) + off, 1.0, -0.75)
-				else:
-					lp = Vector3(-2.65, 0, off)
+				elif i == 3:
+					lp = Vector3(-2.65 if side == 0 else -1.15, 0, off)
 					lf = Vector3(-1.85, 1.0, off)
-				cands.append({"kind": "kick", "pane": i, "pos": bus.to_global(lp), "face": bus.to_global(lf), "target": bus.to_global(lf), "key": "k%d%s" % [i, off]})
+				else:
+					lp = Vector3(2.5 if side == 0 else 1.05, 0, off)
+					lf = Vector3(1.69, 1.0, off)
+				cands.append({"kind": "kick", "pane": i, "pos": bus.to_global(lp), "face": bus.to_global(lf), "target": bus.to_global(lf), "key": "k%d%s%d" % [i, off, side]})
 		for xo in [-3.2, -1.4, 0.4, 2.2]:
 			var lp2 := Vector3(xo + float(i) * 0.15, 0, 6.2 + float(i % 2) * 0.9)
 			var tgt := c + Vector3(_rng.randf_range(-0.2, 0.2), _rng.randf_range(-0.35, 0.25), 0)
@@ -956,10 +988,11 @@ func attack_slot(n: Npc) -> Dictionary:
 		if taken.has(cd["key"]):
 			continue
 		var score: float = (cd["pos"] as Vector3).distance_to(n.global_position)
+		var kicker: bool = (n.idx * 7 + 3) % 10 < 6      # 6 manifestants sur 10 préfèrent les coups de pied
 		if cd["kind"] == "kick":
-			score -= 6.0 * n.bold
+			score -= (11.0 if kicker else 1.0) + 5.0 * n.bold
 		else:
-			score -= 3.0 * (1.0 - n.bold)
+			score -= (1.0 if kicker else 8.0) + 2.0 * (1.0 - n.bold)
 		score += _rng.randf_range(0.0, 3.0)
 		if score < bs:
 			bs = score
@@ -1038,11 +1071,107 @@ func on_event(type: String, d: Dictionary) -> void:
 			_gather(d["pos"], 3, 22.0)
 		"call":
 			_ev_call(d)
+		"police_gas":
+			_ev_police_gas(d)
+		"gas_land":
+			_ev_gas_land(d)
+		"police_lbd", "police_baton", "civil_hit":
+			_ev_violence(type, d)
+		"grab":
+			_ev_grab(d)
+		"boarded":
+			_crowd_sound("crowd_boo", d["pos"], -2.0, 5.0)
 		"kick_bus":
 			for n in _near(d["pos"], 22.0):
 				if n.state == "home" and n.react_cd <= 0.0 and _rng.randf() < 0.35:
 					var pc := n._prop_cheer_pose()
 					n.react(pc[0] if n.bold > 0.55 else n._prop_rest_pose(), 1.6, d["pos"] + Vector3.UP, {"voice": "allez", "voice_p": 0.3 * n.bold, "prm": pc[1] if n.bold > 0.55 else {}})
+
+
+## Les manifestants lancent des objets sur la police quand la situation s'envenime
+func _update_hostility(delta: float) -> void:
+	if police == null or police.stage < 2:
+		return
+	_throw_cd -= delta
+	if _throw_cd > 0.0:
+		return
+	_throw_cd = _rng.randf_range(2.2, 4.5) / (1.0 + 0.5 * float(police.stage - 2))
+	var cop_near: Cop = null
+	var cands: Array[Npc] = []
+	for n in npcs:
+		if n.busy() or n.state != "home" or n.bold < 0.5 or n.prop in ["banner", "megaphone", "mortar"]:
+			continue
+		var c := police.nearest_cop(n.global_position, 30.0)
+		if c == null:
+			continue
+		var d := c.global_position.distance_to(n.global_position)
+		if d > 9.0 and d < 28.0:
+			cands.append(n)
+	if cands.is_empty():
+		return
+	var n2: Npc = cands[_rng.randi() % cands.size()]
+	var tcop := police.nearest_cop(n2.global_position, 30.0)
+	if tcop:
+		n2.throw_at(tcop)
+
+
+func _ev_police_gas(d: Dictionary) -> void:
+	var p: Vector3 = d["pos"]
+	var voiced := 0
+	for n in _near(p, 34.0):
+		if n.busy() or n.state not in ["home", "react", "watch", "goto_look"] or n.react_cd > 0.0 and n.state == "react":
+			continue
+		if _rng.randf() < 0.6:
+			var away := n.global_position - p
+			away.y = 0.0
+			n.react("cover", 1.6, p + Vector3.UP * 4.0, {"voice": "fear" if voiced < 2 else "", "voice_p": 0.6})
+			voiced += 1
+			n.go(clamp_area(n.global_position + away.normalized() * _rng.randf_range(3.0, 6.0)), true, 0.6)
+
+
+func _ev_gas_land(d: Dictionary) -> void:
+	var p: Vector3 = d["pos"]
+	excitement = minf(excitement + 0.1, 1.0)
+	_crowd_sound("crowd_gasp", p + Vector3.UP * 1.5, -2.0, 6.0)
+	later(0.8, func(): _crowd_sound("crowd_gas", p + Vector3.UP * 1.5, -4.0, 8.0))
+
+
+func _ev_violence(type: String, d: Dictionary) -> void:
+	var p: Vector3 = d["pos"]
+	var voiced := 0
+	for n in _near(p, 22.0):
+		if n == d.get("who") or n.busy() or n.state not in ["home", "react", "watch", "goto_look"]:
+			continue
+		var close := n.global_position.distance_to(p) < 9.0
+		if n.bold > 0.65 and _rng.randf() < 0.55:
+			n.hostile = minf(n.hostile + 0.25, 1.0)
+			n.react("fist", 2.5, p + Vector3.UP, {"voice": "anger", "voice_p": 0.7 if voiced < 3 else 0.2, "prm": {"k": 1.0}})
+			voiced += 1
+		elif close and _rng.randf() < 0.5:
+			var away := n.global_position - p
+			away.y = 0.0
+			n.react("cover", 1.8, p + Vector3.UP, {"voice": "fear", "voice_p": 0.5})
+			n.go(clamp_area(n.global_position + away.normalized() * _rng.randf_range(3.0, 5.0)), true, 0.6)
+		elif _rng.randf() < 0.4:
+			n.react("head", 2.0, p + Vector3.UP, {})
+	_crowd_sound("crowd_gasp", p + Vector3.UP * 1.5, -6.0, 6.0)
+
+
+func _ev_grab(d: Dictionary) -> void:
+	var p: Vector3 = d["pos"]
+	var cop: Node3D = d.get("cop")
+	var voiced := 0
+	for n in _near(p, 24.0):
+		if n == d.get("who") or n.busy():
+			continue
+		if n.bold > 0.6 and _rescuers < 2 and cop != null and _rng.randf() < 0.3 and n.global_position.distance_to(p) < 16.0:
+			_rescuers += 1
+			n.rescue(cop)
+			later(14.0, func(): _rescuers = maxi(_rescuers - 1, 0))
+		elif n.state == "home" and _rng.randf() < 0.45:
+			n.react("fist" if n.bold > 0.5 else "head", 2.5, p + Vector3.UP * 1.3, {"voice": "free", "voice_p": 0.7 if voiced < 3 else 0.15, "prm": {"k": 1.0}})
+			voiced += 1
+	_crowd_sound("crowd_anger", p + Vector3.UP * 1.5, -3.0, 6.0)
 
 
 func _near(p: Vector3, r: float) -> Array[Npc]:

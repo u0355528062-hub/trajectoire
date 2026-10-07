@@ -15,6 +15,7 @@ const T_FOLLOW := 0.45
 
 var human: Human
 var equipped := false
+var carrying := false     # fumigène allumé gardé en main quand on range l'outil (mains libres)
 var busy := false
 var aim_t := 0.0       # = « brandir »
 var equip_t := 0.0
@@ -52,9 +53,19 @@ func _ensure_flare() -> void:
 		flare.burnt_out.connect(_on_burnt_out)
 
 
-func set_equipped(on: bool) -> void:
+func active() -> bool:
+	return equipped or carrying
+
+
+## on=false avec carry : on range l'outil mais le fumigène allumé reste dans la main
+func set_equipped(on: bool, carry := false) -> void:
 	if busy and not on:
 		return
+	if not on and carry and is_lit() and flare != null and flare.held:
+		equipped = false
+		carrying = true
+		return
+	carrying = false
 	equipped = on
 	if on:
 		_ensure_flare()
@@ -62,6 +73,7 @@ func set_equipped(on: bool) -> void:
 
 func hide_now() -> void:
 	equipped = false
+	carrying = false
 	equip_t = 0.0
 	_t = -1.0
 	_tt = -1.0
@@ -73,13 +85,13 @@ func hide_now() -> void:
 
 
 func set_aim(on: bool) -> void:
-	_aim_input = on and equipped
+	_aim_input = on and active()
 
 
 func reload_all() -> void:
 	count = MAX
 	count_changed.emit(count, MAX)
-	if equipped:
+	if active():
 		_ensure_flare()
 
 
@@ -88,7 +100,7 @@ func is_lit() -> bool:
 
 
 func use() -> void:
-	if not equipped or busy or equip_t < 0.6:
+	if not active() or busy or equip_t < 0.6:
 		return
 	if flare == null:
 		message.emit("Plus de fumigènes (R pour recharger)")
@@ -107,7 +119,7 @@ func _ease(x: float) -> float:
 
 
 func step(delta: float) -> void:
-	equip_t = move_toward(equip_t, 1.0 if equipped else 0.0, delta * 3.0)
+	equip_t = move_toward(equip_t, 1.0 if active() else 0.0, delta * 3.0)
 	var raise := _aim_input and is_lit() and _t < 0.0 and _tt < 0.0
 	aim_t = move_toward(aim_t, 1.0 if raise else 0.0, delta * 2.8)
 	_fresh = move_toward(_fresh, 1.0, delta * 2.0)
@@ -130,6 +142,7 @@ func step(delta: float) -> void:
 			_tt = -1.0
 			busy = false
 			_fresh = 0.0
+			carrying = false
 			if equipped:
 				_ensure_flare()
 	if flare:
@@ -151,6 +164,7 @@ func _drop_current() -> void:
 	f.reparent(get_tree().current_scene, true)
 	f.release(Vector3.UP * 0.5 + (-human.global_basis.z) * 0.8, Vector3(2, 0, 1))
 	_fresh = 0.0
+	carrying = false
 	if equipped:
 		_ensure_flare()
 

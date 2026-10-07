@@ -5,6 +5,8 @@ var player: Player
 
 
 func _ready() -> void:
+	Settings.load_all()
+	Settings.ensure_buses()
 	_build_environment()
 	add_child(Skyline.new())
 	add_child(Ambient.new())
@@ -16,12 +18,28 @@ func _ready() -> void:
 	add_child(player)
 	player.position = Vector3(0, 0.05, 0)
 	_build_props_world()
+	var tension := Tension.new()
+	tension.name = "Tension"
+	add_child(tension)
 	var crowd := Crowd.new()
 	crowd.setup(player, bus)
 	add_child(crowd)
+	var police := Police.new()
+	police.name = "Police"
+	police.setup(crowd, player, tension)
+	add_child(police)
 	var hud := preload("res://scripts/hud.gd").new()
 	add_child(hud)
 	hud.bind(player)
+	var hudfx := HudFx.new()
+	hudfx.add_to_group("hud")
+	add_child(hudfx)
+	hudfx.bind(player, tension)
+	var pause := PauseMenu.new()
+	pause.name = "PauseMenu"
+	add_child(pause)
+	pause.bind(player, tension, police, crowd)
+	Settings.apply(get_tree())
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 

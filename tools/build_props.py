@@ -175,6 +175,74 @@ def phone_screens():
     a.save(OUT + "/phone_cam.png")
 
 
+def vehicle_decals():
+    # bandeaux « POLICE » des véhicules : bleu/blanc/rouge, lettrage blanc ou bleu
+    f = ImageFont.truetype(BOLD, 74)
+    # flanc : bande bleue + liseré rouge + texte blanc
+    W, H = 768, 160
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 18, W, 112], fill=(16, 38, 120, 255))
+    d.rectangle([0, 112, W, 124], fill=(220, 40, 40, 255))
+    d.rectangle([0, 6, W, 18], fill=(235, 238, 245, 255))
+    tw = d.textlength("POLICE", font=f)
+    d.text(((W - tw) / 2, 24), "POLICE", font=f, fill=(245, 247, 252, 255))
+    img.save(OUT + "/pol_side.png")
+    # capot / toit : lettrage bleu
+    img2 = Image.new("RGBA", (512, 200), (0, 0, 0, 0))
+    d2 = ImageDraw.Draw(img2)
+    f2 = ImageFont.truetype(BOLD, 112)
+    tw2 = d2.textlength("POLICE", font=f2)
+    d2.text(((512 - tw2) / 2, 30), "POLICE", font=f2, fill=(18, 40, 130, 255))
+    img2.save(OUT + "/pol_text_blue.png")
+    img3 = Image.new("RGBA", (512, 200), (0, 0, 0, 0))
+    d3 = ImageDraw.Draw(img3)
+    d3.text(((512 - tw2) / 2, 30), "POLICE", font=f2, fill=(244, 246, 252, 255))
+    img3.save(OUT + "/pol_text_white.png")
+    # fourgon : bande blanche + texte
+    img4 = Image.new("RGBA", (1024, 180), (0, 0, 0, 0))
+    d4 = ImageDraw.Draw(img4)
+    d4.rectangle([0, 30, 1024, 150], fill=(238, 240, 246, 255))
+    d4.rectangle([0, 150, 1024, 164], fill=(210, 40, 40, 255))
+    f4 = ImageFont.truetype(BOLD, 96)
+    tw4 = d4.textlength("POLICE", font=f4)
+    d4.text(((1024 - tw4) / 2, 36), "POLICE", font=f4, fill=(16, 36, 110, 255))
+    img4.save(OUT + "/pol_van_side.png")
+    # grillage de vitre (fourgon)
+    img5 = Image.new("RGBA", (128, 128), (0, 0, 0, 0))
+    d5 = ImageDraw.Draw(img5)
+    for i in range(0, 128, 16):
+        d5.line([(i, 0), (i, 128)], fill=(20, 22, 26, 235), width=3)
+        d5.line([(0, i), (128, i)], fill=(20, 22, 26, 235), width=3)
+    img5.save(OUT + "/grille.png")
+
+
+def shield_tex():
+    # bouclier anti-émeute : polycarbonate presque transparent, rayures, lettrage POLICE en bas
+    W, H = 256, 512
+    base = np.zeros((H, W, 4), np.float32)
+    base[..., 0] = 0.72
+    base[..., 1] = 0.84
+    base[..., 2] = 0.95
+    n = noise_img(W, H, 3, 40, 71)
+    base[..., 3] = 0.12 + 0.025 * n
+    img = Image.fromarray((np.clip(base, 0, 1) * 255).astype(np.uint8), "RGBA")
+    d = ImageDraw.Draw(img)
+    rr = random.Random(11)
+    for _ in range(46):  # rayures
+        x0, y0 = rr.randint(0, W), rr.randint(0, H)
+        L = rr.randint(14, 90)
+        a = rr.uniform(-0.5, 0.5) + rr.choice([0.0, 1.57])
+        d.line([(x0, y0), (x0 + L * math.cos(a), y0 + L * math.sin(a))], fill=(255, 255, 255, rr.randint(40, 110)), width=1)
+    f = ImageFont.truetype(BOLD, 56)
+    txt = "POLICE"
+    tw = d.textlength(txt, font=f)
+    d.text(((W - tw) / 2, H * 0.74), txt, font=f, fill=(245, 247, 252, 238))
+    d.rectangle([W * 0.1, H * 0.70, W * 0.9, H * 0.715], fill=(20, 40, 120, 220))
+    d.rectangle([W * 0.1, H * 0.885, W * 0.9, H * 0.90], fill=(20, 40, 120, 220))
+    img.save(OUT + "/shield.png")
+
+
 def flames():
     # atlas 4x4 de flammes (dégradé blanc-jaune -> orange -> rouge, bords bruités)
     S, N = 128, 4
@@ -282,5 +350,5 @@ def misc():
 
 
 if __name__ == "__main__":
-    signs(); phone_screens(); flames(); misc(); fire_ground()
+    signs(); phone_screens(); flames(); shield_tex(); vehicle_decals(); misc(); fire_ground()
     print("ok")

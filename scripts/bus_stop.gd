@@ -372,20 +372,20 @@ func _build_street() -> void:
 	asphalt.metallic_specular = 0.6
 	asphalt.uv1_triplanar = true
 	asphalt.uv1_scale = Vector3(1.6, 1.6, 1.6)
-	var road := _box(self, Vector3(120.0, 0.02, 7.0), Vector3(0, 0.01, 5.6), asphalt)
+	var road := _box(self, Vector3(280.0, 0.02, 7.0), Vector3(0, 0.01, 5.6), asphalt)
 	road.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_static_box(Vector3(120.0, 0.04, 7.0), Vector3(0, 0.0, 5.6))
+	_static_box(Vector3(280.0, 0.04, 7.0), Vector3(0, 0.0, 5.6))
 	var dash := StandardMaterial3D.new()
 	dash.albedo_texture = _tex("road_dash.png")
 	dash.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	dash.roughness = 0.6
-	for i in range(-18, 19):
+	for i in range(-43, 44):
 		_quad(self, Vector2(2.6, 0.14), Vector3(i * 3.2, 0.024, 5.6), dash, Vector3(-PI / 2.0, 0, 0))
 	var edge := StandardMaterial3D.new()
 	edge.albedo_color = Color(0.9, 0.9, 0.85)
 	edge.roughness = 0.6
-	_box(self, Vector3(120.0, 0.004, 0.12), Vector3(0, 0.022, 2.25), edge)
-	_box(self, Vector3(120.0, 0.004, 0.12), Vector3(0, 0.022, 8.95), edge)
+	_box(self, Vector3(280.0, 0.004, 0.12), Vector3(0, 0.022, 2.25), edge)
+	_box(self, Vector3(280.0, 0.004, 0.12), Vector3(0, 0.022, 8.95), edge)
 	var bus := StandardMaterial3D.new()
 	bus.albedo_texture = _tex("road_bus.png")
 	bus.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA

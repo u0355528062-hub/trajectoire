@@ -480,6 +480,9 @@ void fragment() {
 	_help_tween = create_tween()
 	_help_tween.tween_interval(14.0)
 	_help_tween.tween_property(_help, "modulate:a", 0.0, 1.5)
+	if not Settings.d["show_help"]:
+		_help_tween.kill()
+		_help.modulate.a = 0.0
 
 
 func _process(delta: float) -> void:
