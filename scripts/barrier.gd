@@ -146,10 +146,10 @@ func _on_body(body: Node) -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	if sp > 1.0 and now - _last_hit > 0.12:
 		_last_hit = now
-		AudioLib.play_at(self, "sfx:metal_clang_s" if sp < 3.0 else "sfx:metal_clang", global_position + Vector3.UP * 0.4, clampf(-14.0 + sp * 2.5, -14.0, 0.0), 8.0, randf_range(0.9, 1.15))
+		AudioLib.play_at(self, "barrier_hit", global_position + Vector3.UP * 0.4, clampf(-14.0 + sp * 2.5, -14.0, 0.0), 8.0, randf_range(0.9, 1.15))
 	if angular_velocity.length() > 2.5 and body is StaticBody3D and now - _last_fall > 0.6 and global_basis.y.dot(Vector3.UP) < 0.8:
 		_last_fall = now
-		AudioLib.play_at(self, "sfx:metal_fall", global_position + Vector3.UP * 0.3, -2.0, 10.0, randf_range(0.92, 1.08))
+		AudioLib.play_at(self, "barrier_fall", global_position + Vector3.UP * 0.3, -2.0, 10.0, randf_range(0.92, 1.08))
 		get_tree().call_group("crowd", "on_event", "barrier_fall", {"pos": global_position})
 
 
@@ -163,7 +163,7 @@ func kick(point: Vector3, dir: Vector3, power := 1.0) -> bool:
 	var d := Vector3(dir.x, 0, dir.z).normalized()
 	var imp := d * MASS * 2.4 * power
 	apply_impulse(imp, point - global_position)
-	AudioLib.play_at(self, "sfx:metal_clang", point, -3.0, 8.0, randf_range(0.9, 1.1))
+	AudioLib.play_at(self, "barrier_hit", point, -3.0, 8.0, randf_range(0.9, 1.1))
 	return true
 
 
@@ -199,4 +199,4 @@ func right_up(yaw: float, duration := 0.9) -> void:
 		_register_nav()
 		if crowd:
 			crowd.nav_dirty()
-		AudioLib.play_at(self, "sfx:metal_clang", global_position + Vector3.UP * 0.3, -4.0, 8.0, 0.85))
+		AudioLib.play_at(self, "barrier_up", global_position + Vector3.UP * 0.3, -4.0, 8.0, 1.0))

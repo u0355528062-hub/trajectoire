@@ -30,6 +30,7 @@ var _land_sound := 0.0
 
 func _ready() -> void:
 	_seed = randf() * 100.0
+	add_to_group("flares")
 	mass = 0.3
 	collision_layer = 0 if held else 64
 	collision_mask = 0 if held else (1 | 32)

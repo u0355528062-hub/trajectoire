@@ -270,7 +270,7 @@ func _prop_cheer_pose() -> Array:
 
 
 func busy() -> bool:
-	return state in ["rally", "feed", "mortar", "panic", "dodge", "gassed", "hit", "sprayed", "arrested", "boarded", "rescue", "throwcop"]
+	return state in ["rally", "feed", "mortar", "panic", "dodge", "gassed", "hit", "sprayed", "arrested", "boarded", "rescue", "throwcop", "carattack", "vandal"]
 
 
 ## Réaction courte : pose, durée, point regardé, options {voice, loud, hop, face, run_to}
@@ -354,6 +354,10 @@ func _think(delta: float) -> void:
 			_think_rescue(delta)
 		"throwcop":
 			_think_throwcop(delta)
+		"carattack":
+			_think_carattack(delta)
+		"vandal":
+			_think_vandal(delta)
 		"goto_look":
 			if not has_goal or state_t > 12.0:
 				react("film" if _rng.randf() < 0.5 else _idle_pose, _rng.randf_range(4.0, 8.0), data.get("look", global_position))
@@ -1205,6 +1209,16 @@ func _on_kick_impact(point: Vector3) -> void:
 	var bus: BusStop = data.get("bus") if state == "rally" else null
 	if bus:
 		bus.kick(point + fwd * 0.12, fwd, 0.55)
+	var car: PoliceVehicle = data.get("car") if state == "carattack" else null
+	if car != null and is_instance_valid(car):
+		if car.kick(point + fwd * 0.12, fwd, 0.9):
+			data["hits"] = int(data.get("hits", 0)) + 1
+	# les meubles de rue sur le passage (barrière, cône, panneau...) encaissent aussi
+	if state == "vandal":
+		for n in get_tree().get_nodes_in_group("kickable"):
+			if n.has_method("kick") and not (n is PoliceVehicle) and n.kick(point + fwd * 0.12, fwd, 0.8):
+				data["done"] = true
+				break
 
 
 ## Touché par une pierre du joueur
@@ -1216,6 +1230,174 @@ func on_stone_hit(from_dir: Vector3) -> void:
 	if crowd:
 		src = crowd.player_pos()
 	react("refuse", 2.5, src + Vector3.UP * 1.6, {"voice": "warn", "force": true})
+
+
+# ------------------------------------------------------------------- vandalisme d'une voiture de police
+func attack_car(car: PoliceVehicle) -> void:
+	if busy() or car == null or not is_instance_valid(car):
+		return
+	_drop_item()
+	state = "carattack"
+	state_t = 0.0
+	sub = "pick"
+	sub_t = 0.0
+	data = {"car": car, "style": "kick" if _rng.randf() < 0.62 else "stone", "hits": 0, "throws": 0}
+	stop_move()
+
+
+func _car_slot(car: PoliceVehicle, near_pane: GlassPane = null) -> Vector3:
+	if near_pane != null:
+		# lanceur de pierres : à 4-6 m de la vitre visée, face à elle
+		var n := (near_pane.global_basis * Vector3(0, 0, 1))
+		n.y = 0.0
+		n = n.normalized()
+		if (global_position - near_pane.global_position).dot(n) < 0.0:
+			n = -n
+		return near_pane.global_position * Vector3(1, 0, 1) + n * _rng.randf_range(4.0, 5.5) + n.cross(Vector3.UP) * _rng.randf_range(-1.5, 1.5)
+	var side := 1.0 if (global_position - car.global_position).dot(car.global_basis.x) > 0.0 else -1.0
+	var lz := _rng.randf_range(-car.half.y * 0.55, car.half.y * 0.55)
+	return car.to_global(Vector3(side * (car.half.x + 0.72), 0, lz))
+
+
+func _think_carattack(delta: float) -> void:
+	sub_t += delta
+	var car: PoliceVehicle = data.get("car")
+	if car == null or not is_instance_valid(car) or state_t > 55.0:
+		go_home()
+		return
+	if car.burning and car.heat > 0.4:
+		go_home()
+		if crowd:
+			watch_fire(car, crowd.ring_point(self, car))
+		return
+	# les CRS qui arrivent : on file
+	if crowd and crowd.police and crowd.police.stage >= 1:
+		var c: Cop = crowd.police.nearest_cop(global_position, 5.5)
+		if c != null and c.state in ["charge", "strike", "arrest"] and bold < 0.9:
+			panic(c.global_position, 1.0)
+			return
+	var tgt_c := car.global_position + Vector3.UP * 0.7
+	match sub:
+		"pick":
+			var pane: GlassPane = null
+			if data["style"] == "stone":
+				var alive: Array = car.damage.panes.filter(func(p): return is_instance_valid(p) and p.alive())
+				if not alive.is_empty():
+					pane = alive[_rng.randi() % alive.size()]
+				else:
+					data["style"] = "kick"
+			data["pane"] = pane
+			var slot := _car_slot(car, pane)
+			data["slot"] = slot
+			go(crowd.clamp_area(slot) if crowd else slot, true, 0.3)
+			sub = "go"
+			sub_t = 0.0
+		"go":
+			look(tgt_c, 0.8)
+			if not has_goal or sub_t > 12.0:
+				stop_move()
+				face(tgt_c)
+				sub = "kick" if data["style"] == "kick" else "stone_pick"
+				sub_t = -_rng.randf_range(0.2, 0.8)
+		"kick":
+			face(tgt_c)
+			look(tgt_c, 1.0)
+			set_act(_idle_pose if prop == "" else _prop_rest_pose(), {}, 2.0)
+			if sub_t > 0.0 and human.kick_t < 0.0 and absf(wrapf(_yaw_to(tgt_c) - yaw, -PI, PI)) < 0.35:
+				human.start_kick()
+				sub_t = -_rng.randf_range(1.3, 3.0)
+				if _rng.randf() < 0.5:
+					say_cat("ouais" if _rng.randf() < 0.5 else "allez", true)
+				# après quelques coups, certains passent aux pierres ou s'en vont
+				if int(data.get("hits", 0)) >= 6 and _rng.randf() < 0.4:
+					data["style"] = "stone"
+					sub = "pick"
+		"stone_pick":
+			var pn: GlassPane = data.get("pane")
+			if pn == null or not is_instance_valid(pn) or not pn.alive():
+				sub = "pick"
+				return
+			if sub_t < 0.0:
+				return
+			face(pn.global_position)
+			human.crouch = lerpf(human.crouch, 0.8, minf(1.0, delta * 5.0))
+			human.lean_extra = lerpf(human.lean_extra, 0.25, minf(1.0, delta * 5.0))
+			set_act("pick", {"target": Vector3(0.18, 0.05, 0.45)}, 3.0)
+			if sub_t > 0.75:
+				stone_vis.visible = true
+				sub = "stone_throw"
+				sub_t = 0.0
+		"stone_throw":
+			human.crouch = lerpf(human.crouch, 0.0, minf(1.0, delta * 5.0))
+			human.lean_extra = lerpf(human.lean_extra, 0.0, minf(1.0, delta * 5.0))
+			var pn2: GlassPane = data.get("pane")
+			if pn2 == null or not is_instance_valid(pn2) or not pn2.alive():
+				stone_vis.visible = false
+				sub = "pick"
+				return
+			var tp := pn2.global_position
+			face(tp)
+			look(tp, 1.0)
+			var dir := _wbd(tp - human.shoulder_world("R")).normalized()
+			if sub_t < 0.45:
+				set_act("stone", {}, 4.0)
+			else:
+				set_act("throw", {"dir": dir}, 8.0)
+				if act_t > 0.48 and stone_vis.visible:
+					_throw_stone(tp)
+					data["throws"] = int(data.get("throws", 0)) + 1
+			if sub_t > 1.6:
+				sub = "stone_pick"
+				sub_t = -_rng.randf_range(1.2, 2.6)
+				if _rng.randf() < 0.35:
+					say_cat("allez" if _rng.randf() < 0.5 else "ouais", true)
+				if int(data.get("throws", 0)) >= 5 and _rng.randf() < 0.35:
+					data["style"] = "kick"
+					sub = "pick"
+
+
+## Vandalisme de mobilier de rue (cônes, barrières, panneaux, corbeilles...) : un manifestant décidé
+## s'approche de l'objet et lui donne un coup de pied
+func start_vandal(target: Node3D) -> void:
+	if busy() or target == null or not is_instance_valid(target):
+		return
+	_drop_item()
+	state = "vandal"
+	state_t = 0.0
+	sub = "go"
+	sub_t = 0.0
+	data = {"t": target, "done": false}
+	var away := global_position - target.global_position
+	away.y = 0.0
+	away = away.normalized() if away.length() > 0.1 else Vector3.RIGHT
+	go(crowd.clamp_area(target.global_position + away * 1.0) if crowd else target.global_position + away, false, 0.25)
+
+
+func _think_vandal(delta: float) -> void:
+	sub_t += delta
+	var t: Node3D = data.get("t")
+	if t == null or not is_instance_valid(t) or state_t > 25.0 or bool(data.get("done", false)):
+		if bool(data.get("done", false)) and _rng.randf() < 0.5:
+			say_cat("ouais", true)
+		go_home()
+		return
+	var tp := t.global_position + Vector3.UP * 0.2
+	match sub:
+		"go":
+			look(tp, 0.8)
+			if not has_goal or sub_t > 10.0:
+				stop_move()
+				face(tp)
+				sub = "kick"
+				sub_t = -_rng.randf_range(0.2, 0.6)
+		"kick":
+			face(tp)
+			look(tp, 1.0)
+			if sub_t > 0.0 and human.kick_t < 0.0 and absf(wrapf(_yaw_to(tp) - yaw, -PI, PI)) < 0.35:
+				human.start_kick()
+				sub_t = -1.6
+				if sub_t < 0.0 and state_t > 14.0:
+					data["done"] = true
 
 
 # ------------------------------------------------------------------- tir de mortier (PNJ)

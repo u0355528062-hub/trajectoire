@@ -118,7 +118,7 @@ func on_event(type: String, d: Dictionary) -> void:
 		"cop_hit":
 			add(0.045, "projectile sur la police")
 		"car_vandal":
-			add(0.04, "véhicule de police attaqué")
+			add(clampf(float(d.get("amount", 0.02)), 0.0, 0.05), "véhicule de police attaqué")
 		"car_burn":
 			add(0.14, "véhicule de police en feu")
 		"arrest":

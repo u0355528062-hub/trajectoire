@@ -14,6 +14,8 @@ func _build() -> void:
 	reach = Vector3(0.42, 1.2, 0.4)
 	nav_half = Vector2(0.28, 0.25)
 	vandal_amount = 0.3
+	hit_sound = "news_box_hit"
+	fall_sound = "news_box_hit"
 	var blue := Furniture.mat("news_blue", Color(0.07, 0.2, 0.55), 0.38, 0.55)
 	var dark := Furniture.mat("news_dark", Color(0.05, 0.05, 0.06), 0.6, 0.2)
 	var alu := Furniture.mat("alu", Color(0.72, 0.74, 0.77), 0.35, 0.85)

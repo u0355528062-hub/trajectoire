@@ -10,8 +10,8 @@ var reach := Vector3(0.5, 1.4, 0.5)   # zone frappable : demi-largeur, hauteur m
 var nav_half := Vector2.ZERO          # empreinte pour la navigation des PNJ (0 = aucune)
 var toppled := false
 var vandal_amount := 0.35
-var hit_sound := "sfx:metal_clang_s"
-var fall_sound := "sfx:metal_fall"
+var hit_sound := "barrier_hit"
+var fall_sound := "barrier_fall"
 var _dmg := 0.0
 var _model: Node3D
 var _wob_t := -1.0

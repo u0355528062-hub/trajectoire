@@ -37,6 +37,8 @@ var _som := 0
 var _park_n := 0
 var _alert_t := 0.0
 var _player_seen_t := 0.0
+var _car_alert_t := -99.0
+var _veh_cd := 6.0
 
 
 func setup(c: Crowd, p: Player, t: Tension) -> void:
@@ -105,7 +107,8 @@ func _spawn_cordon() -> void:
 	# véhicules déjà là, à l'arrêt, gyrophares éteints
 	var van := _make_vehicle("truck", Vector3(STREET_X + 8.0, 0, -8.7), PI / 2.0)
 	van.state = "parked"
-	var car := _make_vehicle("car", Vector3(STREET_X + 6.0, 0, -4.9), PI / 2.0 + 0.18)
+	# la voiture de patrouille est garée de travers devant la ligne : à portée des manifestants (et de leur colère)
+	var car := _make_vehicle("car", Vector3(STREET_X - 4.6, 0, -8.7), PI / 2.0 + 0.5)
 	car.state = "parked"
 	_layout()
 
@@ -272,6 +275,59 @@ func on_event(type: String, d: Dictionary) -> void:
 			pass
 		"petard_boom":
 			_react_petard(d)
+		"car_vandal":
+			_react_car_vandal(d)
+		"car_burn":
+			_react_car_burn(d)
+
+
+## Une voiture de police est attaquée : les policiers les plus proches foncent sur les agresseurs
+func _react_car_vandal(d: Dictionary) -> void:
+	var car: PoliceVehicle = d.get("car")
+	if car == null or not is_instance_valid(car) or stage < 1:
+		return
+	var now := _t
+	if now - _car_alert_t < 5.0:
+		return
+	_car_alert_t = now
+	var tgt: Node3D = null
+	if player != null and player.global_position.distance_to(car.global_position) < 7.0:
+		tgt = player
+		player.wanted = minf(player.wanted + 0.4, 1.0)
+	else:
+		# le manifestant le plus proche de la voiture
+		var bd := 14.0
+		for n in crowd.npcs:
+			if n.state in ["carattack"] and n.data.get("car") == car:
+				var dd := n.global_position.distance_to(car.global_position)
+				if dd < bd:
+					bd = dd
+					tgt = n
+		if tgt == null:
+			tgt = _nearest_civilian(car.global_position, 12.0)
+	if tgt == null:
+		return
+	var cand := _free_cops(["shield", "arrester", "spray"], ["team", "line", "patrol"])
+	cand.sort_custom(func(a: Cop, b: Cop): return a.global_position.distance_to(car.global_position) < b.global_position.distance_to(car.global_position))
+	var k := 0
+	for c in cand:
+		if k >= 2 or c.global_position.distance_to(car.global_position) > 40.0:
+			break
+		c.charge(tgt, 6.0)
+		k += 1
+	_assign_arrest(tgt, 2 if tgt is Player else 1)
+
+
+## Voiture en feu : réaction dure (gaz, charge) et le joueur est recherché s'il y est pour quelque chose
+func _react_car_burn(d: Dictionary) -> void:
+	_gas_cd = minf(_gas_cd, 2.5)
+	_charge_cd = minf(_charge_cd, 4.0)
+	_say_mega(3)
+	if d.get("player", false) and player != null:
+		player.wanted = 1.0
+	for c in cops:
+		if is_instance_valid(c):
+			c.alert = 1.0
 
 
 ## Un pétard explose : les policiers les plus proches sursautent, les autres se tournent vers le bruit.
@@ -419,6 +475,7 @@ func _physics_process(delta: float) -> void:
 	if tension:
 		tension.police_active = stage >= 1
 	_update_line(delta)
+	_follow_vehicles(delta)
 	if stage >= 1:
 		_mega_cd -= delta
 		if _mega_cd <= 0.0:
@@ -494,6 +551,23 @@ func _update_line(delta: float) -> void:
 	if _alert_t <= 0.0:
 		_alert_t = 0.5
 		_layout()
+
+
+## Les véhicules suivent le dispositif quand il avance (ils restent à portée des équipes... et des manifestants)
+func _follow_vehicles(delta: float) -> void:
+	_veh_cd -= delta
+	if _veh_cd > 0.0 or stage < 2 or mode == "hold":
+		return
+	_veh_cd = 4.0
+	var i := 0
+	for v in vehicles:
+		if not is_instance_valid(v) or not v.is_parked() or v.burning:
+			continue
+		i += 1
+		var want_x := line_c.x + 12.0 + 5.0 * float(i)
+		if v.global_position.x > want_x + 9.0:
+			v.relocate(Vector3(want_x, 0.0, v.global_position.z))
+			break
 
 
 func _advance_limit() -> float:

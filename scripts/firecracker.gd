@@ -83,12 +83,12 @@ func _light_fx() -> void:
 	_glow.light_energy = 0.3
 	_tip_n.add_child(_glow)
 	_hiss = AudioStreamPlayer3D.new()
-	_hiss.stream = Sfx.get_stream(&"fuse")
+	_hiss.stream = AudioLib.stream("petard_fuse")
 	_hiss.bus = &"Effets"
 	_hiss.volume_db = -14.0
 	_hiss.unit_size = 2.5
 	add_child(_hiss)
-	_hiss.play(maxf(0.0, 3.6 - fuse - 0.1) if fuse < 3.4 else 0.0)
+	_hiss.play()
 	if is_inside_tree():
 		get_tree().call_group("crowd", "on_event", "petard_lit", {"pos": global_position, "size": size, "player": by_player})
 
@@ -130,7 +130,7 @@ func explode(at := Vector3.INF) -> void:
 	var scene := get_tree().current_scene
 	var pos := (global_position if at == Vector3.INF else at) + Vector3(0, 0.025, 0)
 	# --- son : claquement, écho de façades
-	AudioLib.play_at(self, "sfx:petard_m" if big else "sfx:petard_s", pos, 5.0 if big else 1.0, 20.0 if big else 10.0, randf_range(0.95, 1.05))
+	AudioLib.play_at(self, "petard_medium" if big else "petard_small", pos, 5.0 if big else 1.0, 20.0 if big else 10.0, randf_range(0.95, 1.05))
 	# --- éclair : lueur brève + halo doux (sprite orienté vers la caméra)
 	var flash := OmniLight3D.new()
 	flash.light_color = Color(1.0, 0.82, 0.55)

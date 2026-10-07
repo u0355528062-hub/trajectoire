@@ -57,6 +57,15 @@ var near_bin: TrashBin
 var near_pick: Burnable
 var near_lift: Node3D            # barrière (ou autre) à terre qu'on peut redresser
 var _e_lift: Node3D
+var near_car: PoliceVehicle      # voiture dont on peut escalader le capot
+var _e_car: PoliceVehicle
+var _mantle_t := -1.0            # escalade du capot en cours
+var _mantle_car: PoliceVehicle
+var _mantle_from := Vector3.ZERO
+var _mantle_local := Vector3.ZERO
+var _mantle_yaw := 0.0
+var _mantle_mask := 0
+const MANTLE_DUR := 1.3
 var _call_t := -1.0
 var _call_cd := 0.0
 var _lift_obj: Node3D            # objet qu'on redresse (poubelle couchée, barrière tombée)
@@ -363,7 +372,7 @@ func _physics_process(delta: float) -> void:
 	if _grab_bin != null:
 		target_speed = minf(target_speed, WALK_SPEED * 0.9)
 		_run_t = 0.0
-	if igniter.busy or _lift_t >= 0.0 or arrest_phase != "" or down_t > 0.0:
+	if igniter.busy or _lift_t >= 0.0 or _mantle_t >= 0.0 or arrest_phase != "" or down_t > 0.0:
 		target_speed = 0.0   # les deux pieds au sol pendant qu'on dépose / allume / redresse / est maîtrisé
 		_run_t = 0.0
 	target_speed *= _status_speed() * lerpf(1.0, 0.55, _crouch_e)
@@ -409,8 +418,11 @@ func _physics_process(delta: float) -> void:
 				velocity.y = JUMP_VELOCITY
 	else:
 		velocity.y -= GRAVITY * delta
-	move_and_slide()
-	_push_bodies()
+	if _mantle_t >= 0.0:
+		_step_mantle(delta)
+	else:
+		move_and_slide()
+		_push_bodies()
 
 	# --- orientation du corps
 	var face_cam := first_person or current_item != 0 or _grab_bin != null
@@ -419,6 +431,8 @@ func _physics_process(delta: float) -> void:
 		target_yaw = _kick_yaw
 	elif igniter.busy and not is_nan(igniter.lock_yaw):
 		target_yaw = igniter.lock_yaw
+	elif _mantle_t >= 0.0:
+		target_yaw = _mantle_yaw
 	elif _lift_t >= 0.0:
 		target_yaw = _lift_yaw
 	elif face_cam:
@@ -460,7 +474,7 @@ func _physics_process(delta: float) -> void:
 	petard_tool.step(delta)
 	var speed := Vector3(velocity.x, 0, velocity.z).length()
 	var run_blend := clampf((speed - WALK_SPEED) / (RUN_SPEED - WALK_SPEED), 0.0, 1.0)
-	human.animate(delta, speed, run_blend, is_on_floor(), velocity.y, _pitch)
+	human.animate(delta, speed, run_blend, is_on_floor() and _mantle_t < 0.0, velocity.y if _mantle_t < 0.0 else 1.6, _pitch)
 	_update_camera(delta, speed)
 
 
@@ -889,6 +903,26 @@ func _update_bins(delta: float) -> void:
 			var d4 := (near_bin.global_position - global_position) * Vector3(1, 0, 1)
 			if d4.length() < best2:
 				near_lift = null
+	# voiture garée à escalader (capot)
+	near_car = null
+	if _grab_bin == null and _mantle_t < 0.0 and not _tools_busy() and human.kick_t < 0.0 and is_on_floor() and arrest_phase == "" and down_t <= 0.0:
+		for v in get_tree().get_nodes_in_group("vehicles"):
+			var car := v as PoliceVehicle
+			if car == null or car.kind != "car" or not car.is_parked() or car.burning:
+				continue
+			var lc := car.to_local(global_position)
+			# devant le pare-chocs ou sur le côté, à portée de main du capot
+			var front := lc.z < -2.1 and lc.z > -3.5 and absf(lc.x) < 1.2
+			var side := absf(lc.x) > 0.95 and absf(lc.x) < 2.1 and lc.z < -0.7 and lc.z > -2.1
+			if front or side:
+				var tgt_w := car.to_global(Vector3(clampf(lc.x, -0.4, 0.4) * 0.5, 0.98, -1.5))
+				var dd := tgt_w - global_position
+				dd.y = 0.0
+				if (-cam_yaw.global_basis.z).dot(dd.normalized()) > 0.3:
+					near_car = car
+					break
+		if near_car != null and (near_bin != null or igniter.find_pickable() != null):
+			near_car = null
 	# déchet à ramasser devant soi
 	near_pick = null
 	if _grab_bin == null and not _tools_busy() and human.kick_t < 0.0:
@@ -903,6 +937,7 @@ func _update_bins(delta: float) -> void:
 		_e_bin = near_bin
 		_e_pick = near_pick
 		_e_lift = near_lift
+		_e_car = near_car
 	if _e_t >= 0.0:
 		if Input.is_action_pressed("interact"):
 			_e_t += delta
@@ -911,6 +946,8 @@ func _update_bins(delta: float) -> void:
 		else:
 			if _grab_bin != null:
 				_end_grab()
+			elif _e_car != null and is_instance_valid(_e_car) and _e_t <= 0.5:
+				start_mantle(_e_car)
 			elif _e_lift != null and is_instance_valid(_e_lift) and _e_lift.has_method("is_down") and _e_lift.is_down() and _e_t <= 0.6:
 				var lob := _e_lift
 				var yaw_l := human.rotation.y
@@ -928,6 +965,7 @@ func _update_bins(delta: float) -> void:
 			_e_t = -1.0
 			_e_pick = null
 			_e_lift = null
+			_e_car = null
 	if _grab_bin != null:
 		var fwd2 := Basis(Vector3.UP, human.rotation.y) * Vector3(0, 0, -1)
 		_grab_bin.drag_to(global_position + fwd2 * 1.22, human.rotation.y, delta)
@@ -1041,6 +1079,16 @@ func _hands() -> Array:
 		var fwd := Basis(Vector3.UP, human.rotation.y) * Vector3(0, 0, -1)
 		out = [{"pos": _grab_bin.handle_world(0.13) + Vector3.UP * 0.03, "f": fwd, "p": Vector3.DOWN, "curl": 0.95, "w": 1.0},
 			{"pos": _grab_bin.handle_world(-0.13) + Vector3.UP * 0.03, "f": fwd, "p": Vector3.DOWN, "curl": 0.95, "w": 1.0}]
+	elif _mantle_t >= 0.0 and _mantle_car != null and is_instance_valid(_mantle_car):
+		var ym := Basis(Vector3.UP, human.rotation.y)
+		var fwm: Vector3 = ym * Vector3(0, 0, -1)
+		var rgm: Vector3 = ym * Vector3(1, 0, 0)
+		var um := _mantle_t / MANTLE_DUR
+		var wm := _smooth(um / 0.2) * (1.0 - _smooth((um - 0.7) / 0.25))
+		var hood := _mantle_car.to_global(_mantle_local)
+		var hp := Vector3(hood.x, hood.y + 0.03, hood.z) - fwm * 0.35 + fwm * (0.25 * _smooth(um / 0.7))
+		out = [{"pos": hp + rgm * 0.22, "f": fwm, "p": Vector3.DOWN, "curl": 0.35, "w": wm},
+			{"pos": hp - rgm * 0.22, "f": fwm, "p": Vector3.DOWN, "curl": 0.35, "w": wm}]
 	elif _lift_t >= 0.0 and _lift_obj != null and is_instance_valid(_lift_obj):
 		var yb := Basis(Vector3.UP, human.rotation.y)
 		var fwdl: Vector3 = yb * Vector3(0, 0, -1)
@@ -1136,6 +1184,8 @@ func context_prompt() -> Array:
 func interact_prompt() -> String:
 	if _grab_bin != null or igniter.busy:
 		return ""
+	if near_car != null and near_pick == null:
+		return "Monter sur le capot"
 	if near_lift != null and near_pick == null:
 		return "Redresser " + str(near_lift.get("lift_label"))
 	if near_pick != null:
@@ -1202,3 +1252,59 @@ func _update_camera(delta: float, speed: float) -> void:
 	var s := _shake * _shake * 0.02 * float(Settings.d["screen_shake"])
 	camera.h_offset = _rng.randf_range(-s, s)
 	camera.v_offset = _rng.randf_range(-s, s)
+
+
+## Escalade du capot d'une voiture garée : mains sur la tôle, on se hisse, on se redresse debout dessus
+func start_mantle(car: PoliceVehicle) -> void:
+	if _mantle_t >= 0.0 or car == null or not car.is_parked():
+		return
+	_mantle_car = car
+	_mantle_from = global_position
+	var lc := car.to_local(global_position)
+	_mantle_local = Vector3(clampf(lc.x, -0.45, 0.45) * 0.4, 0.98, -1.55)
+	var tgt := car.to_global(_mantle_local)
+	var d := tgt - global_position
+	d.y = 0.0
+	_mantle_yaw = atan2(-d.x, -d.z)
+	_mantle_t = 0.0
+	_mantle_mask = collision_mask
+	collision_mask = 0
+	_mantle_prev_item = current_item
+	if current_item != 0:
+		select_item(0)
+	AudioLib.play_at(car, "sfx:car_creak", car.global_position + Vector3(0, 1.0, -1.4), -4.0, 8.0)
+	get_tree().call_group("crowd", "on_event", "car_vandal", {"pos": tgt, "car": car, "amount": 0.015, "player": true})
+	get_tree().call_group("crowd", "on_event", "player_mantle", {"pos": tgt, "car": car})
+
+
+var _mantle_prev_item := 0
+
+
+func _step_mantle(delta: float) -> void:
+	_mantle_t += delta
+	velocity = Vector3.ZERO
+	if _mantle_car == null or not is_instance_valid(_mantle_car) or arrest_phase != "" or down_t > 0.0:
+		_end_mantle(false)
+		return
+	var u := clampf(_mantle_t / MANTLE_DUR, 0.0, 1.0)
+	var to := _mantle_car.to_global(_mantle_local)
+	var up_k := _smooth(u / 0.55)
+	var fw_k := _smooth((u - 0.28) / 0.72)
+	var y := lerpf(_mantle_from.y, to.y + 0.1, up_k) - 0.1 * _smooth((u - 0.6) / 0.4)
+	global_position = Vector3(lerpf(_mantle_from.x, to.x, fw_k), y, lerpf(_mantle_from.z, to.z, fw_k))
+	if u >= 1.0:
+		_end_mantle(true)
+
+
+func _end_mantle(ok: bool) -> void:
+	if _mantle_t < 0.0:
+		return
+	if ok and _mantle_car != null and is_instance_valid(_mantle_car):
+		global_position = _mantle_car.to_global(_mantle_local) + Vector3.UP * 0.02
+	collision_mask = _mantle_mask
+	velocity = Vector3.ZERO
+	_mantle_t = -1.0
+	_mantle_car = null
+	if _mantle_prev_item != 0 and ok:
+		select_item(_mantle_prev_item)
+	_mantle_prev_item = 0

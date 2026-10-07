@@ -12,6 +12,8 @@ func _build() -> void:
 	reach = Vector3(0.35, 1.7, 0.35)
 	nav_half = Vector2(0.1, 0.1)
 	vandal_amount = 0.3
+	hit_sound = "sign_bend"
+	fall_sound = "sign_fall"
 	var alu := Furniture.mat("alu", Color(0.72, 0.74, 0.77), 0.35, 0.85)
 	var gra := Furniture.mat("graphite", Color(0.1, 0.1, 0.12), 0.5, 0.4)
 	Furniture.cyl(_model, 0.031, 0.031, 2.6, alu, Vector3(0, 1.3, 0))

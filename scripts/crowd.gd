@@ -10,6 +10,7 @@ const AREA_MIN := Vector2(-38.0, -24.0)
 const AREA_MAX := Vector2(38.0, 17.0)
 const VARIANTS := ["male_a", "male_b", "male_c", "male_d", "male_e", "female_a", "female_b", "female_c", "female_d"]
 const CHANTS := ["chant_lacherien", "chant_ensemble", "chant_rue", "chant_onestla"]
+const POLICE_CHANTS := ["chant_police", "chant_justice", "chant_partout", "chant_libere", "chant_resiste"]
 
 var npcs: Array[Npc] = []
 var actors: Array[Actor] = []          # civils + policiers
@@ -47,6 +48,7 @@ var _next_chant := 5.0
 var _chant_seq := -1.0
 var _later_chant_delay := 1.6
 var _chant_idx := 0
+var _chant_police := false
 var _chant_player: AudioStreamPlayer3D
 var _murmur: AudioStreamPlayer3D
 var _bed: AudioStreamPlayer
@@ -62,6 +64,7 @@ var _rings := {}
 var fire_srcs: Array = []          # poubelles et feux au sol (cache par image)
 var police: Police
 var _throw_cd := 6.0
+var _vandal_cd := 25.0
 var _rescuers := 0
 var _arson_cd := 140.0
 var _later: Array = []
@@ -353,6 +356,7 @@ func _physics_process(delta: float) -> void:
 		rebuild_nav()
 	_update_arson(delta)
 	_update_hostility(delta)
+	_update_vandalism(delta)
 	_update_cortege(delta)
 	_update_chats(delta)
 	_update_rally(delta)
@@ -432,17 +436,25 @@ func _update_cortege(delta: float) -> void:
 
 
 func _start_chant_seq() -> void:
-	_chant_idx = (_chant_idx + 1 + _rng.randi() % 2) % CHANTS.size()
+	# face à la police, on change de répertoire
+	var pol_stage: int = police.stage if police != null else 0
+	_chant_police = pol_stage >= 1 and _rng.randf() < 0.45 + 0.12 * float(pol_stage)
+	if _chant_police:
+		_chant_idx = (_chant_idx + 1 + _rng.randi() % 3) % POLICE_CHANTS.size()
+	else:
+		_chant_idx = (_chant_idx + 1 + _rng.randi() % 2) % CHANTS.size()
 	_chant_seq = 0.0
 	_later_chant_delay = 1.6
-	if leader:
+	if _chant_police:
+		_later_chant_delay = 0.9
+	elif leader:
 		var d := leader.say("megaphone_%d" % _chant_idx, true, 4.0)
 		leader._voice.unit_size = 14.0
 		_later_chant_delay = d + 0.35
 
 
 func _start_chant_track() -> void:
-	_chant = CHANTS[_chant_idx]
+	_chant = POLICE_CHANTS[_chant_idx] if _chant_police else CHANTS[_chant_idx]
 	_chant_player.stream = AudioLib.stream(_chant)
 	_chant_player.play()
 	_chant_env = AudioLib.env(_chant)
@@ -591,8 +603,15 @@ func ground_y(p: Vector3) -> float:
 	return 0.0
 
 
+## Limite est de la zone des civils : s'étend vers le cordon (jamais au-delà de la ligne de police)
+func area_max_x() -> float:
+	if police != null:
+		return maxf(AREA_MAX.x, minf(police.line_c.x - 1.2, 53.0))
+	return AREA_MAX.x
+
+
 func clamp_area(p: Vector3) -> Vector3:
-	p.x = clampf(p.x, AREA_MIN.x, AREA_MAX.x)
+	p.x = clampf(p.x, AREA_MIN.x, area_max_x())
 	p.z = clampf(p.z, AREA_MIN.y, AREA_MAX.y)
 	if bus:
 		var l := bus.to_local(p)
@@ -752,6 +771,8 @@ func resolve(n: Actor, p: Vector3) -> Vector3:
 		p = _push_circle(p, c[0], c[1] + 0.25)
 	for fs in fire_srcs:
 		var src := fs as Node3D
+		if src is PoliceVehicle:
+			continue
 		var r := 0.55
 		if src is TrashBin:
 			var bin := src as TrashBin
@@ -771,7 +792,8 @@ func resolve(n: Actor, p: Vector3) -> Vector3:
 		p.x = clampf(p.x, -125.0, 125.0)
 		p.z = clampf(p.z, AREA_MIN.y - 12.0, AREA_MAX.y + 12.0)
 		return p
-	p.x = clampf(p.x, AREA_MIN.x - 4.0, AREA_MAX.x + 4.0)
+	var xm := area_max_x()
+	p.x = clampf(p.x, AREA_MIN.x - 4.0, xm + (4.0 if xm <= AREA_MAX.x + 0.01 else 1.0))
 	p.z = clampf(p.z, AREA_MIN.y - 4.0, AREA_MAX.y + 4.0)
 	return p
 
@@ -918,7 +940,10 @@ func ring_point(n: Npc, bin: Node3D) -> Vector3:
 	var cnt := maxi(lst.size(), 5)
 	var base := float(bin.get_instance_id() % 100) * 0.1
 	var ang := base + TAU * i / cnt
-	var rad: float = 2.0 + float(bin.heat) * 0.8 + (0.6 if i >= 9 else 0.0) + (n.idx % 3) * 0.12
+	var base_r := 2.0
+	if bin.has_method("ring_radius"):
+		base_r = float(bin.call("ring_radius"))
+	var rad: float = base_r + float(bin.heat) * 0.8 + (0.6 if i >= 9 else 0.0) + (n.idx % 3) * 0.12
 	var p: Vector3 = bin.global_position + Vector3(cos(ang), 0, sin(ang)) * rad
 	return clamp_area(p)
 
@@ -1069,6 +1094,19 @@ func on_event(type: String, d: Dictionary) -> void:
 		"flare_raise":
 			_ev_player_flare(d["pos"], 0.5)
 			_gather(d["pos"], 3, 22.0)
+		"car_vandal":
+			_ev_car_vandal(d)
+		"car_glass":
+			excitement = minf(excitement + 0.05, 1.0)
+			_crowd_sound("cheer_small", d["pos"], -4.0, 5.0)
+			for n in _near(d["pos"], 20.0):
+				if n.state == "home" and n.react_cd <= 0.0 and _rng.randf() < 0.35:
+					var pc := n._prop_cheer_pose()
+					n.react(pc[0], 2.2, d["pos"] + Vector3.UP, {"voice": "ouais", "voice_p": 0.5, "prm": pc[1]})
+		"car_burn":
+			excitement = minf(excitement + 0.25, 1.0)
+			later(0.5, func(): _crowd_sound("cheer", d["pos"], 0.0, 6.0))
+			later(1.6, func(): _crowd_sound("applause", d["pos"], -4.0, 6.0))
 		"petard_lit":
 			for n in _near(d["pos"], 7.0):
 				if n.state == "home" and n.react_cd <= 0.0 and _rng.randf() < 0.4:
@@ -1428,7 +1466,9 @@ func _ev_glass_break(d: Dictionary) -> void:
 
 
 func _ev_fire_start(d: Dictionary) -> void:
-	var bin: Node3D = d["bin"]
+	var bin: Node3D = d.get("bin") if d.has("bin") else d.get("car_node")
+	if bin == null:
+		return
 	var p: Vector3 = d["pos"]
 	excitement = minf(excitement + 0.1, 1.0)
 	var watchers_n := watchers(bin)
@@ -1446,7 +1486,7 @@ func _ev_fire_start(d: Dictionary) -> void:
 				n.react(n._prop_rest_pose(), 2.0, p, {})
 			continue
 		watchers_n += 1
-		if n.bold > 0.5 and feeders < 3 and n.prop == "" and _rng.randf() < 0.55:
+		if n.bold > 0.5 and feeders < 3 and n.prop == "" and _rng.randf() < 0.55 and bin.has_method("can_take_items") and bin.can_take_items():
 			feeders += 1
 			n.feed_fire(bin)
 		else:
@@ -1531,6 +1571,86 @@ func _ev_petard_boom(d: Dictionary) -> void:
 	if scared >= 3 or (big and reach > 0.0 and _rng.randf() < 0.5):
 		_crowd_sound("panic" if big else "awe", p, -4.0, 6.0)
 	excitement = minf(excitement + (0.05 if big else 0.02), 1.0)
+
+
+## Quelqu'un s'en prend à une voiture de police : les audacieux viennent donner des coups de pied dans les
+## portières ou jeter des pierres sur les vitres ; les autres encouragent, filment, reculent.
+func _ev_car_vandal(d: Dictionary) -> void:
+	var car: PoliceVehicle = d.get("car")
+	if car == null or not is_instance_valid(car):
+		return
+	var p: Vector3 = d["pos"]
+	var attackers := 0
+	for n in npcs:
+		if n.state == "carattack" and n.data.get("car") == car:
+			attackers += 1
+	var cap := 2 + int(excitement * 4.0) + (2 if d.get("player", false) else 0)
+	var cands := _near(p, 32.0)
+	cands.sort_custom(func(a, b): return (a as Npc).global_position.distance_to(p) < (b as Npc).global_position.distance_to(p))
+	var joined := 0
+	for n in cands:
+		if attackers >= cap or joined >= 3:
+			break
+		if n.state != "home" or n.busy() or n.prop in ["banner", "megaphone", "mortar"] or (n.role == "march" and _rng.randf() < 0.7):
+			continue
+		var dist := n.global_position.distance_to(p)
+		var pj := 0.1 + n.bold * 0.55 + excitement * 0.25 + (0.2 if n.role == "bloc" else 0.0) - dist * 0.012
+		if d.get("player", false):
+			pj += 0.2     # « suis-moi » : on aide celui qui est monté sur le capot
+		if _rng.randf() < pj:
+			attackers += 1
+			joined += 1
+			later(_rng.randf_range(0.3, 1.4), func():
+				if is_instance_valid(n) and is_instance_valid(car):
+					n.say_cat("join", true)
+					n.attack_car(car))
+		elif dist < 20.0 and n.react_cd <= 0.0 and _rng.randf() < 0.45:
+			if n.prop == "" and _rng.randf() < 0.4:
+				n.react("film", _rng.randf_range(3.0, 5.0), p, {"prm": {"dir": n._wbd((p + Vector3.UP - n.head_pos()).normalized())}, "face": false})
+			else:
+				var pc := n._prop_cheer_pose()
+				n.react(pc[0], 2.4, p, {"voice": "allez" if _rng.randf() < 0.5 else "ouais", "voice_p": 0.4, "prm": pc[1]})
+
+
+## Initiative rare : un manifestant décidé donne un coup de pied dans un cône, une barrière, un panneau...
+func _update_vandalism(delta: float) -> void:
+	_vandal_cd -= delta
+	if _vandal_cd > 0.0 or player == null:
+		return
+	_vandal_cd = _rng.randf_range(16.0, 38.0) / (0.5 + excitement)
+	var active := 0
+	for n in npcs:
+		if n.state == "vandal":
+			active += 1
+	if active >= 2:
+		return
+	var cands: Array[Npc] = []
+	for n in npcs:
+		if n.state == "home" and not n.busy() and n.bold > 0.55 and n.prop == "" and n.role != "march" and _rng.randf() < 0.5:
+			cands.append(n)
+	cands.shuffle()
+	for n in cands.slice(0, 6):
+		var t := _vandal_target(n)
+		if t != null:
+			n.start_vandal(t)
+			return
+
+
+func _vandal_target(n: Npc) -> Node3D:
+	var best: Node3D = null
+	var bd := 14.0
+	for o in get_tree().get_nodes_in_group("kickable"):
+		if o is TrashBin or o is Burnable or o is PoliceVehicle or not (o is Node3D):
+			continue
+		if o is StreetProp and (o as StreetProp).toppled:
+			continue
+		if o is Barrier and (o as Barrier).is_down():
+			continue
+		var dd := (o as Node3D).global_position.distance_to(n.global_position)
+		if dd < bd:
+			bd = dd
+			best = o
+	return best
 
 
 func _ev_player_flare(p: Vector3, chance: float) -> void:

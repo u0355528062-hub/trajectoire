@@ -54,7 +54,7 @@ func kick(point: Vector3, dir: Vector3, power := 1.0) -> bool:
 	var d := Vector3(dir.x, 0, dir.z).normalized()
 	apply_impulse((d * 5.8 + Vector3.UP * (2.6 + randf() * 1.4)) * mass * power, point - global_position)
 	apply_torque_impulse(Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.6 * mass)
-	AudioLib.play_at(self, "sfx:plastic_tock", point, -4.0, 6.0, randf_range(0.95, 1.2))
+	AudioLib.play_at(self, "cone_hit_%d" % (randi() % 2), point, -4.0, 6.0, randf_range(0.95, 1.2))
 	get_tree().call_group("crowd", "on_event", "vandal", {"pos": global_position, "amount": 0.08})
 	return true
 
@@ -68,4 +68,4 @@ func _on_body(_b: Node) -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	if sp > 1.3 and now - _last > 0.1:
 		_last = now
-		AudioLib.play_at(self, "sfx:plastic_tock", global_position, clampf(-16.0 + sp * 2.0, -16.0, -2.0), 6.0, randf_range(0.9, 1.25))
+		AudioLib.play_at(self, "cone_hit_%d" % (randi() % 2), global_position, clampf(-16.0 + sp * 2.0, -16.0, -2.0), 6.0, randf_range(0.9, 1.25))

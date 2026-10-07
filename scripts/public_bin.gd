@@ -13,8 +13,8 @@ func _build() -> void:
 	reach = Vector3(0.34, 1.0, 0.34)
 	nav_half = Vector2(0.26, 0.26)
 	vandal_amount = 0.12
-	hit_sound = "sfx:metal_clang_s"
-	fall_sound = "sfx:metal_fall"
+	hit_sound = "bin_hit"
+	fall_sound = "bin_tip"
 	var green := Furniture.mat("pbin_green", Color(0.1, 0.24, 0.17), 0.4, 0.5)
 	var gra := Furniture.mat("graphite", Color(0.1, 0.1, 0.12), 0.5, 0.4)
 	var dark := Furniture.mat("pbin_dark", Color(0.03, 0.03, 0.035), 0.9)

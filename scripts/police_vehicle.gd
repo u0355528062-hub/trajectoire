@@ -36,6 +36,21 @@ var _pitch := 0.0
 var _hw := 1.0
 var _blocked_t := 0.0
 var _static_body: StaticBody3D
+var damage: VehicleDamage
+var glass_loft: MeshInstance3D          # habitacle vitré de la voiture (devient mat une fois les vitres posées)
+var glass_meshes: Array[Node3D] = []    # vitres « décor » du fourgon, remplacées par de vraies vitres cassables
+var _relocating := false
+var sag := 0.0                         # affaissement (pneus crevés)
+var _bounce := 0.0
+var _bounce_v := 0.0
+var _roll := 0.0
+var _roll_v := 0.0
+var burning: bool:
+	get:
+		return damage != null and damage.burning
+var heat: float:
+	get:
+		return damage.heat if damage != null else 0.0
 
 
 # ------------------------------------------------------------------ matériaux
@@ -195,6 +210,12 @@ func build(k: String) -> void:
 		_build_truck()
 	_build_collision()
 	_build_sounds()
+	add_to_group("vehicles")
+	add_to_group("kickable")
+	damage = VehicleDamage.new()
+	damage.name = "Degats"
+	add_child(damage)
+	damage.setup(self)
 
 
 func _build_car() -> void:
@@ -212,7 +233,7 @@ func _build_car() -> void:
 	var grings: Array = []
 	for s in gh:
 		grings.append(_section(s[0], s[1], s[2], s[3], s[4], 3.0, 24))
-	_add(MeshKit.loft(grings, true, true), mat("glass"), Vector3.ZERO, Vector3.ZERO, null, false)
+	glass_loft = _add(MeshKit.loft(grings, true, true), mat("glass"), Vector3.ZERO, Vector3.ZERO, null, false)
 	# toit et montants carrosserie
 	var roof: Array = []
 	for s in gh:
@@ -293,9 +314,11 @@ func _build_truck() -> void:
 	# pare-brise et vitres
 	var ws := _box(Vector3(1.9, 0.8, 0.04), mat("glass"), Vector3(0, 1.91, -2.745), Vector3(deg_to_rad(24), 0, 0), null, 0.02)
 	ws.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	glass_meshes.append(ws)
 	for sx in [-1.0, 1.0]:
 		var cw := _box(Vector3(0.04, 0.78, 1.0), mat("glass"), Vector3(sx * 1.098, 1.88, -2.0), Vector3.ZERO, null, 0.015)
 		cw.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		glass_meshes.append(cw)
 		for z in [-0.35, 0.95, 2.2]:
 			var bw := _box(Vector3(0.04, 0.62, 0.95), mat("glass"), Vector3(sx * 1.098, 2.1, z), Vector3.ZERO, null, 0.015)
 			bw.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -470,8 +493,15 @@ func _physics_process(delta: float) -> void:
 	for w in _front_wheels:
 		w.rotation.y = _steer
 	_pitch = lerpf(_pitch, _pitch_target, minf(1.0, delta * 4.0))
+	# rebond de suspension après un choc (ressort amorti)
+	_bounce_v += (-_bounce * 140.0 - _bounce_v * 9.0) * delta
+	_bounce += _bounce_v * delta
+	_roll_v += (-_roll * 120.0 - _roll_v * 8.0) * delta
+	_roll += _roll_v * delta
 	if _body:
 		_body.rotation.x = _pitch
+		_body.rotation.z = _roll
+		_body.position.y = _bounce - sag
 
 
 var _steer_target := 0.0
@@ -526,7 +556,27 @@ func _finish_parking() -> void:
 	if crowd:
 		crowd.add_obstacle(self, half, Vector2.ZERO, false, true)
 		crowd.nav_dirty()
+	if _relocating:
+		_relocating = false      # simple changement de place : l'équipage est déjà sorti
+		return
 	parked.emit()
+
+
+## Le véhicule suit la ligne qui avance : il redémarre et se gare plus près du dispositif
+func relocate(dest: Vector3, spd := 5.5) -> void:
+	if state != "parked" or burning:
+		return
+	if crowd:
+		crowd.remove_obstacle(self)
+		crowd.nav_dirty()
+	_relocating = true
+	var path: Array[Vector3] = [dest]
+	_path = path
+	max_speed = spd
+	state = "driving"
+	set_meta("park_yaw", rotation.y)
+	if not _engine.playing:
+		_engine.play(randf() * 2.0)
 
 
 func _blocked(fwd: Vector3) -> bool:
@@ -552,3 +602,46 @@ func _blocked(fwd: Vector3) -> bool:
 ## Écran de vérification : retourne un nœud du véhicule
 func get_door(n: String) -> Node3D:
 	return doors.get(n)
+
+
+# ------------------------------------------------------------------ vandalisme
+## Coup de pied ou de poing sur la carrosserie : bosse et secousse (les vitres ont leur propre réaction)
+func kick(point: Vector3, dir: Vector3, power := 1.0) -> bool:
+	if damage == null:
+		return false
+	for p in damage.panes:
+		if is_instance_valid(p) and p.alive() and p.contains(point, 0.35, Vector2(0.05, 0.05)) >= 0.0:
+			return false
+	return damage.hit_body(point, dir, power)
+
+
+## Secousse de suspension : `power` ~0.5 (coup) à 2 (explosion), `n` normale de l'impact
+func bump(power: float, n := Vector3.UP) -> void:
+	_bounce_v -= 0.5 * power * (1.0 if n.y < 0.5 else 0.3)
+	var side := global_basis.inverse() * n
+	_roll_v += clampf(-side.x, -1.0, 1.0) * 0.5 * power
+
+
+# interface commune des foyers (foule) : voir VehicleDamage
+func fire_center() -> Vector3:
+	return damage.fire_center() if damage else global_position
+
+
+func stand_pos(from: Vector3) -> Vector3:
+	return damage.stand_pos(from) if damage else global_position
+
+
+func hand_target() -> Vector3:
+	return fire_center()
+
+
+func can_take_items() -> bool:
+	return false
+
+
+func feed_item(_item: Node3D, _from: Vector3) -> bool:
+	return false
+
+
+func ring_radius() -> float:
+	return 4.2 + (1.2 if kind == "truck" else 0.0)

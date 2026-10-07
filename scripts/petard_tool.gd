@@ -53,7 +53,7 @@ func _ready() -> void:
 	_glow.top_level = true
 	add_child(_glow)
 	_hiss = AudioStreamPlayer3D.new()
-	_hiss.stream = Sfx.get_stream(&"fuse")
+	_hiss.stream = AudioLib.stream("petard_fuse")
 	_hiss.bus = &"Effets"
 	_hiss.volume_db = -12.0
 	_hiss.unit_size = 2.5

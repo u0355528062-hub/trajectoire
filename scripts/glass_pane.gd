@@ -152,7 +152,8 @@ func _sound(sname: StringName, pos: Vector3, vol: float) -> void:
 	if not is_inside_tree():
 		return
 	var a := AudioStreamPlayer3D.new()
-	a.stream = Sfx.get_stream(sname)
+	a.stream = AudioLib.stream("windshield_crack") if (kind == "car" and sname == &"glass_crack") else Sfx.get_stream(sname)
+	a.bus = &"Effets"
 	a.volume_db = vol
 	a.unit_size = 10.0
 	a.pitch_scale = _rng.randf_range(0.93, 1.07)

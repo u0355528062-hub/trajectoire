@@ -82,7 +82,7 @@ func _on_broken(p: Vector3) -> void:
 	if _dead:
 		return
 	_dead = true
-	AudioLib.play_at(self, "sfx:bulb_pop", p, 0.0, 9.0)
+	AudioLib.play_at(self, "lamp_pop", p, 0.0, 9.0)
 	# claquement : quelques éclairs, puis plus rien
 	var tw := create_tween()
 	for i in 4:
