@@ -55,6 +55,8 @@ var _e_bin: TrashBin
 var _e_pick: Burnable
 var near_bin: TrashBin
 var near_pick: Burnable
+var near_lift: Node3D            # barrière (ou autre) à terre qu'on peut redresser
+var _e_lift: Node3D
 var _call_t := -1.0
 var _call_cd := 0.0
 var _lift_obj: Node3D            # objet qu'on redresse (poubelle couchée, barrière tombée)
@@ -869,6 +871,24 @@ func _update_bins(delta: float) -> void:
 			if l < best and (l < 0.9 or fwd.dot(d / maxf(l, 0.01)) > 0.2):
 				best = l
 				near_bin = bin
+	# barrière à terre devant soi
+	near_lift = null
+	if _grab_bin == null and not _tools_busy() and human.kick_t < 0.0:
+		var best2 := 1.9
+		var fwd3 := -cam_yaw.global_basis.z
+		for o in get_tree().get_nodes_in_group("liftables"):
+			if not o.has_method("is_down") or not o.is_down():
+				continue
+			var d3 := (o as Node3D).global_position - global_position
+			d3.y = 0.0
+			var l3 := d3.length()
+			if l3 < best2 and (l3 < 1.0 or fwd3.dot(d3 / maxf(l3, 0.01)) > 0.2):
+				best2 = l3
+				near_lift = o
+		if near_lift != null and near_bin != null:
+			var d4 := (near_bin.global_position - global_position) * Vector3(1, 0, 1)
+			if d4.length() < best2:
+				near_lift = null
 	# déchet à ramasser devant soi
 	near_pick = null
 	if _grab_bin == null and not _tools_busy() and human.kick_t < 0.0:
@@ -882,6 +902,7 @@ func _update_bins(delta: float) -> void:
 		_e_t = 0.0
 		_e_bin = near_bin
 		_e_pick = near_pick
+		_e_lift = near_lift
 	if _e_t >= 0.0:
 		if Input.is_action_pressed("interact"):
 			_e_t += delta
@@ -890,6 +911,10 @@ func _update_bins(delta: float) -> void:
 		else:
 			if _grab_bin != null:
 				_end_grab()
+			elif _e_lift != null and is_instance_valid(_e_lift) and _e_lift.has_method("is_down") and _e_lift.is_down() and _e_t <= 0.6:
+				var lob := _e_lift
+				var yaw_l := human.rotation.y
+				start_lift(lob, func(): if is_instance_valid(lob): lob.right_up(yaw_l, 0.85), 1.5)
 			elif _e_bin != null and is_instance_valid(_e_bin) and _e_bin.tipped and _e_t <= 0.6:
 				_lift_bin(_e_bin)
 			elif _e_pick != null and is_instance_valid(_e_pick) and not _tools_busy():
@@ -902,6 +927,7 @@ func _update_bins(delta: float) -> void:
 				igniter.put_down()
 			_e_t = -1.0
 			_e_pick = null
+			_e_lift = null
 	if _grab_bin != null:
 		var fwd2 := Basis(Vector3.UP, human.rotation.y) * Vector3(0, 0, -1)
 		_grab_bin.drag_to(global_position + fwd2 * 1.22, human.rotation.y, delta)
@@ -1110,6 +1136,8 @@ func context_prompt() -> Array:
 func interact_prompt() -> String:
 	if _grab_bin != null or igniter.busy:
 		return ""
+	if near_lift != null and near_pick == null:
+		return "Redresser " + str(near_lift.get("lift_label"))
 	if near_pick != null:
 		return "Ramasser " + Burnable.label_of(near_pick.kind)
 	if near_bin != null and near_bin.tipped:

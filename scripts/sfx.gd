@@ -27,6 +27,16 @@ static func get_stream(sound: StringName) -> AudioStreamWAV:
 			&"petard_m": _cache[sound] = _make(_gen_petard(true))
 			&"fuse": _cache[sound] = _make(_gen_fuse())
 			&"tinnitus": _cache[sound] = _make_loop(_gen_tinnitus(), 22050)
+			&"metal_clang": _cache[sound] = _make(_gen_metal(1.3, 0))
+			&"metal_clang_s": _cache[sound] = _make(_gen_metal(0.7, 1))
+			&"metal_fall": _cache[sound] = _make(_gen_metal_fall())
+			&"plastic_tock": _cache[sound] = _make(_gen_tock())
+			&"pot_smash": _cache[sound] = _make(_gen_pot_smash())
+			&"bulb_pop": _cache[sound] = _make(_gen_bulb_pop())
+			&"car_thud": _cache[sound] = _make(_gen_car_thud())
+			&"car_glass_tap": _cache[sound] = _make(_gen_glass_tap())
+			&"car_creak": _cache[sound] = _make(_gen_creak())
+			&"whump": _cache[sound] = _make(_gen_whump())
 			&"amb_wind": _cache[sound] = _make_loop(_gen_wind(), 22050)
 			&"amb_city": _cache[sound] = _make_loop(_gen_city(), 22050)
 			&"amb_crickets": _cache[sound] = _make_loop(_gen_crickets(), 22050)
@@ -338,6 +348,153 @@ static func _gen_petard(big: bool) -> PackedFloat32Array:
 				a[off2 + j] += rng.randf_range(-1.0, 1.0) * exp(-float(j) / RATE * 70.0) * 0.18
 	for i in a.size():
 		a[i] = clampf(a[i], -1.0, 1.0)
+	return a
+
+
+## Barre ou tube métallique frappé : coup sec + résonances inharmoniques qui s'éteignent
+static func _gen_metal(dur: float, seed_: int) -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 101 + seed_
+	var a := _buf(dur)
+	var parts := [[417.0, 0.34, 5.5], [893.0, 0.28, 7.5], [1486.0, 0.22, 10.0], [2347.0, 0.16, 15.0], [3611.0, 0.1, 22.0], [5120.0, 0.06, 30.0]]
+	var lp := 0.0
+	for i in a.size():
+		var t := float(i) / RATE
+		var n := rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * 0.5
+		var v := (n - lp) * exp(-t * 90.0) * 0.8 + lp * exp(-t * 40.0) * 0.4
+		for pt in parts:
+			v += sin(TAU * float(pt[0]) * t * (1.0 + 0.002 * sin(t * 9.0))) * float(pt[1]) * exp(-t * float(pt[2]))
+		a[i] = v * 0.6
+	return a
+
+
+## Barrière qui tombe : gros choc, puis cliquetis qui s'espacent
+static func _gen_metal_fall() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 107
+	var a := _buf(2.0)
+	var first := _gen_metal(1.2, 3)
+	for i in first.size():
+		a[i] += first[i] * 0.95
+	var t_hit := 0.22
+	var amp := 0.7
+	while t_hit < 1.7:
+		var sm := _gen_metal(0.5, 5 + int(t_hit * 10.0))
+		var off := int(t_hit * RATE)
+		for i in sm.size():
+			if off + i < a.size():
+				a[off + i] += sm[i] * amp * 0.55
+		t_hit += rng.randf_range(0.07, 0.13) * (1.0 + t_hit * 1.2)
+		amp *= 0.62
+	for i in a.size():
+		a[i] = clampf(a[i], -1.0, 1.0)
+	return a
+
+
+## Plastique creux (cône, poubelle légère)
+static func _gen_tock() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 109
+	var a := _buf(0.35)
+	var lp := 0.0
+	for i in a.size():
+		var t := float(i) / RATE
+		var n := rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * 0.25
+		a[i] = sin(TAU * 260.0 * t) * exp(-t * 28.0) * 0.6 + sin(TAU * 540.0 * t) * exp(-t * 40.0) * 0.3 + lp * exp(-t * 55.0) * 0.8
+	return a
+
+
+## Pot en terre cuite qui éclate
+static func _gen_pot_smash() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 113
+	var a := _buf(1.4)
+	var lp := 0.0
+	for i in a.size():
+		var t := float(i) / RATE
+		var n := rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * 0.3
+		a[i] = (n - lp) * exp(-t * 28.0) * 0.8 + lp * exp(-t * 14.0) * 0.5 + sin(TAU * 110.0 * t) * exp(-t * 18.0) * 0.4
+	for k in 70:
+		var tt := pow(rng.randf(), 1.5) * 1.1 + 0.02
+		_ping(a, int(tt * RATE), rng.randf_range(1400.0, 5200.0), rng.randf_range(0.05, 0.25) * exp(-tt * 1.8), rng.randf_range(60.0, 160.0))
+	return a
+
+
+## Ampoule / globe de lampadaire : éclatement + petit claquement électrique
+static func _gen_bulb_pop() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 127
+	var a := _buf(1.2)
+	var prev := 0.0
+	for i in a.size():
+		var t := float(i) / RATE
+		var n := rng.randf_range(-1.0, 1.0)
+		var hp := n - prev * 0.7
+		prev = n
+		a[i] = hp * exp(-t * 55.0) * 0.8 + sin(TAU * 1800.0 * t) * exp(-t * 80.0) * 0.2
+	for k in 60:
+		var tt := pow(rng.randf(), 1.7) * 0.9 + 0.03
+		_ping(a, int(tt * RATE), rng.randf_range(2600.0, 9000.0), rng.randf_range(0.04, 0.2) * exp(-tt * 2.2), rng.randf_range(60.0, 180.0))
+	# zzzt électrique
+	for i in range(int(0.06 * RATE), int(0.3 * RATE)):
+		var t2 := float(i) / RATE
+		a[i] += rng.randf_range(-1.0, 1.0) * 0.18 * exp(-(t2 - 0.06) * 12.0) * (0.5 + 0.5 * sin(t2 * 700.0))
+	return a
+
+
+## Coup sourd sur de la tôle (carrosserie, capot)
+static func _gen_car_thud() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 131
+	var a := _buf(0.9)
+	var lp := 0.0
+	for i in a.size():
+		var t := float(i) / RATE
+		var n := rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * 0.12
+		a[i] = sin(TAU * (95.0 + 40.0 * exp(-t * 20.0)) * t) * exp(-t * 11.0) * 0.8 + lp * exp(-t * 35.0) * 1.0 + sin(TAU * 310.0 * t) * exp(-t * 18.0) * 0.25 + sin(TAU * 710.0 * t) * exp(-t * 26.0) * 0.12
+	return a
+
+
+## Tapotement sec sur une vitre de voiture
+static func _gen_glass_tap() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 137
+	var a := _buf(0.5)
+	for i in a.size():
+		var t := float(i) / RATE
+		a[i] = rng.randf_range(-1.0, 1.0) * exp(-t * 140.0) * 0.5 + sin(TAU * 1260.0 * t) * exp(-t * 36.0) * 0.4 + sin(TAU * 2210.0 * t) * exp(-t * 55.0) * 0.2
+	return a
+
+
+## Grincement de suspension / de capot qui plie quand on monte dessus
+static func _gen_creak() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 139
+	var a := _buf(0.8)
+	var ph := 0.0
+	for i in a.size():
+		var t := float(i) / RATE
+		ph += TAU * (210.0 + 90.0 * sin(t * 6.0) + 40.0 * t) / RATE
+		var env := sin(PI * clampf(t / 0.8, 0.0, 1.0))
+		a[i] = (sin(ph) * 0.2 + sin(ph * 2.03) * 0.12 + rng.randf_range(-1.0, 1.0) * 0.05) * env * 0.8
+	return a
+
+
+## Choc sourd d'un corps qui retombe (gros « whump » de tôle)
+static func _gen_whump() -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 149
+	var a := _buf(0.6)
+	var lp := 0.0
+	for i in a.size():
+		var t := float(i) / RATE
+		var n := rng.randf_range(-1.0, 1.0)
+		lp += (n - lp) * 0.08
+		a[i] = sin(TAU * (60.0 + 30.0 * exp(-t * 25.0)) * t) * exp(-t * 9.0) * 0.9 + lp * exp(-t * 25.0) * 1.2
 	return a
 
 

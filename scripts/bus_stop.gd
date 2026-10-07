@@ -319,14 +319,7 @@ func _build_street_furniture() -> void:
 	mm.roughness = 0.4
 	_quad(_sign_pivot, Vector2(0.3, 0.45), Vector3(0, 1.1, 0.05), mm)
 	_box(_sign_pivot, Vector3(0.34, 0.49, 0.02), Vector3(0, 1.1, 0.036), _graphite)
-	# poubelle
-	var green := StandardMaterial3D.new()
-	green.albedo_color = Color(0.1, 0.24, 0.17)
-	green.metallic = 0.5
-	green.roughness = 0.4
-	_cyl(self, 0.23, 0.82, Vector3(2.55, 0.49, 0.55), green)
-	_cyl(self, 0.25, 0.05, Vector3(2.55, 0.92, 0.55), _graphite)
-	_box(self, Vector3(0.18, 0.04, 0.02), Vector3(2.55, 0.76, 0.785), _graphite)
+	# (la corbeille de rue est désormais un objet à part : voir PublicBin, posée par Furniture)
 	# bornes anti-stationnement
 	for x in [-3.4, 3.4]:
 		_cyl(self, 0.05, 0.7, Vector3(x, 0.4, 1.4), _graphite)

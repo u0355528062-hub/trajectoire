@@ -24,6 +24,7 @@ func _ready() -> void:
 	var crowd := Crowd.new()
 	crowd.setup(player, bus)
 	add_child(crowd)
+	Furniture.populate(self, crowd)
 	var police := Police.new()
 	police.name = "Police"
 	police.setup(crowd, player, tension)
