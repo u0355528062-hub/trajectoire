@@ -15,6 +15,8 @@ godot --headless --path . --fixed-fps 30 -s tools/tests/<script>.gd
 | `rescue1.gd` | Des manifestants viennent libérer le joueur agrippé |
 | `brawl1.gd` | Corps à corps entre manifestants enragés et policiers |
 | `soak1.gd` | Endurance : 9 minutes simulées, tension en dents de scie, événements aléatoires ; signale PNJ bloqués ou hors zone |
+| `fuzz_pnj.gd` | Appels aléatoires des réactions des PNJ (panique, gaz, coups, arrestation, soins, corps à corps…) pendant 7 minutes simulées |
+| `fuzz_joueur.gd` | Touches et clics aléatoires du joueur (outils, coups de pied, appels, gestes), téléportations vers les lieux d'action |
 | `perf3.gd` | Coût moyen des scripts par image (calme / tendu / émeute) |
 
 Les scripts affichent leurs résultats sur la sortie standard ; toute ligne `SCRIPT ERROR` est un bug.
