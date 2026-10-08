@@ -159,6 +159,7 @@ void fragment() {
 	bp.add_theme_stylebox_override("panel", st)
 	bp.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bp.show_behind_parent = true      # le verre est dessiné derrière le texte et la jauge (sinon il les voile)
 	_bar.add_child(bp)
 	_bar.move_child(bp, 0)
 	root.add_child(_bar)
