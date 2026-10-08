@@ -63,6 +63,13 @@ var _chats: Array = []
 var _rings := {}
 var fire_srcs: Array = []          # poubelles et feux au sol (cache par image)
 var police: Police
+var standoff: Standoff
+var aid_pairs := {}                # blessé -> secouriste en route
+var _aid_t := 0.0
+var _initial_count := 0
+var _newcomer_cd := 40.0
+var _newcomer_n := 0
+var _gas_aware_t := 0.0
 var _throw_cd := 6.0
 var _vandal_cd := 25.0
 var _rescuers := 0
@@ -97,6 +104,8 @@ func _ready() -> void:
 	if bus:
 		add_obstacle(bus, Vector2(2.15, 1.05))
 	_spawn_all()
+	standoff = Standoff.new(self)
+	_initial_count = npcs.size()
 	_build_audio()
 	_banner = Banner.new()
 	add_child(_banner)
@@ -160,6 +169,12 @@ func route_at(s: float) -> Array:
 
 
 func march_target(n: Npc) -> Array:
+	if standoff.active:
+		var sp: Variant = standoff.slot_of(n)
+		if sp != null:
+			return [sp, Vector3(1, 0, 0)]
+		if standoff.is_rear(n):
+			return [standoff.rear_spot(n), Vector3(1, 0, 0)]
 	var wob := Vector2(sin(_time * 0.31 + n.idx) * 0.14, sin(_time * 0.23 + n.idx * 1.7) * 0.22)
 	if n.prop == "banner" or n == leader:
 		wob = Vector2(0, sin(_time * 0.4 + n.idx) * 0.05)
@@ -172,6 +187,8 @@ func march_target(n: Npc) -> Array:
 
 
 func cortege_center() -> Vector3:
+	if standoff.active:
+		return standoff.center + Vector3.UP * 1.5
 	var r := route_at(cortege_s - 2.6)
 	return (r[0] as Vector3) + Vector3.UP * 1.5
 
@@ -248,10 +265,12 @@ func _spawn_all() -> void:
 		["bloc", "", 0, "bloc", false, Vector2.ZERO, -1, false],
 		["loner", "sign", 2, "", false, Vector2.ZERO, -1, false],
 		["loner", "", 0, "", false, Vector2.ZERO, -1, false],
+		["medic", "", 0, "", true, Vector2.ZERO, -1, false],
+		["press", "", 0, "", false, Vector2.ZERO, -1, false],
 	]
 	var chat_centers := [Vector3(-4.6, 0, -1.4), Vector3(7.6, 0, 2.6), Vector3(-9.0, 0, 4.0)]
 	for g in chat_centers.size():
-		_chats.append({"center": chat_centers[g], "members": [], "speaker": null, "next": 2.0 + g * 1.7, "last": null, "reply": -1.0, "listener": null})
+		_chats.append({"center": chat_centers[g], "home": chat_centers[g], "members": [], "speaker": null, "next": 2.0 + g * 1.7, "last": null, "reply": -1.0, "listener": null})
 	var bloc_home := [Vector3(6.0, 0, -13.2), Vector3(7.3, 0, -12.4), Vector3(5.2, 0, -14.3), Vector3(7.0, 0, -14.5)]
 	var loner_home := [Vector3(1.0, 0, 6.5), Vector3(12.0, 0, -2.5)]
 	var bloc_i := 0
@@ -300,6 +319,22 @@ func _spawn_all() -> void:
 				bloc_i += 1
 				n.bold = rng.randf_range(0.65, 1.0)
 				n.calm = rng.randf_range(0.5, 0.95)
+			"medic":
+				pos = Vector3(-2.5, 0, 3.5)
+				n.bold = 0.5
+				n.calm = 0.9
+				n.outfit["vest"] = true
+				n.outfit["top"] = "tshirt"
+				n.outfit["backpack"] = true
+				n.outfit["bag_color"] = Color(0.72, 0.1, 0.1)
+			"press":
+				pos = Vector3(11.0, 0, 7.0)
+				n.bold = 0.55
+				n.calm = 0.8
+				n.outfit["top"] = "jacket"
+				n.outfit["top_color"] = Color(0.12, 0.2, 0.17)
+				n.outfit["backpack"] = true
+				n.outfit["bag_color"] = Color(0.05, 0.05, 0.06)
 			_:
 				pos = loner_home[loner_i % loner_home.size()]
 				loner_i += 1
@@ -357,6 +392,10 @@ func _physics_process(delta: float) -> void:
 	_update_arson(delta)
 	_update_hostility(delta)
 	_update_vandalism(delta)
+	standoff.update(delta)
+	_update_gas_awareness(delta)
+	_update_aid(delta)
+	_update_newcomers(delta)
 	_update_cortege(delta)
 	_update_chats(delta)
 	_update_rally(delta)
@@ -369,7 +408,7 @@ func _physics_process(delta: float) -> void:
 		var has_prop: bool = (n is Npc and (n as Npc).prop != "") or (n is Cop)
 		n.human.lod = 0 if d < 40.0 else (1 if (d < 70.0 or has_prop) else 2)
 		n.tick(delta, every)
-	if _banner_l and _banner_r and _banner_l.pole_node and _banner_r.pole_node:
+	if _banner_l != null and _banner_r != null and _banner_l.pole_node and _banner_r.pole_node:
 		var a := _banner_r.pole_node.global_transform * Vector3(0, 1.4, 0)
 		var b := _banner_l.pole_node.global_transform * Vector3(0, 1.4, 0)
 		_banner.set_poles(a, b)
@@ -407,7 +446,7 @@ func _update_cortege(delta: float) -> void:
 		if n.role == "march" and n.state == "home":
 			var t: Vector3 = march_target(n)[0]
 			lag = maxf(lag, Vector2(t.x - n.global_position.x, t.z - n.global_position.z).length())
-	var want := 0.55 if _cortege_moving else 0.0
+	var want := 0.55 if _cortege_moving and not standoff.active else 0.0
 	if lag > 2.5:
 		want *= clampf(1.0 - (lag - 2.5) / 3.0, 0.0, 1.0)
 	cortege_speed = move_toward(cortege_speed, want, delta * 0.25)
@@ -494,6 +533,8 @@ func _update_chats(delta: float) -> void:
 		var members: Array = ch["members"]
 		var avail: Array = []
 		for m in members:
+			if not is_instance_valid(m):
+				continue
 			var n := m as Npc
 			if n.state == "home":
 				avail.append(n)
@@ -606,8 +647,12 @@ func ground_y(p: Vector3) -> float:
 ## Limite est de la zone des civils : s'étend vers le cordon (jamais au-delà de la ligne de police)
 func area_max_x() -> float:
 	if police != null:
-		return maxf(AREA_MAX.x, minf(police.line_c.x - 1.2, 53.0))
+		return clampf(police.line_c.x - 1.2, AREA_MIN.x + 14.0, 53.0)
 	return AREA_MAX.x
+
+
+func chats() -> Array:
+	return _chats
 
 
 func clamp_area(p: Vector3) -> Vector3:
@@ -657,6 +702,33 @@ func unregister_actor(a: Actor) -> void:
 	actors.erase(a)
 	if a is Npc:
 		npcs.erase(a)
+		_forget_npc(a as Npc)
+
+
+## Un manifestant quitte la scène (interpellé et embarqué) : on efface toute référence vers lui
+func _forget_npc(n: Npc) -> void:
+	for ch in _chats:
+		(ch["members"] as Array).erase(n)
+		for k in ["speaker", "last", "listener"]:
+			if ch[k] == n:
+				ch[k] = null
+	_slots.erase(n)
+	aid_pairs.erase(n)
+	for pt in aid_pairs.keys():
+		if aid_pairs[pt] == n:
+			aid_pairs.erase(pt)
+	if standoff != null:
+		standoff.forget(n)
+	for bin in _rings:
+		(_rings[bin] as Array).erase(n)
+	if leader == n:
+		leader = null
+		leader_speaking = false
+	if _banner_l == n:
+		_banner_l = null
+	if _banner_r == n:
+		_banner_r = null
+	_banner.visible = _banner_l != null and _banner_r != null
 
 
 func rebuild_nav() -> void:
@@ -793,7 +865,7 @@ func resolve(n: Actor, p: Vector3) -> Vector3:
 		p.z = clampf(p.z, AREA_MIN.y - 12.0, AREA_MAX.y + 12.0)
 		return p
 	var xm := area_max_x()
-	p.x = clampf(p.x, AREA_MIN.x - 4.0, xm + (4.0 if xm <= AREA_MAX.x + 0.01 else 1.0))
+	p.x = clampf(p.x, AREA_MIN.x - 4.0, xm + (4.0 if police == null else 1.0))
 	p.z = clampf(p.z, AREA_MIN.y - 4.0, AREA_MAX.y + 4.0)
 	return p
 
@@ -1118,9 +1190,13 @@ func on_event(type: String, d: Dictionary) -> void:
 		"player_gesture":
 			_ev_player_gesture(d)
 		"police_gas":
+			mood_blast(d["pos"], 30.0, 0.1, 0.12)
 			_ev_police_gas(d)
 		"gas_land":
+			mood_blast(d["pos"], 14.0, 0.4, 0.1)
 			_ev_gas_land(d)
+		"police_charge":
+			_ev_charge(d)
 		"police_lbd", "police_baton", "civil_hit":
 			_ev_violence(type, d)
 		"grab":
@@ -1145,7 +1221,7 @@ func _update_hostility(delta: float) -> void:
 	var cop_near: Cop = null
 	var cands: Array[Npc] = []
 	for n in npcs:
-		if n.busy() or n.state != "home" or n.bold < 0.5 or n.prop in ["banner", "megaphone", "mortar"]:
+		if n.busy() or n.state != "home" or n.bold < 0.5 or n.prop in ["banner", "megaphone", "mortar"] or n.role in ["medic", "press"]:
 			continue
 		var c := police.nearest_cop(n.global_position, 30.0)
 		if c == null:
@@ -1187,11 +1263,9 @@ func _ev_police_gas(d: Dictionary) -> void:
 		if n.busy() or n.state not in ["home", "react", "watch", "goto_look"] or n.react_cd > 0.0 and n.state == "react":
 			continue
 		if _rng.randf() < 0.6:
-			var away := n.global_position - p
-			away.y = 0.0
 			n.react("cover", 1.6, p + Vector3.UP * 4.0, {"voice": "fear" if voiced < 2 else "", "voice_p": 0.6})
 			voiced += 1
-			n.go(clamp_area(n.global_position + away.normalized() * _rng.randf_range(3.0, 6.0)), true, 0.6)
+			n.go(clamp_area(n.global_position + n.flee_dir(p) * _rng.randf_range(3.0, 6.0)), true, 0.6)
 
 
 func _ev_gas_land(d: Dictionary) -> void:
@@ -1203,6 +1277,7 @@ func _ev_gas_land(d: Dictionary) -> void:
 
 func _ev_violence(type: String, d: Dictionary) -> void:
 	var p: Vector3 = d["pos"]
+	mood_blast(p, 20.0, 0.25, 0.3, d.get("who"))
 	var voiced := 0
 	for n in _near(p, 22.0):
 		if n == d.get("who") or n.busy() or n.state not in ["home", "react", "watch", "goto_look"]:
@@ -1213,10 +1288,8 @@ func _ev_violence(type: String, d: Dictionary) -> void:
 			n.react("fist", 2.5, p + Vector3.UP, {"voice": "anger", "voice_p": 0.7 if voiced < 3 else 0.2, "prm": {"k": 1.0}})
 			voiced += 1
 		elif close and _rng.randf() < 0.5:
-			var away := n.global_position - p
-			away.y = 0.0
 			n.react("cover", 1.8, p + Vector3.UP, {"voice": "fear", "voice_p": 0.5})
-			n.go(clamp_area(n.global_position + away.normalized() * _rng.randf_range(3.0, 5.0)), true, 0.6)
+			n.go(clamp_area(n.global_position + n.flee_dir(p) * _rng.randf_range(3.0, 5.0)), true, 0.6)
 		elif _rng.randf() < 0.4:
 			n.react("head", 2.0, p + Vector3.UP, {})
 	_crowd_sound("crowd_gasp", p + Vector3.UP * 1.5, -6.0, 6.0)
@@ -1224,6 +1297,7 @@ func _ev_violence(type: String, d: Dictionary) -> void:
 
 func _ev_grab(d: Dictionary) -> void:
 	var p: Vector3 = d["pos"]
+	mood_blast(p, 24.0, 0.12, 0.4, d.get("who"))
 	var cop: Node3D = d.get("cop")
 	var voiced := 0
 	for n in _near(p, 24.0):
@@ -1237,6 +1311,159 @@ func _ev_grab(d: Dictionary) -> void:
 			n.react("fist" if n.bold > 0.5 else "head", 2.5, p + Vector3.UP * 1.3, {"voice": "free", "voice_p": 0.7 if voiced < 3 else 0.15, "prm": {"k": 1.0}})
 			voiced += 1
 	_crowd_sound("crowd_anger", p + Vector3.UP * 1.5, -3.0, 6.0)
+
+
+## Un événement marque les esprits : peur et colère montent autour de `p` (plus fort près du centre)
+func mood_blast(p: Vector3, r: float, fear: float, anger: float, who: Variant = null) -> void:
+	for n in npcs:
+		if n == who or n.state in ["arrested", "boarded"]:
+			continue
+		var d := Vector2(n.global_position.x - p.x, n.global_position.z - p.z).length()
+		if d > r:
+			continue
+		var k := 1.0 - d / r
+		if fear > 0.0:
+			n.scare(fear * k)
+		if anger > 0.0:
+			n.enrage(anger * k)
+
+
+## Charge de la police : ceux qui sont devant détalent, les plus déterminés tiennent bon
+func _ev_charge(d: Dictionary) -> void:
+	var p: Vector3 = d["pos"]
+	var voiced := 0
+	mood_blast(p, 20.0, 0.5, 0.15)
+	for n in _near(p, 15.0):
+		if n.busy() or n.state not in ["home", "react", "watch", "goto_look"]:
+			continue
+		if n.fear > 0.55 or n.bold < 0.35:
+			n.react("cover", 1.2, p + Vector3.UP * 1.5, {"voice": "retreat" if voiced < 2 else "", "voice_p": 0.7})
+			n.go(clamp_area(n.global_position + n.flee_dir(p) * _rng.randf_range(5.0, 9.0)), true, 0.6)
+			voiced += 1
+		elif n.bold > 0.7 and _rng.randf() < 0.4:
+			n.react("fist", 2.0, p + Vector3.UP * 1.5, {"voice": "defy", "voice_p": 0.7, "prm": {"k": 1.0}})
+
+
+## Un nuage de gaz proche ? (pour éviter d'y aller ou y laisser son poste)
+func gas_near(p: Vector3, margin := 0.0) -> Node3D:
+	for c in get_tree().get_nodes_in_group("gas_clouds"):
+		var g := c as GasCloud
+		if g.fade() < 0.15:
+			continue
+		var d := Vector2(p.x - g.global_position.x, p.z - g.global_position.z).length()
+		if d < g.radius + margin:
+			return g
+	return null
+
+
+## Les PNJ qui voient un nuage s'étendre vers eux reculent avant d'être pris dedans
+func _update_gas_awareness(delta: float) -> void:
+	_gas_aware_t -= delta
+	if _gas_aware_t > 0.0:
+		return
+	_gas_aware_t = 0.45
+	var clouds := get_tree().get_nodes_in_group("gas_clouds")
+	if clouds.is_empty():
+		return
+	for n in npcs:
+		if n.state not in ["home", "watch", "goto_look"] or n.react_cd > 0.0 or n.gas_level > 0.1:
+			continue
+		var g := gas_near(n.global_position, 2.8 + 1.4 * (1.0 - n.bold))
+		if g != null:
+			n.avoid_gas(g.global_position)
+
+
+## Des manifestants arrivent par l'ouest pour remplacer les interpellés (et grossir le rang quand ça chauffe)
+func _update_newcomers(delta: float) -> void:
+	_newcomer_cd -= delta
+	if _newcomer_cd > 0.0:
+		return
+	var st: int = police.stage if police != null else 0
+	_newcomer_cd = _rng.randf_range(14.0, 24.0) if st >= 2 else _rng.randf_range(24.0, 38.0)
+	var want := _initial_count + mini(st, 3)
+	if npcs.size() >= want:
+		return
+	var n := Npc.new()
+	var i := 100 + _newcomer_n
+	_newcomer_n += 1
+	var r := _rng.randf()
+	n.idx = i
+	n.crowd = self
+	n.role = "march"
+	n.slot = Vector2(_rng.randf_range(-2.2, 2.2), _rng.randf_range(5.2, 9.0))
+	n.prop = "sign" if r < 0.3 else ("flare" if r < 0.37 else "")
+	n.sign_idx = _rng.randi_range(1, 4)
+	n.variant = VARIANTS[_rng.randi() % VARIANTS.size()]
+	n.female = n.variant.begins_with("female")
+	n.voice = "f1" if n.female else ("m1" if i % 2 == 0 else "m2")
+	n.vpitch = _rng.randf_range(0.96, 1.1) if n.female else _rng.randf_range(0.92, 1.07)
+	var mask := ""
+	if n.prop == "flare":
+		mask = "balaclava"
+	elif _rng.randf() < 0.18:
+		mask = "bandana"
+	n.outfit = _outfit(_rng, n.female, mask, _rng.randf() < 0.15)
+	n.smoker = n.prop == "" and _rng.randf() < 0.15
+	n.bold = _rng.randf_range(0.25, 0.85)
+	n.curious = _rng.randf_range(0.3, 0.95)
+	n.calm = _rng.randf_range(0.2, 0.9)
+	var start := Vector3(AREA_MIN.x + 1.0, 0.0, _rng.randf_range(-12.0, 6.0))
+	n.home_pos = start
+	n.position = Vector3(start.x, ground_y(start), start.z)
+	add_child(n)
+	npcs.append(n)
+	actors.append(n)
+	if _rng.randf() < 0.6:
+		n.say_cat("join", true)
+
+
+## Secours : un médic, ou à défaut un voisin courageux, vient en aide à chaque blessé
+func _update_aid(delta: float) -> void:
+	_aid_t -= delta
+	if _aid_t > 0.0:
+		return
+	_aid_t = 1.0
+	for pt in aid_pairs.keys():
+		var h: Variant = aid_pairs[pt]
+		if not is_instance_valid(pt) or not is_instance_valid(h) or (h as Npc).state != "aid":
+			aid_pairs.erase(pt)
+	var patients: Array = []
+	for n in npcs:
+		if NpcCare.needs_aid(n) and not aid_pairs.has(n):
+			patients.append(n)
+	if player != null and NpcCare.needs_aid(player) and not aid_pairs.has(player):
+		patients.append(player)
+	var helpers := 0
+	for h2 in aid_pairs.values():
+		if is_instance_valid(h2) and (h2 as Npc).role != "medic":
+			helpers += 1
+	for pt in patients:
+		var best: Npc = null
+		var bd := 55.0
+		for m in npcs:
+			if m.role == "medic" and m.state == "home" and m.fear < 0.7:
+				var d := m.global_position.distance_to(pt.global_position)
+				if d < bd:
+					bd = d
+					best = m
+		var kind := "medic"
+		if best == null and helpers < 2:
+			bd = 10.0
+			kind = "help"
+			for m2 in npcs:
+				if m2.role == "medic" or m2 == pt or m2.state != "home" or m2.busy() or m2.prop in ["mortar", "banner", "megaphone"]:
+					continue
+				if m2.calm < 0.45 or m2.bold < 0.25 or m2.fear > 0.5 or m2.human.sit > 0.3:
+					continue
+				var d2 := m2.global_position.distance_to(pt.global_position)
+				if d2 < bd:
+					bd = d2
+					best = m2
+		if best != null:
+			aid_pairs[pt] = best
+			if kind == "help":
+				helpers += 1
+			NpcCare.start(best, pt, kind)
 
 
 func _near(p: Vector3, r: float) -> Array[Npc]:

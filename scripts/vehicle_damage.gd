@@ -46,9 +46,11 @@ func setup(c: PoliceVehicle) -> void:
 	if car.kind == "car":
 		_pane("ws", Vector2(1.45, 0.86), Vector3(0, 1.195, -0.575), Vector3(deg_to_rad(61.3), 0, 0), 125.0, true)
 		_pane("rear", Vector2(1.25, 0.5), Vector3(0, 1.21, 1.43), Vector3(deg_to_rad(-63.7), 0, 0), 110.0, false)
+		# vitres latérales : posées contre l'habitacle, inclinées comme lui (le haut rentre de ~13°)
+		var tilt := Vector3(deg_to_rad(-13.0), 0.0, 0.0)
 		for sx in [-1.0, 1.0]:
-			_pane("side", Vector2(0.86, 0.34), Vector3(sx * 0.79, 1.15, -0.38), Vector3(0, sx * PI * 0.5, 0), 80.0, false)
-			_pane("side", Vector2(0.8, 0.32), Vector3(sx * 0.79, 1.14, 0.78), Vector3(0, sx * PI * 0.5, 0), 80.0, false)
+			_pane("side", Vector2(0.78, 0.31), Vector3(sx * 0.742, 1.15, -0.38), tilt + Vector3(0, sx * PI * 0.5, 0), 80.0, false)
+			_pane("side", Vector2(0.74, 0.30), Vector3(sx * 0.742, 1.14, 0.78), tilt + Vector3(0, sx * PI * 0.5, 0), 80.0, false)
 		# l'habitacle devient mat : une fois les vitres parties, on voit l'intérieur sombre
 		if car.glass_loft != null:
 			car.glass_loft.material_override = PoliceVehicle.mat("dark")
@@ -67,7 +69,9 @@ func _pane(role: String, size: Vector2, pos: Vector3, rot: Vector3, break_at: fl
 	p.break_at = break_at
 	p.slowmo = slowmo
 	p.thick = 0.01
-	p.glass_color = Color(0.1, 0.14, 0.19, 0.5)
+	p.glass_color = Color(0.05, 0.07, 0.1, 0.2)
+	p.spec = 0.3
+	p.use_rim = false
 	p.position = pos
 	p.rotation = rot
 	p.set_meta("role", role)

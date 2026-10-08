@@ -410,6 +410,40 @@ func _pose(name: String, t: float, p: Dictionary) -> Array:
 			return [_h(mouth + Vector3(0.035, -0.005, 0.055), Vector3(-0.3, 1, 0), Vector3(0, 0, -1), 0.3, 0.0, Vector3(1, -1, 0.3)), null]
 		"stone":
 			return [_h(sr + Vector3(0.04, -0.4, 0.15) * k, Vector3(0, 0, 1), Vector3(0, 1, 0), 0.6), null]
+		"drink":
+			# la bouteille monte à la bouche, bascule, puis redescend
+			var du: float = clampf(t / 0.9, 0.0, 1.0) if t < 3.6 else clampf(1.0 - (t - 3.6) / 0.8, 0.0, 1.0)
+			var due := _ease(du)
+			var rest_p := sr + Vector3(0.0, -0.36, 0.26) * k
+			var up_p := mouth + Vector3(0.0, -0.06, 0.09)
+			var fing := Vector3(0, 0, 1).lerp(Vector3(0, 0.83, 0.55), due).normalized()
+			return [_h(rest_p.lerp(up_p, due), fing, Vector3(-1, 0, 0), 0.95, 0.0, Vector3(1, -0.8, 0.0)), null]
+		"give":
+			# bras tendu pour offrir la bouteille
+			var gd: Vector3 = (p.get("dir", Vector3(0, 0, 1)) as Vector3).normalized()
+			return [_h(sr + Vector3(gd.x, 0.0, gd.z).normalized() * 0.42 * k + Vector3(0, -0.2, 0), Vector3(gd.x, 0.5, gd.z), Vector3(-1, 0, 0), 0.9, 0.0, Vector3(1, -0.8, -0.2)), null]
+		"stretch":
+			var su := _ease(clampf(t / 1.2, 0.0, 1.0))
+			var wob2 := Vector3(sin(t * 5.0) * 0.012, 0.0, 0.0)
+			return _sym(Vector3(0.1, 0.1, 0.0).lerp(Vector3(0.12, 0.62, -0.1), su) * k + wob2, Vector3(0.1, 1, -0.1), Vector3(-0.3, 0, 1), 0.7, Vector3(1, -0.2, -0.5), sr, sl)
+		"rest_knee":
+			# assis, mains posées sur les genoux
+			return _sym(Vector3(0.05, -0.34, 0.4) * k, Vector3(0, -0.45, 1), Vector3(0, 1, 0), 0.35, Vector3(1, -0.4, -0.3), sr, sl)
+		"treat":
+			# soigner quelqu'un : les deux mains près de la personne secourue
+			var tt: Vector3 = p.get("target", Vector3(0, 0.5, 0.6))
+			var sway := Vector3(0, sin(t * 3.0) * 0.012, 0)
+			return [_h(tt + Vector3(0.09, 0, 0) + sway, Vector3(0, -0.8, 0.6), Vector3(-1, 0, 0.2), 0.4, 0.0, Vector3(1, -0.5, 0.0)),
+				_h(tt + Vector3(-0.09, 0, 0) - sway, Vector3(0, -0.8, 0.6), Vector3(1, 0, 0.2), 0.4, 0.0, Vector3(-1, -0.5, 0.0))]
+		"shoot":
+			# reporter : appareil à longue focale tenu à deux mains, collé à l'œil droit (dans ce repère +X = droite)
+			var sd := _film_dir(p.get("dir", Vector3(0, 0.05, 1)))
+			var rgt := Vector3.UP.cross(sd).normalized()
+			var cpos := eye + sd * 0.25 * k + Vector3(rgt.x * 0.035, -0.045, rgt.z * 0.035)
+			var rh := cpos + rgt * 0.075 + Vector3(0, -0.02, 0)
+			var lh := cpos - rgt * 0.02 + sd * 0.1 + Vector3(0, -0.065, 0)
+			return [_h(rh, (sd + Vector3.UP * 0.3).normalized(), -rgt, 0.85, 0.0, Vector3(1, -0.8, 0.2)),
+				_h(lh, sd, Vector3.UP, 0.5, 0.0, Vector3(-1, -0.8, 0.2))]
 		"beckon":
 			var bk := sin(t * 5.0) * 0.5 + 0.5
 			return [_h(sr + Vector3(0.05, 0.25 + bk * 0.1, 0.35 - bk * 0.15) * k, Vector3(0, 0.6 + bk * 0.3, 0.8 - bk * 0.5), Vector3(0, -0.3, -1), 0.2, 0.0, Vector3(1, -0.5, -0.3)), null]

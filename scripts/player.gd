@@ -617,6 +617,14 @@ func _status_speed() -> float:
 
 
 ## Appelé à chaque image par les nuages de gaz (densité 0..1 à la position du joueur)
+## Un secouriste soigne le joueur : yeux rincés, souffle repris, remis sur pied plus vite
+func receive_aid(dt: float) -> void:
+	pepper_level = maxf(pepper_level - dt * 0.4, 0.0)
+	gas_level = maxf(gas_level - dt * 0.3, 0.0)
+	if down_t > 0.0:
+		down_t = maxf(down_t - dt * 1.2, 0.0)
+
+
 func apply_gas(density: float) -> void:
 	_gas_in = maxf(_gas_in, density)
 

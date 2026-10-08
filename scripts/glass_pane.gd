@@ -19,6 +19,8 @@ var thick := 0.012
 var damage := 0.0
 var hits := 0
 var is_broken := false
+var spec := 0.7            # reflets (les vitres de voiture en ont peu : elles doivent rester discrètes)
+var use_rim := true
 var overlays: Array = []   # décors (givre, saleté) supprimés à l'éclatement
 var _mesh: MeshInstance3D
 var _body: StaticBody3D
@@ -48,11 +50,12 @@ func _ready() -> void:
 	m.albedo_color = glass_color
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.roughness = 0.03
-	m.metallic_specular = 0.7
+	m.metallic_specular = spec
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	m.rim_enabled = true
-	m.rim = 0.12
-	m.rim_tint = 0.3
+	if use_rim:
+		m.rim_enabled = true
+		m.rim = 0.12
+		m.rim_tint = 0.3
 	_mesh.material_override = m
 	add_child(_mesh)
 	_body = StaticBody3D.new()

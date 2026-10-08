@@ -60,10 +60,10 @@ static func mat(key: String) -> Material:
 	var r: StandardMaterial3D
 	match key:
 		"car_white":
-			r = MeshKit.std_mat(Color(0.86, 0.88, 0.92), 0.38, 0.0, 0.7)
+			r = MeshKit.std_mat(Color(0.60, 0.62, 0.67), 0.42, 0.0, 0.55)
 			r.clearcoat_enabled = true
-			r.clearcoat = 0.6
-			r.clearcoat_roughness = 0.15
+			r.clearcoat = 0.3
+			r.clearcoat_roughness = 0.22
 		"van_navy":
 			r = MeshKit.std_mat(Color(0.035, 0.06, 0.14), 0.42, 0.0, 0.7)
 			r.clearcoat_enabled = true
@@ -107,6 +107,7 @@ static func _decal_mat(file: String) -> StandardMaterial3D:
 		return _m[key]
 	var m := StandardMaterial3D.new()
 	m.albedo_texture = load(Props.DIR + file)
+	m.albedo_color = Color(0.72, 0.72, 0.74)
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.roughness = 0.5
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED

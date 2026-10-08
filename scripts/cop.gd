@@ -448,6 +448,7 @@ func charge(t: Node3D, dur := 7.0) -> void:
 	set_state("charge", {"dur": dur})
 	target = t
 	_say_pol("pol_charge", true, 4.0)
+	get_tree().call_group("crowd", "on_event", "police_charge", {"pos": global_position, "target": t})
 
 
 func _live_target() -> bool:

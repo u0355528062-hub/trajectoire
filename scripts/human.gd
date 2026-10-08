@@ -664,7 +664,7 @@ func _animate(delta: float, speed: float, run_t: float, grounded: bool, vy: floa
 		var ids := [up, lo, wr]
 		var fk_q: Array[Quaternion] = []
 		for n in ids:
-			fk_q.append(skeleton.get_bone_pose_rotation(bone[n]))
+			fk_q.append(skeleton.get_bone_pose_rotation(bone[n]).normalized())
 		var f_w: Vector3 = _dir_to_skel(tg["f"]).normalized()
 		var p_w: Vector3 = _dir_to_skel(tg["p"]).normalized()
 		var palm_pos := _to_skel(tg["pos"])
@@ -678,7 +678,7 @@ func _animate(delta: float, speed: float, run_t: float, grounded: bool, vy: floa
 		_global(wr, (bt * br.inverse()).get_rotation_quaternion())
 		if wt < 0.999:
 			for i in 3:
-				var ik_q := skeleton.get_bone_pose_rotation(bone[ids[i]])
+				var ik_q := skeleton.get_bone_pose_rotation(bone[ids[i]]).normalized()
 				skeleton.set_bone_pose_rotation(bone[ids[i]], fk_q[i].slerp(ik_q, wt))
 		_curl_fingers(side, lerpf(fk_curl, tg.get("curl", 0.9), wt), 0.4, tg.get("index", 0.0) * wt)
 	if fall > 0.002 or _fall_on:

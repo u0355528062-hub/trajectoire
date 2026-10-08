@@ -238,6 +238,40 @@ static func can(tint := Color(0.75, 0.1, 0.1)) -> Node3D:
 	return root
 
 
+## Appareil photo / caméra de reporter à longue focale. Origine = prise en main droite (poignée) ;
+## l'objectif pointe vers +Z, le boîtier s'étend vers +X (la gauche de qui le tient), le dessus est +Y.
+static func camera() -> Node3D:
+	var root := Node3D.new()
+	root.name = "Camera"
+	var black := _m("cam_body", func() -> Material: return _col(Color(0.03, 0.03, 0.035), 0.55, 0.1))
+	var lens_m := _m("cam_lens", func() -> Material: return _col(Color(0.045, 0.045, 0.05), 0.4, 0.35))
+	var glass := _m("cam_glass", func() -> Material:
+		var m := _col(Color(0.02, 0.04, 0.09), 0.04, 0.0)
+		m.metallic_specular = 1.0
+		return m)
+	var silver := _m("cam_ring", func() -> Material: return _col(Color(0.62, 0.64, 0.68), 0.25, 0.95))
+	_mi(root, MeshKit.rbox(Vector3(0.15, 0.10, 0.075), 0.012, 2), black, Vector3(0.075, 0.03, 0.0))
+	_mi(root, MeshKit.rbox(Vector3(0.05, 0.11, 0.06), 0.014, 2), black, Vector3(0.0, 0.025, 0.012))
+	_mi(root, MeshKit.rbox(Vector3(0.05, 0.034, 0.055), 0.01, 2), black, Vector3(0.075, 0.098, -0.004))
+	_mi(root, MeshKit.rbox(Vector3(0.016, 0.01, 0.01), 0.003, 1), silver, Vector3(0.12, 0.085, -0.032))
+	var barrel := PackedVector2Array([Vector2(0.0, 0.0), Vector2(0.041, 0.0), Vector2(0.041, 0.02), Vector2(0.036, 0.02), Vector2(0.036, 0.1),
+		Vector2(0.044, 0.104), Vector2(0.044, 0.16), Vector2(0.047, 0.164), Vector2(0.047, 0.205), Vector2(0.043, 0.205), Vector2(0.043, 0.2), Vector2(0.0, 0.2)])
+	_mi(root, MeshKit.lathe(barrel, 22), lens_m, Vector3(0.075, 0.03, 0.0375), Vector3(PI / 2.0, 0, 0))
+	var ring := CylinderMesh.new()
+	ring.top_radius = 0.0455
+	ring.bottom_radius = 0.0455
+	ring.height = 0.006
+	ring.radial_segments = 20
+	_mi(root, ring, silver, Vector3(0.075, 0.03, 0.0375 + 0.135), Vector3(PI / 2.0, 0, 0))
+	var front := CylinderMesh.new()
+	front.top_radius = 0.0405
+	front.bottom_radius = 0.0405
+	front.height = 0.004
+	front.radial_segments = 20
+	_mi(root, front, glass, Vector3(0.075, 0.03, 0.0375 + 0.188), Vector3(PI / 2.0, 0, 0))
+	return root
+
+
 ## Bouteille d'eau (origine au centre du corps)
 static func bottle() -> Node3D:
 	var root := Node3D.new()

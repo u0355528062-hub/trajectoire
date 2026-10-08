@@ -37,6 +37,7 @@ var _som := 0
 var _park_n := 0
 var _alert_t := 0.0
 var _player_seen_t := 0.0
+var _calm_t := 0.0
 var _car_alert_t := -99.0
 var _veh_cd := 6.0
 
@@ -476,6 +477,13 @@ func _physics_process(delta: float) -> void:
 		tension.police_active = stage >= 1
 	_update_line(delta)
 	_follow_vehicles(delta)
+	# de retour au calme, la ligne se replie vers le cordon d'origine
+	if stage <= 1 and mode == "hold" and line_c.x < STREET_X - 0.5 and tension != null and tension.value < 0.12:
+		_calm_t += delta
+		if _calm_t > 25.0:
+			mode = "retreat"
+	else:
+		_calm_t = 0.0
 	if stage >= 1:
 		_mega_cd -= delta
 		if _mega_cd <= 0.0:
@@ -544,6 +552,8 @@ func _update_line(delta: float) -> void:
 		"retreat":
 			_adv_goal = minf(line_c.x + 6.0, STREET_X)
 			_move_line(delta, 1.5)
+			if line_c.x >= STREET_X - 0.1:
+				mode = "hold"
 	# la ligne se resserre autour du centre de la foule en s'approchant
 	var spread := clampf((STREET_X - line_c.x) / 32.0, 0.0, 1.0)
 	line_c.z = lerpf(ROAD_Z, -1.5, spread)

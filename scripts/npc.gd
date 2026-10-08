@@ -31,6 +31,16 @@ var _flare_cd := 0.0
 var _cig_t := 0.0
 var _whistle_cd := 0.0
 
+# --- humeurs (0..1) : elles montent avec les événements et redescendent avec le temps
+var fear := 0.0
+var anger := 0.0
+var fatigue := 0.0
+var thirst := 0.0
+var cold := 0.5               # sensibilité au froid (trait)
+var stance := ""              # "", "sit" : attitude prise dans le face-à-face
+var _cop: Cop
+var _cop_cd := 0.0
+
 # --- accessoires
 var phone: Node3D
 var sign_node: Node3D
@@ -38,6 +48,11 @@ var flare: Flare
 var mortar_m: Node3D
 var lighter: Node3D
 var cig: Node3D
+var bottle_node: Node3D      # bouteille d'eau (créée à la première utilisation)
+var cam_hang: Node3D         # reporter : appareil pendu au cou
+var cam_held: Node3D         # reporter : appareil au visage
+var _press_t := 0.0
+var shutter_cd := 0.0
 var item: Node3D             # objet porté (Burnable)
 var stone_vis: MeshInstance3D
 var pole_node: Node3D
@@ -49,11 +64,17 @@ var _cig_smoke: GPUParticles3D
 func _ready() -> void:
 	super._ready()
 	_build_props()
+	NpcRoles.build_gear(self)
 	_idle_pose = _pick_idle()
 	_mortar_cd = _rng.randf_range(25.0, 50.0)
 	_flare_cd = _rng.randf_range(2.0, 12.0)
 	_cig_t = _rng.randf_range(0.0, 8.0)
 	_whistle_cd = _rng.randf_range(10.0, 40.0)
+	cold = _rng.randf_range(0.1, 0.9) if outfit.get("top", "hoodie") != "jacket" else _rng.randf_range(0.0, 0.5)
+	if outfit.get("top", "") == "tshirt":
+		cold = clampf(cold + 0.35, 0.0, 1.0)
+	thirst = _rng.randf_range(0.0, 0.45)
+	fatigue = _rng.randf_range(0.0, 0.4)
 
 
 func _pre_tick(delta: float) -> void:
@@ -63,6 +84,27 @@ func _pre_tick(delta: float) -> void:
 	_glance_cd = maxf(_glance_cd - delta, 0.0)
 	_look_cd = maxf(_look_cd - delta, 0.0)
 	state_t += delta
+	fear = maxf(fear - delta * 0.035, 0.0)
+	anger = maxf(anger - delta * 0.012, 0.0)
+	fatigue = clampf(fatigue + delta * (0.0035 if human.sit < 0.5 else -0.02), 0.0, 1.0)
+	thirst = minf(thirst + delta * 0.004, 1.0)
+	if human.kneel > 0.0 and state not in ["arrested", "aid"]:
+		human.kneel = move_toward(human.kneel, 0.0, delta * 2.0)
+	# assis seulement quand l'attitude le prévoit : toute autre situation relève le personnage
+	if human.sit > 0.0 and not (state == "home" and _home_sub in ["f_sit", "r_sit", "rest_sit"]):
+		human.sit = move_toward(human.sit, 0.0, delta * 2.5)
+		if human.sit <= 0.0:
+			stance = ""
+
+
+## La peur monte plus vite chez les craintifs
+func scare(a: float) -> void:
+	fear = clampf(fear + a * (1.35 - bold), 0.0, 1.0)
+
+
+## La colère monte plus vite chez les audacieux et les moins calmes
+func enrage(a: float) -> void:
+	anger = clampf(anger + a * (0.5 + bold * 0.8) * (1.3 - calm * 0.6), 0.0, 1.0)
 
 
 # =================================================================== accessoires
@@ -218,6 +260,24 @@ func _place_props() -> void:
 			_cig_smoke.global_position = human.head_world() + forward() * 0.13 + Vector3.DOWN * 0.03
 		else:
 			_cig_smoke.global_position = cp + ax2 * 0.075
+	# bouteille d'eau : tenue pour boire ou pour la tendre
+	var bottle_on := act in ["drink", "give"] and _blend > 0.4
+	if bottle_on and bottle_node == null:
+		bottle_node = Props.bottle()
+		bottle_node.top_level = true
+		add_child(bottle_node)
+	if bottle_node != null:
+		bottle_node.visible = bottle_on
+		if bottle_on:
+			bottle_node.global_transform = Transform3D(Props.basis_up(thumb, fwd), grip + thumb * 0.02)
+	if cam_held != null:
+		var shoot_on := act == "shoot" and _blend > 0.4
+		cam_held.visible = shoot_on
+		if cam_hang != null:
+			cam_hang.visible = not shoot_on
+		if shoot_on:
+			var cd := _bd(_film_d).normalized()
+			cam_held.global_transform = Transform3D(Basis.looking_at(-cd, Vector3.UP), (pr["pos"] as Vector3) + Vector3.UP * 0.0)
 	if stone_vis.visible:
 		stone_vis.global_position = (pr["pos"] as Vector3) + (pr["p"] as Vector3) * 0.035 + (pr["f"] as Vector3) * 0.02
 	if item and is_instance_valid(item) and item.get_parent() == self:
@@ -270,7 +330,7 @@ func _prop_cheer_pose() -> Array:
 
 
 func busy() -> bool:
-	return state in ["rally", "feed", "mortar", "panic", "dodge", "gassed", "hit", "sprayed", "arrested", "boarded", "rescue", "throwcop", "carattack", "vandal"]
+	return state in ["rally", "feed", "mortar", "panic", "dodge", "gassed", "hit", "sprayed", "arrested", "boarded", "rescue", "throwcop", "carattack", "vandal", "aid"]
 
 
 ## Réaction courte : pose, durée, point regardé, options {voice, loud, hop, face, run_to}
@@ -358,6 +418,8 @@ func _think(delta: float) -> void:
 			_think_carattack(delta)
 		"vandal":
 			_think_vandal(delta)
+		"aid":
+			NpcCare.think(self, delta)
 		"goto_look":
 			if not has_goal or state_t > 12.0:
 				react("film" if _rng.randf() < 0.5 else _idle_pose, _rng.randf_range(4.0, 8.0), data.get("look", global_position))
@@ -374,14 +436,33 @@ func _think_home(delta: float) -> void:
 			look(pp + Vector3.UP * 1.6, 1.0)
 			_look_cd = _rng.randf_range(1.5, 3.0)
 			_glance_cd = _rng.randf_range(6.0, 12.0)
+	# terrorisé en plein face-à-face : on quitte son poste pour l'arrière
+	if crowd.standoff.active and role in ["chat", "loner"] and fear > 0.5 and prop == "":
+		_home_rear(delta)
+		_home_props(delta)
+		return
 	match role:
 		"march":
 			_home_march(delta)
 		"chat":
 			_home_chat(delta)
+		"medic":
+			NpcRoles.think_medic(self, delta)
+		"press":
+			NpcRoles.think_press(self, delta)
 		_:
-			_home_loner(delta)
+			if role == "bloc" and crowd.standoff.active:
+				_home_march(delta)
+			else:
+				_home_loner(delta)
 	_home_props(delta)
+
+
+func _home_rear(delta: float) -> void:
+	var spot := crowd.standoff.rear_spot(self)
+	if not has_goal and Vector2(spot.x - global_position.x, spot.z - global_position.z).length() > 3.0:
+		go(spot, true, 0.6)
+	NpcFront.think_rear(self, delta)
 
 
 func _home_props(delta: float) -> void:
@@ -429,21 +510,34 @@ func _home_march(delta: float) -> void:
 	var fdir: Vector3 = tgt[1]
 	var d := Vector2(p.x - global_position.x, p.z - global_position.z).length()
 	var cs: float = crowd.cortege_speed
-	if d > 3.5:
-		go(p, true, 0.4)
+	var so_on: bool = crowd.standoff.active
+	var seated: bool = human.sit > 0.3 and _home_sub in ["f_sit", "rest_sit"]
+	if seated:
+		pass                                    # sit-in : on ne bouge plus
+	elif d > 3.5:
+		go(p, d > 30.0 or not so_on, 0.4)       # face à la police on s'y rend d'un pas décidé
 	elif d > 0.2 or cs > 0.05:
 		follow(p, clampf(cs + d * 0.9, 0.0, RUN * 0.8))
-	face(global_position + fdir * 5.0)
-	if prop == "megaphone" and crowd.cortege_speed < 0.05:
+	if not seated:
+		face(global_position + fdir * 5.0)
+	if prop == "megaphone" and crowd.cortege_speed < 0.05 and not so_on:
 		face(crowd.cortege_center())
 	# haut du corps selon le chant
 	var chanting: bool = crowd.chanting
 	var beat: float = crowd.beat_pulse(idx)
 	if _home_sub == "flare_light":
 		return
+	if so_on and crowd.standoff.is_rear(self):
+		# trop effrayé pour tenir le rang : on regarde de loin
+		if prop == "":
+			NpcFront.think_rear(self, delta)
+		else:
+			set_act(_prop_rest_pose(), {}, 2.0)
+			look(NpcFront.target_point(self, NpcFront.cop_of(self, delta)), 0.7)
+		return
 	match prop:
 		"sign":
-			set_act("sign", {"raise": clampf(0.35 + beat * 0.65, 0.0, 1.0) if chanting else 0.0}, 3.0)
+			set_act("sign", {"raise": 0.9 if so_on and not chanting else (clampf(0.35 + beat * 0.65, 0.0, 1.0) if chanting else 0.0)}, 3.0)
 		"banner":
 			set_act("banner", {}, 2.0)
 		"flare":
@@ -457,18 +551,16 @@ func _home_march(delta: float) -> void:
 			else:
 				set_act("mega_low", {}, 2.0)
 		_:
-			if chanting:
-				if idx % 3 == 0:
-					set_act("clap", {"gap": 0.02 + 0.2 * (1.0 - beat)}, 4.0)
-				elif idx % 3 == 1:
-					set_act("fist", {"k": beat}, 4.0)
-				else:
-					set_act("fist", {"k": beat * 0.8, "left": "akimbo"}, 4.0)
+			if so_on:
+				NpcFront.think(self, delta)
+			elif chanting:
+				chant_pose(beat)
 			else:
 				_home_idle_cycle(delta, true)
 	if chanting and prop != "megaphone":
 		jaw_extra = crowd.chant_jaw(idx)
-		look(crowd.cortege_center() + Vector3.UP * 2.0 + fdir * 6.0, 0.4)
+		if not so_on:
+			look(crowd.cortege_center() + Vector3.UP * 2.0 + fdir * 6.0, 0.4)
 	else:
 		jaw_extra = 0.0
 	# coup de sifflet de temps en temps
@@ -482,6 +574,102 @@ func _home_march(delta: float) -> void:
 					AudioLib.play_at(self, "whistle_%d" % (_rng.randi() % 3), head_pos(), 0.0, 9.0))
 			_home_sub = "whistle"
 			_home_t = 0.0
+
+
+## Gestes pendant un chant : applaudir, poing levé en rythme
+func chant_pose(beat: float) -> void:
+	if idx % 3 == 0:
+		set_act("clap", {"gap": 0.02 + 0.2 * (1.0 - beat)}, 4.0)
+	elif idx % 3 == 1:
+		set_act("fist", {"k": beat}, 4.0)
+	else:
+		set_act("fist", {"k": beat * 0.8, "left": "akimbo"}, 4.0)
+
+
+## Besoins du moment (soif, fatigue, froid) : renvoie l'occupation à prendre, "" si rien de particulier
+func _need_activity(marching: bool) -> String:
+	if prop != "" or smoker and _rng.randf() < 0.4:
+		return ""
+	if thirst > 0.6 and _rng.randf() < 0.5:
+		return "drink"
+	if fatigue > 0.6 and _rng.randf() < 0.5:
+		if not marching or crowd.cortege_speed < 0.05:
+			return "rest_sit"
+		return "stretch"
+	if fatigue > 0.3 and _rng.randf() < 0.12:
+		return "stretch"
+	if cold > 0.6 and _rng.randf() < 0.1:
+		return "shiver"
+	return ""
+
+
+func _start_need(need: String) -> void:
+	_home_sub = need
+	_home_t = 0.0
+	match need:
+		"drink":
+			_home_dur = 4.9
+		"rest_sit":
+			_home_dur = _rng.randf_range(18.0, 40.0)
+			stop_move()
+			if _rng.randf() < 0.5:
+				say_cat("tired", false, -2.0)
+		"stretch":
+			_home_dur = 3.8
+			if _rng.randf() < 0.4:
+				say_cat("tired", false, -2.0)
+		"shiver":
+			_home_dur = _rng.randf_range(6.0, 12.0)
+			if _rng.randf() < 0.55:
+				say_cat("cold", false, -2.0)
+
+
+## Joue l'occupation de besoin en cours ; false si `_home_sub` n'en est pas une
+func _run_need(delta: float) -> bool:
+	match _home_sub:
+		"drink":
+			set_act("drink", {}, 3.0)
+			var tilt := clampf((_home_t - 0.9) / 0.6, 0.0, 1.0) * clampf((4.2 - _home_t) / 0.5, 0.0, 1.0)
+			look(head_pos() + forward() * 0.5 + Vector3.UP * (0.15 + 1.3 * tilt), 1.0)
+			if _home_t > _home_dur - 0.15:
+				thirst = 0.0
+				_home_t = _home_dur + 1.0
+				# on propose à boire à un voisin
+				if crowd and _rng.randf() < 0.35:
+					for o in crowd.neighbors(global_position, 3.5):
+						if o != self and o is Npc and (o as Npc).state == "home":
+							say_cat("drink", false, -3.0)
+							break
+		"rest_sit":
+			stop_move()
+			human.sit = move_toward(human.sit, 1.0, delta * 1.6)
+			if human.sit > 0.7:
+				set_act("rest_knee" if idx % 2 == 0 else "phone", {"two": true}, 3.0)
+				if act == "phone":
+					Props.set_phone_screen(phone, "feed")
+			else:
+				set_act("crossed", {}, 3.0)
+			if fatigue < 0.05 or (role == "march" and crowd.cortege_speed > 0.08 and not crowd.standoff.active):
+				_home_t = _home_dur + 1.0
+			if crowd and crowd.standoff.active:
+				_home_t = _home_dur + 1.0
+		"stretch":
+			set_act("stretch", {}, 3.0)
+			human.lean_extra = lerpf(human.lean_extra, -0.1 * clampf(sin(_home_t / _home_dur * PI) * 2.0, 0.0, 1.0), minf(1.0, delta * 3.0))
+			jaw_extra = 0.7 * clampf(sin(_home_t * 2.2), 0.0, 1.0) if _home_t < 2.8 else 0.0
+			if _home_t > _home_dur - 0.15:
+				fatigue = maxf(fatigue - 0.15, 0.0)
+				human.lean_extra = 0.0
+				jaw_extra = 0.0
+		"shiver":
+			set_act("warm", {"rub": 1.0}, 3.0)
+			human.hunch = lerpf(human.hunch, 0.22, minf(1.0, delta * 2.0))
+			human.shake = 0.0
+			if _home_t > _home_dur - 0.2:
+				human.hunch = 0.0
+		_:
+			return false
+	return true
 
 
 ## Petites occupations quand on n'a rien de particulier à faire
@@ -498,10 +686,18 @@ func _home_idle_cycle(delta: float, marching := false) -> void:
 			if crowd:
 				look(crowd.interest_point(self), _rng.randf_range(0.5, 1.0))
 		return
+	if human.sit > 0.05 and _home_sub != "rest_sit":
+		# on se relève avant de faire autre chose
+		human.sit = move_toward(human.sit, 0.0, delta * 2.2)
+		stop_move()
+		return
 	if _home_sub == "" or _home_t > _home_dur:
 		_home_t = 0.0
 		var r := _rng.randf()
-		if r < 0.28:
+		var need := _need_activity(marching)
+		if need != "":
+			_start_need(need)
+		elif r < 0.28:
 			_home_sub = "phone"
 			_home_dur = _rng.randf_range(6.0, 16.0)
 			Props.set_phone_screen(phone, "feed")
@@ -519,6 +715,8 @@ func _home_idle_cycle(delta: float, marching := false) -> void:
 			_home_sub = "stand"
 			_idle_pose = _pick_idle()
 			_home_dur = _rng.randf_range(6.0, 15.0)
+	if _run_need(delta):
+		return
 	match _home_sub:
 		"phone":
 			set_act("phone", {"two": idx % 2 == 0}, 2.5)
@@ -551,18 +749,21 @@ func _home_chat(delta: float) -> void:
 	var spot: Array = crowd.chat_spot(self)
 	var p: Vector3 = spot[0]
 	var center: Vector3 = spot[1]
-	if Vector2(p.x - global_position.x, p.z - global_position.z).length() > 0.5 and not has_goal:
+	if Vector2(p.x - global_position.x, p.z - global_position.z).length() > 0.5 and not has_goal and human.sit < 0.3:
 		go(p, false, 0.3)
-	if not has_goal:
+	if not has_goal and human.sit < 0.3:
 		face(center)
 	var spk: Npc = crowd.chat_speaker(group)
+	var watching: bool = crowd.standoff.active and not speaking() and idx % 2 == 0
+	if watching:
+		look(NpcFront.target_point(self, NpcFront.cop_of(self, delta)), 0.7)
 	if speaking():
 		set_act("talk", {"two": idx % 2 == 1}, 2.5)
 		var other: Npc = crowd.chat_listener_target(self)
 		if other:
 			look(other.head_pos(), 1.0)
 	else:
-		if spk and spk != self:
+		if spk and spk != self and not watching:
 			look(spk.head_pos(), 1.0)
 			if _rng.randf() < delta * 0.25:
 				human.nod = 1.0
@@ -577,7 +778,14 @@ func _home_chat(delta: float) -> void:
 				_home_dur = _rng.randf_range(8.0, 18.0)
 				_home_sub = "phone" if _rng.randf() < 0.2 else "stand"
 				_idle_pose = _pick_idle()
-			if _home_sub == "phone" and (spk == null or spk == self):
+				var need := _need_activity(false)
+				if need != "":
+					_start_need(need)
+			if human.sit > 0.05 and _home_sub != "rest_sit":
+				human.sit = move_toward(human.sit, 0.0, delta * 2.2)
+			elif _run_need(delta):
+				pass
+			elif _home_sub == "phone" and (spk == null or spk == self):
 				set_act("phone", {}, 2.5)
 				look(phone.global_position if phone.visible else _bw(Vector3(0.05, 1.2, 0.4)), 0.9)
 			else:
@@ -588,7 +796,7 @@ func _home_loner(delta: float) -> void:
 	if crowd == null:
 		return
 	# se balade dans sa zone de temps en temps
-	if not has_goal and _rng.randf() < delta * (0.03 if role == "bloc" else 0.05):
+	if not has_goal and human.sit < 0.1 and _rng.randf() < delta * (0.03 if role == "bloc" else 0.05):
 		var a := _rng.randf() * TAU
 		var r := _rng.randf_range(1.0, 7.0 if role == "loner" else 4.0)
 		go(crowd.clamp_area(home_pos + Vector3(cos(a), 0, sin(a)) * r), false, 0.4)
@@ -643,11 +851,8 @@ func _think_dodge(_delta: float) -> void:
 func panic(from: Vector3, strength := 1.0) -> void:
 	if state == "panic" or state == "mortar":
 		return
-	var away := global_position - from
-	away.y = 0.0
-	if away.length() < 0.1:
-		away = Vector3(_rng.randf_range(-1, 1), 0, _rng.randf_range(-1, 1))
-	var target := global_position + away.normalized() * _rng.randf_range(5.0, 9.0) * strength
+	var away := flee_dir(from)
+	var target := global_position + away * _rng.randf_range(5.0, 9.0) * strength
 	_drop_item()
 	state = "panic"
 	state_t = 0.0
@@ -1504,9 +1709,33 @@ func _cough() -> void:
 	AudioLib.play_at(self, nm, head_pos(), -2.0, 6.0, vpitch)
 
 
+## Direction de fuite loin d'un point, sans jamais courir vers la ligne de police quand on en est proche
+func flee_dir(from: Vector3) -> Vector3:
+	var away := global_position - from
+	away.y = 0.0
+	away = away.normalized() if away.length() > 0.1 else Vector3(_rng.randf_range(-1, 1), 0, _rng.randf_range(-1, 1)).normalized()
+	var pol := crowd.police if crowd else null
+	if pol != null:
+		var gap := pol.line_c.x - global_position.x
+		if gap < 16.0:
+			var k := clampf((16.0 - gap) / 12.0, 0.0, 1.0)
+			away.x = lerpf(away.x, minf(away.x, -0.2) - 0.6, k)
+			away = away.normalized()
+	return away
+
+
+## Un nuage de gaz s'étend près de moi : on s'écarte avant d'être pris dedans
+func avoid_gas(c: Vector3) -> void:
+	scare(0.12)
+	var away := flee_dir(c).rotated(Vector3.UP, _rng.randf_range(-0.5, 0.5))
+	react("cover", 1.4, c + Vector3.UP * 3.0, {"voice": "retreat" if _rng.randf() < 0.55 else "fear", "voice_p": 0.5})
+	go(crowd.clamp_area(global_position + away * _rng.randf_range(5.0, 8.0)), true, 0.6)
+
+
 ## Du gaz sur moi (appelé ~8 fois par seconde par les nuages)
 func on_gas(density: float, from: Vector3) -> void:
 	gas_level = maxf(gas_level, density)
+	scare(0.03 * density)
 	if state == "gassed":
 		data["from"] = from
 		return
@@ -1521,9 +1750,7 @@ func on_gas(density: float, from: Vector3) -> void:
 	data = {"from": from}
 	stop_move()
 	if not tough:
-		var away := global_position - from
-		away.y = 0.0
-		away = away.normalized() if away.length() > 0.1 else Vector3(_rng.randf_range(-1, 1), 0, _rng.randf_range(-1, 1)).normalized()
+		var away := flee_dir(from)
 		var dest := global_position + away.rotated(Vector3.UP, _rng.randf_range(-0.5, 0.5)) * _rng.randf_range(13.0, 19.0)
 		go(crowd.clamp_area(dest) if crowd else dest, true, 0.8)
 	set_act("cover", {}, 6.0)
@@ -1543,9 +1770,8 @@ func _think_gassed(delta: float) -> void:
 	var from: Vector3 = data.get("from", global_position)
 	if sub == "flee" and (not has_goal) and gas_level > 0.1:
 		# toujours dans le gaz : on court plus loin
-		var away := global_position - from
-		away.y = 0.0
-		go(crowd.clamp_area(global_position + away.normalized() * 10.0) if crowd else global_position + away.normalized() * 10.0, true, 0.8)
+		var away := flee_dir(from)
+		go(crowd.clamp_area(global_position + away * 10.0) if crowd else global_position + away * 10.0, true, 0.8)
 	if gas_level < 0.04 and (not has_goal or sub == "tough") and state_t > 2.5:
 		human.hunch = 0.0
 		state = "react"
@@ -1562,6 +1788,8 @@ func _think_gassed(delta: float) -> void:
 func on_police_hit(kind: String, dir: Vector3, cop: Node3D) -> void:
 	if state in ["arrested", "boarded"]:
 		return
+	scare(0.4)
+	enrage(0.3)
 	_drop_item()
 	stop_move()
 	var d := Vector3(dir.x, 0, dir.z)
@@ -1579,7 +1807,7 @@ func on_police_hit(kind: String, dir: Vector3, cop: Node3D) -> void:
 	state = "hit"
 	state_t = 0.0
 	sub = "down" if down else "stagger"
-	data = {"dir": d, "dur": _rng.randf_range(2.2, 4.2), "cop": cop}
+	data = {"dir": d, "dur": _rng.randf_range(4.5, 8.0) if kind == "lbd" else _rng.randf_range(2.6, 5.0), "cop": cop}
 	var dl := global_basis.inverse() * d
 	human.fall_dir = atan2(dl.x, dl.z)
 	human.kick_back(1.2)
@@ -1591,12 +1819,33 @@ func on_police_hit(kind: String, dir: Vector3, cop: Node3D) -> void:
 	get_tree().call_group("crowd", "on_event", "civil_hit", {"pos": global_position, "kind": kind, "who": self})
 
 
+## Un secouriste s'occupe de moi : je me remets plus vite
+func on_aid(_by: Node3D) -> void:
+	match state:
+		"hit":
+			data["aided"] = true
+			data["dur"] = minf(float(data.get("dur", 3.0)), state_t)
+		"sprayed":
+			data["aided"] = true
+			state_t = maxf(state_t, 6.2)
+		"gassed":
+			data["aided"] = true
+			gas_level = 0.0
+			fear = maxf(fear - 0.2, 0.0)
+
+
 func _think_hit(delta: float) -> void:
 	var dur: float = data.get("dur", 3.0)
 	if sub == "down":
 		human.fall = move_toward(human.fall, 1.0 if state_t < dur else 0.0, delta * (4.5 if state_t < dur else 1.0))
-		if state_t > dur + 1.0:
+		if state_t > dur + (0.6 if data.get("aided", false) else 1.0):
 			human.fall = 0.0
+			if data.get("aided", false):
+				# relevé par un secouriste : on souffle, puis on reprend sa place (sans paniquer)
+				human.hunch = 0.0
+				go_home()
+				react("head", 2.0, global_position + forward() * 3.0 + Vector3.UP, {"voice": "ouais", "voice_p": 0.3})
+				return
 			var cop: Node3D = data.get("cop")
 			panic(cop.global_position if cop and is_instance_valid(cop) else global_position - forward() * 3.0, 1.0)
 	else:
