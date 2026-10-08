@@ -166,11 +166,11 @@ func _cloth(kind: String, color: Color) -> Material:
 				sh.vertex_color_use_as_albedo = true
 				return sh
 			"vest":
-				var v := _std(Color(0.92, 0.92, 0.9), 0.62, "canvas_n.png", 0.15, 8.0)
+				var v := _std(Color(0.7, 0.7, 0.68), 0.7, "canvas_n.png", 0.15, 8.0)
 				v.vertex_color_use_as_albedo = true
-				v.metallic_specular = 0.5
+				v.metallic_specular = 0.4
 				v.emission_enabled = true
-				v.emission = Color(0.05, 0.045, 0.0)
+				v.emission = Color(0.03, 0.027, 0.0)
 				return v
 			"hair":
 				var h := _std(color, 0.55, "hair_n.png", 0.9, 4.0)
