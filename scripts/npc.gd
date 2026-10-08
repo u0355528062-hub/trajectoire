@@ -368,6 +368,12 @@ func react(pose: String, dur: float, look_at_p: Vector3, opt := {}) -> bool:
 	return true
 
 
+## Objet rangé dans `data` ; null s'il a été libéré depuis (évite « assign invalid previously freed instance »)
+func dnode(key: String) -> Node:
+	var v: Variant = data.get(key)
+	return v as Node if is_instance_valid(v) else null
+
+
 func go_home() -> void:
 	state = "home"
 	state_t = 0.0
@@ -907,7 +913,7 @@ func watch_fire(bin: Node3D, ring: Vector3) -> void:
 
 
 func _think_watch(delta: float) -> void:
-	var bin: Node3D = data.get("bin")
+	var bin: Node3D = dnode("bin")
 	if bin == null or not is_instance_valid(bin):
 		go_home()
 		return
@@ -1026,7 +1032,7 @@ func _fire_spot(src: Node3D, spot: Vector3, make: bool) -> Vector3:
 func _think_feed(delta: float) -> void:
 	sub_t += delta
 	var make: bool = data.get("mode", "feed") == "make"
-	var src: Node3D = data.get("bin")
+	var src: Node3D = dnode("bin")
 	var spot: Vector3 = data.get("spot", Vector3.ZERO)
 	if state_t > 80.0 or (not make and (src == null or not is_instance_valid(src))):
 		_give_up_feed()
@@ -1053,7 +1059,7 @@ func _think_feed(delta: float) -> void:
 				go(_fire_spot(src, spot, make), false, 0.3)
 			sub_t = 0.0
 		"goto_item":
-			var it2: Burnable = data.get("item")
+			var it2: Burnable = dnode("item")
 			if it2 == null or not is_instance_valid(it2) or it2.in_bin != null or it2.held or it2.fire != null:
 				sub = "find"
 				return
@@ -1063,7 +1069,7 @@ func _think_feed(delta: float) -> void:
 				sub_t = 0.0
 				stop_move()
 		"pick":
-			var it3: Burnable = data.get("item")
+			var it3: Burnable = dnode("item")
 			if it3 == null or not is_instance_valid(it3) or it3.held:
 				sub = "find"
 				human.crouch = 0.0
@@ -1297,7 +1303,7 @@ func rally(bus: BusStop) -> void:
 
 func _think_rally(delta: float) -> void:
 	sub_t += delta
-	var bus: BusStop = data.get("bus")
+	var bus: BusStop = dnode("bus")
 	if bus == null or not crowd.rally_active:
 		_end_rally()
 		return
@@ -1423,16 +1429,16 @@ func _throw_stone(target: Vector3) -> void:
 
 func _on_kick_impact(point: Vector3) -> void:
 	var fwd := forward()
-	var bus: BusStop = data.get("bus") if state == "rally" else null
+	var bus: BusStop = dnode("bus") if state == "rally" else null
 	if bus:
 		bus.kick(point + fwd * 0.12, fwd, 0.55)
-	var car: PoliceVehicle = data.get("car") if state == "carattack" else null
+	var car: PoliceVehicle = dnode("car") if state == "carattack" else null
 	if car != null and is_instance_valid(car):
 		if car.kick(point + fwd * 0.12, fwd, 0.9):
 			data["hits"] = int(data.get("hits", 0)) + 1
 	# corps à corps : le coup de pied part vers le policier visé
 	if state == "brawl":
-		var bc: Cop = data.get("cop")
+		var bc: Cop = dnode("cop")
 		if bc != null and is_instance_valid(bc) and point.distance_to(bc.global_position + Vector3.UP * 0.9) < 1.7:
 			bc.on_hit("kick", fwd, 0.7, self)
 			data["hits"] = int(data.get("hits", 0)) + 1
@@ -1484,7 +1490,7 @@ func _car_slot(car: PoliceVehicle, near_pane: GlassPane = null) -> Vector3:
 
 func _think_carattack(delta: float) -> void:
 	sub_t += delta
-	var car: PoliceVehicle = data.get("car")
+	var car: PoliceVehicle = dnode("car")
 	if car == null or not is_instance_valid(car) or state_t > 55.0:
 		go_home()
 		return
@@ -1536,7 +1542,7 @@ func _think_carattack(delta: float) -> void:
 					data["style"] = "stone"
 					sub = "pick"
 		"stone_pick":
-			var pn: GlassPane = data.get("pane")
+			var pn: GlassPane = dnode("pane")
 			if pn == null or not is_instance_valid(pn) or not pn.alive():
 				sub = "pick"
 				return
@@ -1553,7 +1559,7 @@ func _think_carattack(delta: float) -> void:
 		"stone_throw":
 			human.crouch = lerpf(human.crouch, 0.0, minf(1.0, delta * 5.0))
 			human.lean_extra = lerpf(human.lean_extra, 0.0, minf(1.0, delta * 5.0))
-			var pn2: GlassPane = data.get("pane")
+			var pn2: GlassPane = dnode("pane")
 			if pn2 == null or not is_instance_valid(pn2) or not pn2.alive():
 				stone_vis.visible = false
 				sub = "pick"
@@ -1598,7 +1604,7 @@ func start_vandal(target: Node3D) -> void:
 
 func _think_vandal(delta: float) -> void:
 	sub_t += delta
-	var t: Node3D = data.get("t")
+	var t: Node3D = dnode("t")
 	if t == null or not is_instance_valid(t) or state_t > 25.0 or bool(data.get("done", false)):
 		if bool(data.get("done", false)) and _rng.randf() < 0.5:
 			say_cat("ouais", true)
@@ -1640,7 +1646,7 @@ func start_brawl(cop: Cop) -> void:
 
 func _think_brawl(delta: float) -> void:
 	sub_t += delta
-	var cop: Cop = data.get("cop")
+	var cop: Cop = dnode("cop")
 	if cop == null or not is_instance_valid(cop) or cop.state == "down" or state_t > 16.0 or int(data.get("hits", 0)) >= 4:
 		panic(cop.global_position if cop != null and is_instance_valid(cop) else global_position - forward() * 3.0, 1.0)
 		return
@@ -1911,11 +1917,11 @@ func _think_hit(delta: float) -> void:
 				go_home()
 				react("head", 2.0, global_position + forward() * 3.0 + Vector3.UP, {"voice": "ouais", "voice_p": 0.3})
 				return
-			var cop: Node3D = data.get("cop")
+			var cop: Node3D = dnode("cop")
 			panic(cop.global_position if cop and is_instance_valid(cop) else global_position - forward() * 3.0, 1.0)
 	else:
 		if state_t > 1.4:
-			var cop2: Node3D = data.get("cop")
+			var cop2: Node3D = dnode("cop")
 			panic(cop2.global_position if cop2 and is_instance_valid(cop2) else global_position - forward() * 3.0, 0.8)
 
 
@@ -2028,7 +2034,7 @@ func rescue(cop: Node3D) -> void:
 
 
 func _think_rescue(delta: float) -> void:
-	var cop: Node3D = data.get("cop")
+	var cop: Node3D = dnode("cop")
 	if cop == null or not is_instance_valid(cop) or state_t > 12.0:
 		go_home()
 		return
@@ -2088,7 +2094,7 @@ func throw_at(target: Node3D, kind := "") -> void:
 
 
 func _think_throwcop(delta: float) -> void:
-	var tg: Node3D = data.get("t")
+	var tg: Node3D = dnode("t")
 	if tg == null or not is_instance_valid(tg) or state_t > 3.0:
 		go_home()
 		return

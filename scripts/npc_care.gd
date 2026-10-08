@@ -60,7 +60,7 @@ static func _spot(h: Npc, patient: Node3D) -> Vector3:
 
 
 static func finish(h: Npc, healed: bool) -> void:
-	var patient: Node3D = h.data.get("patient")
+	var patient: Node3D = h.dnode("patient")
 	if h.crowd:
 		h.crowd.aid_pairs.erase(patient)
 	h.human.kneel = 0.0
@@ -71,7 +71,7 @@ static func finish(h: Npc, healed: bool) -> void:
 
 
 static func think(h: Npc, delta: float) -> void:
-	var patient: Node3D = h.data.get("patient")
+	var patient: Node3D = h.dnode("patient")
 	var kind: String = h.data.get("kind", "help")
 	h.sub_t += delta
 	if patient == null or not is_instance_valid(patient) or h.state_t > 40.0:
