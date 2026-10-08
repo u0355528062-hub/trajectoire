@@ -47,6 +47,7 @@ func add(amount: float, why := "") -> void:
 func set_value(v: float) -> void:
 	var old := stage
 	value = clampf(v, 0.0, 1.0)
+	_peak = maxf(_peak, value)
 	_refresh_stage(old)
 
 

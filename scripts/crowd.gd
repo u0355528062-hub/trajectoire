@@ -70,6 +70,8 @@ var _initial_count := 0
 var _newcomer_cd := 40.0
 var _newcomer_n := 0
 var _gas_aware_t := 0.0
+var _clouds: Array = []              # nuages de gaz (mis à jour à chaque image)
+var _brawl_cd := 20.0
 var _throw_cd := 6.0
 var _vandal_cd := 25.0
 var _rescuers := 0
@@ -172,7 +174,7 @@ func march_target(n: Npc) -> Array:
 	if standoff.active:
 		var sp: Variant = standoff.slot_of(n)
 		if sp != null:
-			return [sp, Vector3(1, 0, 0)]
+			return [safe_from_gas(sp), Vector3(1, 0, 0)]
 		if standoff.is_rear(n):
 			return [standoff.rear_spot(n), Vector3(1, 0, 0)]
 	var wob := Vector2(sin(_time * 0.31 + n.idx) * 0.14, sin(_time * 0.23 + n.idx * 1.7) * 0.22)
@@ -183,7 +185,7 @@ func march_target(n: Npc) -> Array:
 	var tan: Vector3 = r[1]
 	var right := tan.cross(Vector3.UP).normalized()
 	p += right * (n.slot.x + wob.x)
-	return [p, tan]
+	return [safe_from_gas(p), tan]
 
 
 func cortege_center() -> Vector3:
@@ -385,12 +387,14 @@ func _physics_process(delta: float) -> void:
 	excitement = move_toward(excitement, 0.3, delta * 0.006)
 	_run_later()
 	fire_srcs = get_tree().get_nodes_in_group("fire_sources")
+	_clouds = get_tree().get_nodes_in_group("gas_clouds")
 	_cache_obstacles()
 	_rebuild_hash()
 	if _nav_dirty:
 		rebuild_nav()
 	_update_arson(delta)
 	_update_hostility(delta)
+	_update_brawls(delta)
 	_update_vandalism(delta)
 	standoff.update(delta)
 	_update_gas_awareness(delta)
@@ -582,7 +586,7 @@ func chat_spot(n: Npc) -> Array:
 	var center: Vector3 = ch["center"]
 	var ang := TAU * i / cnt + n.group * 0.9
 	var rad := 0.62 + 0.12 * cnt
-	return [center + Vector3(cos(ang), 0, sin(ang)) * rad, center + Vector3.UP * 1.55]
+	return [safe_from_gas(center + Vector3(cos(ang), 0, sin(ang)) * rad), center + Vector3.UP * 1.55]
 
 
 func chat_speaker(g: int) -> Npc:
@@ -1177,7 +1181,7 @@ func on_event(type: String, d: Dictionary) -> void:
 					n.react(pc[0], 2.2, d["pos"] + Vector3.UP, {"voice": "ouais", "voice_p": 0.5, "prm": pc[1]})
 		"car_burn":
 			excitement = minf(excitement + 0.25, 1.0)
-			later(0.5, func(): _crowd_sound("cheer", d["pos"], 0.0, 6.0))
+			later(0.5, func(): _crowd_sound("cheer_big", d["pos"], 0.0, 6.0))
 			later(1.6, func(): _crowd_sound("applause", d["pos"], -4.0, 6.0))
 		"petard_lit":
 			for n in _near(d["pos"], 7.0):
@@ -1197,6 +1201,10 @@ func on_event(type: String, d: Dictionary) -> void:
 			_ev_gas_land(d)
 		"police_charge":
 			_ev_charge(d)
+		"police_stage":
+			_ev_police_stage(d)
+		"police_retreat":
+			_ev_police_retreat(d)
 		"police_lbd", "police_baton", "civil_hit":
 			_ev_violence(type, d)
 		"grab":
@@ -1235,6 +1243,35 @@ func _update_hostility(delta: float) -> void:
 	var tcop := police.nearest_cop(n2.global_position, 30.0)
 	if tcop:
 		n2.throw_at(tcop)
+
+
+## Corps à corps : à partir du stade « AFFRONTEMENT », les plus enragés foncent sur un policier
+func _update_brawls(delta: float) -> void:
+	if police == null or police.stage < 3:
+		return
+	_brawl_cd -= delta
+	if _brawl_cd > 0.0:
+		return
+	_brawl_cd = _rng.randf_range(10.0, 20.0) / (1.0 + 0.7 * float(police.stage - 3))
+	var active := 0
+	for n in npcs:
+		if n.state == "brawl":
+			active += 1
+	if active >= 2:
+		return
+	var cands: Array[Npc] = []
+	for n in npcs:
+		if n.state == "home" and not n.busy() and n.anger > 0.5 and n.bold > 0.6 and n.fear < 0.4 and n.prop not in ["banner", "megaphone", "mortar"] and n.role not in ["medic", "press"]:
+			cands.append(n)
+	cands.shuffle()
+	for n in cands:
+		var c := police.nearest_cop(n.global_position, 16.0)
+		if c == null or c.state in ["down", "arrest", "escort"]:
+			continue
+		var d := c.global_position.distance_to(n.global_position)
+		if d > 3.0 and d < 15.0:
+			n.start_brawl(c)
+			return
 
 
 ## Le joueur lève le poing / applaudit : les voisins suivent
@@ -1303,8 +1340,10 @@ func _ev_grab(d: Dictionary) -> void:
 	for n in _near(p, 24.0):
 		if n == d.get("who") or n.busy():
 			continue
-		if n.bold > 0.6 and _rescuers < 2 and cop != null and _rng.randf() < 0.3 and n.global_position.distance_to(p) < 16.0:
+		if n.bold > 0.55 and _rescuers < 2 and cop != null and _rng.randf() < (0.55 if d.get("who") is Player else 0.3) and n.global_position.distance_to(p) < 16.0:
 			_rescuers += 1
+			if d.get("who") is Player:
+				(d["who"] as Player).rescue_hold = 6.0
 			n.rescue(cop)
 			later(14.0, func(): _rescuers = maxi(_rescuers - 1, 0))
 		elif n.state == "home" and _rng.randf() < 0.45:
@@ -1328,6 +1367,55 @@ func mood_blast(p: Vector3, r: float, fear: float, anger: float, who: Variant = 
 			n.enrage(anger * k)
 
 
+## La ligne se replie : soulagement, cris de joie, applaudissements
+func _ev_police_retreat(d: Dictionary) -> void:
+	var p: Vector3 = d["pos"]
+	var voiced := 0
+	for n in npcs:
+		n.fear = maxf(n.fear - 0.25, 0.0)
+		if n.state != "home" or n.busy() or n.human.sit > 0.3 or _rng.randf() > 0.55:
+			continue
+		var delay := _rng.randf_range(0.2, 2.5)
+		var speak := voiced < 4 and _rng.randf() < 0.6
+		if speak:
+			voiced += 1
+		later(delay, func():
+			if not is_instance_valid(n) or n.busy():
+				return
+			var pc := n._prop_cheer_pose()
+			n.react(pc[0], 2.8, p + Vector3.UP * 1.5, {"voice": ("bravo" if _rng.randf() < 0.5 else "ouais") if speak else "", "voice_p": 1.0, "hop": n.prop == "", "prm": pc[1]}))
+	excitement = minf(excitement + 0.1, 1.0)
+	_crowd_sound("cheer_big", p + Vector3.UP * 2.0, -3.0, 8.0)
+	later(1.2, func(): _crowd_sound("applause", p + Vector3.UP * 2.0, -5.0, 8.0))
+
+
+## La police se renforce : on la montre du doigt, on prévient les autres, la tension se lit sur les visages
+func _ev_police_stage(d: Dictionary) -> void:
+	var st: int = d["stage"]
+	var p: Vector3 = d["pos"]
+	var voiced := 0
+	for n in npcs:
+		if st >= 2:
+			n.enrage(0.05 * float(st))
+		if n.state != "home" or n.busy() or n.human.sit > 0.3:
+			continue
+		if _rng.randf() > 0.35 + 0.12 * float(st):
+			continue
+		var delay := _rng.randf_range(0.3, 3.0)
+		var speak := voiced < 3 and _rng.randf() < 0.6
+		if speak:
+			voiced += 1
+		later(delay, func():
+			if not is_instance_valid(n) or n.busy():
+				return
+			var dir := n._wbd((p + Vector3.UP * 1.5 - n.head_pos()).normalized())
+			if n.prop == "":
+				n.react("point" if n.bold > 0.35 else "head", 2.6, p + Vector3.UP * 1.5, {"voice": "police" if speak else "", "voice_p": 1.0, "prm": {"dir": dir}})
+			else:
+				var pc := n._prop_cheer_pose()
+				n.react(pc[0], 2.4, p + Vector3.UP * 1.5, {"voice": "police" if speak else "", "voice_p": 1.0, "prm": pc[1]}))
+
+
 ## Charge de la police : ceux qui sont devant détalent, les plus déterminés tiennent bon
 func _ev_charge(d: Dictionary) -> void:
 	var p: Vector3 = d["pos"]
@@ -1346,7 +1434,7 @@ func _ev_charge(d: Dictionary) -> void:
 
 ## Un nuage de gaz proche ? (pour éviter d'y aller ou y laisser son poste)
 func gas_near(p: Vector3, margin := 0.0) -> Node3D:
-	for c in get_tree().get_nodes_in_group("gas_clouds"):
+	for c in _clouds:
 		var g := c as GasCloud
 		if g.fade() < 0.15:
 			continue
@@ -1356,14 +1444,28 @@ func gas_near(p: Vector3, margin := 0.0) -> Node3D:
 	return null
 
 
+## Ramène un point d'attente hors des nuages de gaz (marge de 2 m) : on ne vient pas se poster dans le gaz
+func safe_from_gas(p: Vector3) -> Vector3:
+	for c in _clouds:
+		var g := c as GasCloud
+		if g.fade() < 0.15:
+			continue
+		var d := Vector2(p.x - g.global_position.x, p.z - g.global_position.z)
+		var need := g.radius + 2.0
+		if d.length() < need:
+			var dir := d.normalized() if d.length() > 0.05 else Vector2.LEFT
+			p.x = g.global_position.x + dir.x * need
+			p.z = g.global_position.z + dir.y * need
+	return p
+
+
 ## Les PNJ qui voient un nuage s'étendre vers eux reculent avant d'être pris dedans
 func _update_gas_awareness(delta: float) -> void:
 	_gas_aware_t -= delta
 	if _gas_aware_t > 0.0:
 		return
 	_gas_aware_t = 0.45
-	var clouds := get_tree().get_nodes_in_group("gas_clouds")
-	if clouds.is_empty():
+	if _clouds.is_empty():
 		return
 	for n in npcs:
 		if n.state not in ["home", "watch", "goto_look"] or n.react_cd > 0.0 or n.gas_level > 0.1:
@@ -1771,6 +1873,8 @@ func _ev_petard_boom(d: Dictionary) -> void:
 			if near:
 				var away := n.global_position - p
 				away.y = 0.0
+				if speak:
+					n.say_cat("petard", true)
 				if r < 0.45 or (n.calm < 0.35 and r < 0.7):
 					n.panic(p, 0.45 if not big else 0.8)
 					scared += 1
@@ -1785,7 +1889,7 @@ func _ev_petard_boom(d: Dictionary) -> void:
 			var pose_r := r * 1.0 + (0.25 - n.calm * 0.25)
 			if pose_r < 0.30:
 				n.human.kick_back(0.5)
-				n.react("head" if n.prop == "" else n._prop_rest_pose(), _rng.randf_range(1.6, 2.6), p, {"voice": "wow" if speak else "", "voice_p": 1.0 if speak else 0.0})
+				n.react("head" if n.prop == "" else n._prop_rest_pose(), _rng.randf_range(1.6, 2.6), p, {"voice": ("petard" if _rng.randf() < 0.4 else "wow") if speak else "", "voice_p": 1.0 if speak else 0.0})
 			elif pose_r < 0.5 and n.bold > 0.45:
 				var pc2 := n._prop_cheer_pose()
 				n.react(pc2[0], _rng.randf_range(1.6, 2.8), p, {"voice": "ouais" if speak else "", "voice_p": 1.0 if speak else 0.0, "prm": pc2[1]})
@@ -1836,7 +1940,7 @@ func _ev_car_vandal(d: Dictionary) -> void:
 				n.react("film", _rng.randf_range(3.0, 5.0), p, {"prm": {"dir": n._wbd((p + Vector3.UP - n.head_pos()).normalized())}, "face": false})
 			else:
 				var pc := n._prop_cheer_pose()
-				n.react(pc[0], 2.4, p, {"voice": "allez" if _rng.randf() < 0.5 else "ouais", "voice_p": 0.4, "prm": pc[1]})
+				n.react(pc[0], 2.4, p, {"voice": "vandal" if _rng.randf() < 0.5 else ("allez" if _rng.randf() < 0.5 else "ouais"), "voice_p": 0.45, "prm": pc[1]})
 
 
 ## Initiative rare : un manifestant décidé donne un coup de pied dans un cône, une barrière, un panneau...

@@ -38,17 +38,21 @@ class TensionBar extends Control:
 	func _draw() -> void:
 		var w := size.x
 		var font := ThemeDB.fallback_font
-		draw_string(font, Vector2(14, 17), "TENSION", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.93, 0.94, 0.97, 0.6))
+		draw_string(font, Vector2(16, 22), "TENSION", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.93, 0.94, 0.97, 0.82))
 		var col: Color = HudFx.STAGE_COL[stage]
-		draw_string(font, Vector2(w - 14 - font.get_string_size(Tension.STAGE_NAMES[stage], HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x - (22 if police else 0), 17), Tension.STAGE_NAMES[stage], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, col)
+		var sname: String = Tension.STAGE_NAMES[stage]
+		var nw := font.get_string_size(sname, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
+		var np := Vector2(w - 16 - nw - (24 if police else 0), 22)
+		draw_string_outline(font, np, sname, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, 4, Color(0, 0, 0, 0.55))
+		draw_string(font, np, sname, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, col.lightened(0.28))
 		if police:
 			var on := fmod(t, 0.8) < 0.4
-			draw_circle(Vector2(w - 22, 12), 5.0, Color(0.15, 0.35, 1.0) if on else Color(1.0, 0.18, 0.15))
-			draw_circle(Vector2(w - 22, 12), 9.0, Color(0.2, 0.4, 1.0, 0.18) if on else Color(1.0, 0.2, 0.2, 0.18))
-		var x0 := 14.0
-		var x1 := w - 14.0
-		var y := 27.0
-		var h := 8.0
+			draw_circle(Vector2(w - 24, 16), 5.5, Color(0.15, 0.35, 1.0) if on else Color(1.0, 0.18, 0.15))
+			draw_circle(Vector2(w - 24, 16), 10.0, Color(0.2, 0.4, 1.0, 0.2) if on else Color(1.0, 0.2, 0.2, 0.2))
+		var x0 := 16.0
+		var x1 := w - 16.0
+		var y := 33.0
+		var h := 10.0
 		var bounds: Array = Tension.STAGES.duplicate()
 		bounds.append(1.0)
 		for i in 5:
@@ -57,7 +61,9 @@ class TensionBar extends Control:
 			var sx := lerpf(x0, x1, a) + (2.0 if i > 0 else 0.0)
 			var ex := lerpf(x0, x1, b) - (2.0 if i < 4 else 0.0)
 			var rect := Rect2(sx, y, ex - sx, h)
-			draw_rect(rect, Color(1, 1, 1, 0.08), true)
+			draw_rect(rect, Color(1, 1, 1, 0.1), true)
+			# repère de chaque stade : fine teinte sur le segment vide
+			draw_rect(Rect2(sx, y + h - 2.0, ex - sx, 2.0), Color(HudFx.STAGE_COL[i].r, HudFx.STAGE_COL[i].g, HudFx.STAGE_COL[i].b, 0.35), true)
 			var fill := clampf((shown - a) / (b - a), 0.0, 1.0)
 			if fill > 0.0:
 				var c: Color = HudFx.STAGE_COL[i]
@@ -67,7 +73,7 @@ class TensionBar extends Control:
 					draw_rect(Rect2(sx - 2, y - 2, (ex - sx) * fill + 4, h + 4), Color(c.r, c.g, c.b, 0.25 * pulse), false, 2.0)
 		# curseur
 		var cx := lerpf(x0, x1, shown)
-		draw_rect(Rect2(cx - 1.5, y - 4, 3.0, h + 8), Color(1, 1, 1, 0.85), true)
+		draw_rect(Rect2(cx - 1.5, y - 4, 3.0, h + 8), Color(1, 1, 1, 0.9), true)
 
 
 func _ready() -> void:
@@ -134,13 +140,13 @@ void fragment() {
 
 	# barre de tension
 	_bar = TensionBar.new()
-	_bar.custom_minimum_size = Vector2(380, 44)
-	_bar.size = Vector2(380, 44)
+	_bar.custom_minimum_size = Vector2(460, 54)
+	_bar.size = Vector2(460, 54)
 	_bar.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_bar.offset_left = -190
-	_bar.offset_right = 190
+	_bar.offset_left = -230
+	_bar.offset_right = 230
 	_bar.offset_top = 14
-	_bar.offset_bottom = 58
+	_bar.offset_bottom = 68
 	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var bp := Panel.new()
 	var st := StyleBoxFlat.new()

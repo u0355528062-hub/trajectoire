@@ -30,21 +30,25 @@
 |---|---|
 | **Z Q S D** (ou W A S D) | Marcher |
 | **Maj** | Courir |
-| **Espace** | Sauter |
+| **Espace** | Sauter — et **se débattre** quand un policier t'a agrippé |
+| **C** | S'accroupir |
 | **Souris** | Regarder |
 | **V** | Vue 1ʳᵉ / 3ᵉ personne |
 | **1** | Sortir / ranger le mortier |
 | **2** | Sortir / ranger les **pierres** (lancer) |
 | **3** | Sortir le **briquet + journal** (mettre le feu à une poubelle) |
 | **4** | Sortir un **fumigène** |
+| **5 / 6** | Sortir un **petit / gros pétard** : clic gauche = allumer la mèche, clic gauche encore = lancer |
 | **Molette** | Changer d'objet |
 | **Clic droit (maintenu)** | Viser : mortier = bras tendu + réticule ; pierres / journal = **trajectoire en pointillés** ; fumigène = le **brandir** au-dessus de la tête |
 | **Clic gauche** | Mortier (en visant) : tirer, 6 obus. Pierres : lancer. Journal : allumer, puis lancer. Fumigène : craquer, puis lancer |
-| **E** | Poubelle : ouvrir / fermer. **Maintenir E** : la basculer sur ses roues et la pousser, relâcher pour la poser |
+| **E** | Poubelle : ouvrir / fermer. **Maintenir E** : la basculer sur ses roues et la pousser. Aussi : **relever une barrière** tombée, **grimper sur le capot** d'une voiture de police |
 | **G** | Appeler la foule (« Venez ! ») |
-| **F** | Coup de pied (3 coups cassent une vitre, pousse une poubelle) |
-| **R** | Recharger obus et fumigènes (pour tester) |
+| **F** | Coup de pied (vitres, poubelles, barrières, panneaux, voitures de police…) |
+| **B / N / X** | Poing levé / applaudir / mains en l'air : la foule autour de toi suit |
+| **R** | Recharger obus, fumigènes et pétards (pour tester) |
 | **H** | Afficher / masquer l'aide |
+| **Échap** | **Menu pause** (reprendre, recommencer, options Son / Image / Jeu / Accessibilité, commandes) |
 
 L'arrêt de bus est devant toi, de l'autre côté de la route : traverse, puis soit :
 - **lance des pierres** (touche **2**, clic droit pour voir la trajectoire, clic gauche pour lancer) : chaque impact ajoute des fissures et fait tomber des éclats, la vitre finit par exploser après 3 à 5 pierres ;
@@ -64,6 +68,30 @@ Va près de l'abribus et appuie sur **G** : ton personnage crie « Venez ! ». S
 l'ambiance, certains manifestants accourent pour donner des coups de pied dans les vitres ou lancer des
 pierres, d'autres refusent. Plus la soirée est chaude (feux d'artifice, vitres cassées, feux), plus ils te suivent.
 
+### La barre de tension et la police
+
+La **barre en haut de l'écran** mesure la tension. Elle monte quand tu casses des vitres, mets le feu,
+tires au mortier, lances des projectiles sur les policiers, t'attaques à une voiture de police… et quand la
+police elle‑même gaze ou charge. Elle redescend doucement quand tout est calme.
+
+- **Tendu** : des CRS arrivent au bout de la rue et forment un cordon.
+- **Échauffourées** : un fourgon, la ligne avance, premiers gaz lacrymogènes. La foule s'arrête de défiler
+  et **fait front** face à la police.
+- **Affrontement / Émeute** : charges, LBD, bombe lacrymogène, interpellations, renforts.
+
+Si un policier t'**agrippe**, **martèle Espace** pour te dégager (des manifestants peuvent venir t'aider).
+**Menotté = c'est fini** : l'écran « ARRÊTÉ » apparaît, appuie sur Entrée ou Espace pour recommencer.
+Le gaz brouille l'image : sors du nuage, un **médic** (gilet jaune à croix rouge) viendra te rincer les yeux.
+
+### Autres choses à essayer
+
+- **Grimpe sur le capot** de la voiture de police (E) : des manifestants viennent t'aider à la défoncer.
+  Une vitre cassée + un fumigène ou une torche posée près du moteur, et elle prend feu.
+- **Pétards** (5 et 6) : le petit fait peur, le gros fait mal aux oreilles.
+- **Barrières, cônes, panneaux, boîtes à journaux, lampadaires** : tout se frappe et se renverse.
+- Observe la foule : certains boivent, s'étirent, s'assoient, d'autres filment, un reporter cherche le bon
+  angle, les plus calmes tentent d'apaiser les plus énervés.
+
 ## 6. Problèmes fréquents
 
 - **Le jeu est lent / saccadé** : ferme les autres programmes. Dans le jeu, regarder un coin du ciel plutôt que les feux d'artifice proches aide. Pour alléger : menu **Projet → Paramètres du projet → Rendu → Anti-aliasing** → mets *MSAA 3D* sur « Désactivé ».
@@ -71,7 +99,7 @@ pierres, d'autres refusent. Plus la soirée est chaude (feux d'artifice, vitres 
 - **La souris ne bouge pas la caméra** : clique une fois dans la fenêtre du jeu.
 - **Rien ne s'est importé / images manquantes** : ferme Godot, rouvre le projet et attends la fin de la barre de progression en bas à droite.
 - **Un son ne marche pas** : vérifie le volume du PC. Les voix et la foule sont dans `assets/audio/` (fichiers .ogg) ; si Godot les signale manquants, laisse-le terminer l'import (barre en bas à droite).
-- **Le jeu rame avec la foule** : la foule compte 27 personnages animés. Ferme les autres programmes, ou dans `scripts/crowd.gd` supprime quelques lignes de la liste `cfg` (une ligne = un manifestant).
+- **Le jeu rame avec la foule** : la foule compte une trentaine de personnages animés, plus jusqu'à 32 policiers. Ferme les autres programmes, ou dans `scripts/crowd.gd` supprime quelques lignes de la liste `cfg` (une ligne = un manifestant).
 
 ## 7. Où est quoi (si tu veux modifier plus tard)
 

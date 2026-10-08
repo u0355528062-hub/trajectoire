@@ -85,6 +85,7 @@ var injured_t := 0.0              # blessé : ralenti
 var down_t := 0.0                 # à terre
 var arrest_phase := ""            # "", "grabbed" (agrippé), "cuffed" (menotté)
 var struggle := 0.0               # jauge de lutte
+var rescue_hold := 0.0            # des manifestants accourent : le compte à rebours des menottes ralentit
 var arrest_cops: Array = []
 var invuln_t := 0.0               # après s'être libéré : pas de nouvelle prise tout de suite
 var wanted := 0.0                 # recherché (0..1) : les policiers le prennent pour cible
@@ -712,6 +713,8 @@ func begin_arrest(cop: Node3D) -> bool:
 		message.emit("Interpellation ! Débats-toi avec ESPACE")
 		_voice_say("arrested")
 		_shake = 0.8
+		# la foule voit la scène : certains foncent pour te libérer
+		get_tree().call_group("crowd", "on_event", "grab", {"pos": global_position, "who": self, "cop": cop})
 	return true
 
 
@@ -806,6 +809,9 @@ func _update_status(delta: float) -> void:
 	# arrestation
 	if arrest_phase == "grabbed":
 		_arrest_t += delta
+		if rescue_hold > 0.0:
+			rescue_hold -= delta
+			_arrest_t -= delta * 0.75
 		if Input.is_action_just_pressed("jump"):
 			struggle += 0.15 + _rng.randf() * 0.05
 			_shake = maxf(_shake, 0.35)

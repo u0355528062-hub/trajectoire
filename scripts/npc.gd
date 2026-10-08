@@ -330,7 +330,7 @@ func _prop_cheer_pose() -> Array:
 
 
 func busy() -> bool:
-	return state in ["rally", "feed", "mortar", "panic", "dodge", "gassed", "hit", "sprayed", "arrested", "boarded", "rescue", "throwcop", "carattack", "vandal", "aid"]
+	return state in ["rally", "feed", "mortar", "panic", "dodge", "gassed", "hit", "sprayed", "arrested", "boarded", "rescue", "throwcop", "carattack", "vandal", "aid", "brawl"]
 
 
 ## Réaction courte : pose, durée, point regardé, options {voice, loud, hop, face, run_to}
@@ -420,6 +420,8 @@ func _think(delta: float) -> void:
 			_think_vandal(delta)
 		"aid":
 			NpcCare.think(self, delta)
+		"brawl":
+			_think_brawl(delta)
 		"goto_look":
 			if not has_goal or state_t > 12.0:
 				react("film" if _rng.randf() < 0.5 else _idle_pose, _rng.randf_range(4.0, 8.0), data.get("look", global_position))
@@ -515,7 +517,9 @@ func _home_march(delta: float) -> void:
 	if seated:
 		pass                                    # sit-in : on ne bouge plus
 	elif d > 3.5:
-		go(p, d > 30.0 or not so_on, 0.4)       # face à la police on s'y rend d'un pas décidé
+		# face à la police on s'y rend d'un pas décidé ; on ne recalcule le chemin que si la cible a bougé
+		if not has_goal or goal.distance_to(p) > 1.5 or path.size() <= 1 and d > 6.0:
+			go(p, d > 30.0 or not so_on, 0.4)
 	elif d > 0.2 or cs > 0.05:
 		follow(p, clampf(cs + d * 0.9, 0.0, RUN * 0.8))
 	if not seated:
@@ -711,6 +715,8 @@ func _home_idle_cycle(delta: float, marching := false) -> void:
 			_home_sub = "film"
 			_home_dur = _rng.randf_range(5.0, 10.0)
 			Props.set_phone_screen(phone, "cam")
+			if _rng.randf() < 0.18:
+				say_cat("film", false, -3.0)
 		else:
 			_home_sub = "stand"
 			_idle_pose = _pick_idle()
@@ -799,7 +805,7 @@ func _home_loner(delta: float) -> void:
 	if not has_goal and human.sit < 0.1 and _rng.randf() < delta * (0.03 if role == "bloc" else 0.05):
 		var a := _rng.randf() * TAU
 		var r := _rng.randf_range(1.0, 7.0 if role == "loner" else 4.0)
-		go(crowd.clamp_area(home_pos + Vector3(cos(a), 0, sin(a)) * r), false, 0.4)
+		go(crowd.safe_from_gas(crowd.clamp_area(home_pos + Vector3(cos(a), 0, sin(a)) * r)), false, 0.4)
 		_home_sub = "stand"
 		_home_t = 0.0
 		_home_dur = _rng.randf_range(4.0, 8.0)
@@ -925,6 +931,12 @@ func _think_watch(delta: float) -> void:
 		data["next"] = _rng.randf_range(4.0, 9.0)
 		var r := _rng.randf()
 		var close := global_position.distance_to(bin.global_position) < 2.6
+		var hot_close: bool = global_position.distance_to(bin.global_position) < 3.2 and float(bin.heat) > 0.85
+		if hot_close and _rng.randf() < 0.5:
+			# trop près d'un grand feu : on prévient et on recule un peu
+			say_cat("fireclose", true)
+			scare(0.05)
+			go(crowd.clamp_area(global_position + flee_dir(bin.global_position) * 1.6), false, 0.4)
 		if prop != "":
 			set_act(_prop_cheer_pose()[0] if _rng.randf() < 0.4 else _prop_rest_pose(), _prop_cheer_pose()[1] if _rng.randf() < 0.4 else {}, 2.5)
 		elif r < 0.32:
@@ -1418,6 +1430,12 @@ func _on_kick_impact(point: Vector3) -> void:
 	if car != null and is_instance_valid(car):
 		if car.kick(point + fwd * 0.12, fwd, 0.9):
 			data["hits"] = int(data.get("hits", 0)) + 1
+	# corps à corps : le coup de pied part vers le policier visé
+	if state == "brawl":
+		var bc: Cop = data.get("cop")
+		if bc != null and is_instance_valid(bc) and point.distance_to(bc.global_position + Vector3.UP * 0.9) < 1.7:
+			bc.on_hit("kick", fwd, 0.7, self)
+			data["hits"] = int(data.get("hits", 0)) + 1
 	# les meubles de rue sur le passage (barrière, cône, panneau...) encaissent aussi
 	if state == "vandal":
 		for n in get_tree().get_nodes_in_group("kickable"):
@@ -1603,6 +1621,53 @@ func _think_vandal(delta: float) -> void:
 				sub_t = -1.6
 				if sub_t < 0.0 and state_t > 14.0:
 					data["done"] = true
+
+
+# ------------------------------------------------------------------- corps à corps avec un policier
+func start_brawl(cop: Cop) -> void:
+	if busy() or cop == null:
+		return
+	_drop_item()
+	state = "brawl"
+	state_t = 0.0
+	sub = "run"
+	sub_t = 0.0
+	data = {"cop": cop, "hits": 0}
+	hostile = 1.0
+	say_cat("anger", true)
+	go(cop.global_position, true, 0.4)
+
+
+func _think_brawl(delta: float) -> void:
+	sub_t += delta
+	var cop: Cop = data.get("cop")
+	if cop == null or not is_instance_valid(cop) or cop.state == "down" or state_t > 16.0 or int(data.get("hits", 0)) >= 4:
+		panic(cop.global_position if cop != null and is_instance_valid(cop) else global_position - forward() * 3.0, 1.0)
+		return
+	var to := cop.global_position - global_position
+	to.y = 0.0
+	var tp := cop.global_position + Vector3.UP * 0.9
+	look(tp, 1.0)
+	if sub == "run":
+		if to.length() > 1.5:
+			if not has_goal or goal.distance_to(cop.global_position) > 1.3:
+				go(cop.global_position - to.normalized() * 0.8, true, 0.3)
+			set_act("fist", {"k": 0.6}, 5.0)
+		else:
+			stop_move()
+			sub = "fight"
+			sub_t = -0.2
+		return
+	face(cop.global_position)
+	if to.length() > 2.6:
+		sub = "run"
+		return
+	set_act("fist", {"k": 0.9}, 4.0)
+	if sub_t > 0.0 and human.kick_t < 0.0 and absf(wrapf(_yaw_to(cop.global_position) - yaw, -PI, PI)) < 0.4:
+		human.start_kick()
+		sub_t = -_rng.randf_range(1.1, 1.8)
+		if _rng.randf() < 0.5:
+			say_cat("anger", true)
 
 
 # ------------------------------------------------------------------- tir de mortier (PNJ)
@@ -1987,6 +2052,11 @@ func _think_rescue(delta: float) -> void:
 				(cop as Cop).arrestee = null
 				(cop as Cop).set_state("hold")
 				(tgt as Npc).free_up()
+			elif tgt is Player:
+				# on aide le joueur à se dégager : la jauge de lutte bondit
+				var pl := tgt as Player
+				pl.struggle = minf(pl.struggle + 0.55, 1.0)
+				pl.message.emit("Un manifestant te vient en aide !")
 		hostile = 1.0
 	elif sub_t > 0.8:
 		panic(cop.global_position, 1.0)

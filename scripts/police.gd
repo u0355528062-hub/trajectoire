@@ -214,6 +214,7 @@ func _layout() -> void:
 func _on_stage_up(s: int) -> void:
 	stage = s
 	_alert_all(alert_level())
+	get_tree().call_group("crowd", "on_event", "police_stage", {"stage": s, "pos": line_c})
 	var announce := func(t: String): get_tree().call_group("hud", "announce", t)
 	match s:
 		1:
@@ -482,6 +483,7 @@ func _physics_process(delta: float) -> void:
 		_calm_t += delta
 		if _calm_t > 25.0:
 			mode = "retreat"
+			get_tree().call_group("crowd", "on_event", "police_retreat", {"pos": line_c})
 	else:
 		_calm_t = 0.0
 	if stage >= 1:

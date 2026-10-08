@@ -14,7 +14,7 @@ static func needs_aid(a: Node3D) -> bool:
 		return p.arrest_phase == "" and (p.pepper_level > 0.35 or p.gas_level > 0.45 or p.down_t > 0.8)
 	if a is Npc:
 		var n := a as Npc
-		if n.data.get("aided", false) or not is_instance_valid(n):
+		if n.data.get("aided", false):
 			return false
 		match n.state:
 			"hit":
@@ -40,6 +40,8 @@ static func start(h: Npc, patient: Node3D, kind: String) -> void:
 	elif h._rng.randf() < 0.7:
 		h.say_cat("help", true)
 	h.go(_spot(h, patient), true, 0.4)
+	if patient is Player:
+		(patient as Player).message.emit("Un médic accourt !" if kind == "medic" else "Quelqu'un vient t'aider")
 
 
 ## Place du secouriste près du blessé : à son côté, côté d'où il vient

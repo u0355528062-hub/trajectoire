@@ -180,14 +180,14 @@ static func _make_tex() -> void:
 			var nx := 0.0
 			var ny := 0.0
 			if r > 0.001 and r < 1.0:
-				nx = -dh_dr * (u / r) * 1.15
-				ny = -dh_dr * (v / r) * 1.15
+				nx = -dh_dr * (u / r) * 2.1
+				ny = -dh_dr * (v / r) * 2.1
 			var nz := 1.0
 			var l := sqrt(nx * nx + ny * ny + nz * nz)
 			nm.set_pixel(x, y, Color(nx / l * 0.5 + 0.5, ny / l * 0.5 + 0.5, nz / l * 0.5 + 0.5, 1.0 if r < 1.0 else 0.0))
 			var al := 0.0
 			if r < 1.0:
-				al = pow(1.0 - r, 1.6) * 0.5 + (0.12 if r > 0.55 and r < 0.9 else 0.0)
+				al = pow(1.0 - r, 1.6) * 0.62 + (0.2 if r > 0.55 and r < 0.9 else 0.0)
 			a.set_pixel(x, y, Color(0.09, 0.09, 0.1, clampf(al, 0.0, 0.6)))
 	_dent_tex_a = ImageTexture.create_from_image(a)
 	_dent_tex_n = ImageTexture.create_from_image(nm)
@@ -318,7 +318,8 @@ func _apply_char() -> void:
 		for m in car._body.find_children("*", "MeshInstance3D", true, false):
 			var mi := m as MeshInstance3D
 			var mo := mi.material_override
-			if mo is StandardMaterial3D and (mo == PoliceVehicle.mat("car_white") or mo == PoliceVehicle.mat("van_navy") or mo == PoliceVehicle.mat("glass")):
+			var is_decal: bool = mo is StandardMaterial3D and (mo as StandardMaterial3D).albedo_texture != null and (mo as StandardMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED
+			if mo is StandardMaterial3D and (is_decal or mo == PoliceVehicle.mat("car_white") or mo == PoliceVehicle.mat("van_navy") or mo == PoliceVehicle.mat("glass")):
 				_mat_list.append([mi, mo])
 				mi.material_override = mo.duplicate()
 	for e in _mat_list:

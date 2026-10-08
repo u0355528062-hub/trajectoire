@@ -79,13 +79,16 @@ static func think(n: Npc, delta: float) -> void:
 		"f_akimbo": 0.5 + 0.4 * n.bold,
 		"f_clap": 0.3 + 0.7 * n.anger,
 	}
+	if n.prop == "" and n.fear < 0.3 and n.calm > 0.6:
+		# les plus posés tentent de ramener le calme quand la colère monte autour d'eux
+		w["f_calm"] = 1.8 * clampf(n.calm - 0.55, 0.0, 1.0) * (0.25 + so.anger_avg)
 	if n.fear > 0.35:
 		w["f_scared"] = 1.0 + 3.0 * n.fear
 		w["f_fist"] *= 0.3
 		w["f_shout"] *= 0.4
 	if n.prop != "":
 		# les accessoires occupent déjà les mains : seulement des cris et du regard
-		w = {"f_shout": 0.4 + 1.5 * n.anger, "f_hold": 2.0}
+		w = {"f_hold": 1.0}
 	var tot := 0.0
 	for k in w:
 		tot += float(w[k])
@@ -115,6 +118,9 @@ static func think(n: Npc, delta: float) -> void:
 			Props.set_phone_screen(n.phone, "cam")
 			if n._rng.randf() < 0.3:
 				n.say_cat("film", false, -3.0)
+		"f_calm":
+			n._home_dur = n._rng.randf_range(3.0, 4.5)
+			n.say_cat("calm", true)
 		"f_scared":
 			n._home_dur = n._rng.randf_range(3.0, 6.0)
 			if n._rng.randf() < 0.5:
@@ -123,6 +129,8 @@ static func think(n: Npc, delta: float) -> void:
 			n._home_dur = n._rng.randf_range(3.0, 6.0)
 		"f_hold":
 			n._home_dur = n._rng.randf_range(4.0, 9.0)
+			if n._rng.randf() < 0.25 + 0.5 * n.anger:
+				n.say_cat("defy" if n._rng.randf() < 0.6 else "slogan", true)
 		_:
 			n._home_dur = n._rng.randf_range(5.0, 12.0)
 
@@ -156,6 +164,13 @@ static func _run_sub(n: Npc, delta: float, tp: Vector3, cop: Cop) -> void:
 			n.set_act("point", {"dir": Vector3(dir.x, clampf(dir.y, 0.0, 0.5), dir.z)}, 5.0)
 		"f_film":
 			n.set_act("film", {"dir": n._wbd(dir).normalized()}, 2.5)
+		"f_calm":
+			# paumes ouvertes, on fait signe de baisser d'un ton ; l'entourage s'apaise un peu
+			n.set_act("refuse", {}, 3.0)
+			if int(n._home_t * 2.0) != int((n._home_t - delta) * 2.0):
+				for o in n.crowd.neighbors(n.global_position, 6.0):
+					if o != n and o is Npc:
+						(o as Npc).anger = maxf((o as Npc).anger - 0.035, 0.0)
 		"f_scared":
 			n.set_act("head" if n.fear > 0.6 else "cover", {}, 3.0)
 			n.human.hunch = lerpf(n.human.hunch, 0.35, minf(1.0, delta * 3.0))

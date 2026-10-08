@@ -15,6 +15,7 @@ var rows := {}               # Npc -> int : rang (0 = premier rang)
 var rear := {}               # Npc -> true : se tient à l'arrière
 var gap := 13.0
 var center := Vector3.ZERO   # milieu du premier rang
+var anger_avg := 0.0         # colère moyenne du front : les plus calmes tentent d'apaiser
 var _t := 0.0
 
 
@@ -93,6 +94,10 @@ func update(delta: float) -> void:
 	for n in rear.keys():
 		if not people.has(n):
 			rear.erase(n)
+	var tot := 0.0
+	for n in front:
+		tot += n.anger
+	anger_avg = tot / float(maxi(front.size(), 1))
 	# les plus déterminés devant ; les anciens du premier rang gardent un avantage (évite les chassés-croisés)
 	var bonus := func(n: Npc) -> float:
 		var d: float = n.bold * 0.55 + n.anger * 0.8 - n.fear * 1.1
