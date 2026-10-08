@@ -161,7 +161,8 @@ static func _run_sub(n: Npc, delta: float, tp: Vector3, cop: Cop) -> void:
 		"f_shout":
 			n.set_act("cup", {}, 4.0)
 		"f_point":
-			n.set_act("point", {"dir": Vector3(dir.x, clampf(dir.y, 0.0, 0.5), dir.z)}, 5.0)
+			var ld := n._wbd(dir)                  # direction dans le repère du corps (+X = droite)
+			n.set_act("point", {"dir": Vector3(ld.x, clampf(ld.y, 0.0, 0.5), ld.z)}, 5.0)
 		"f_film":
 			n.set_act("film", {"dir": n._wbd(dir).normalized()}, 2.5)
 		"f_calm":

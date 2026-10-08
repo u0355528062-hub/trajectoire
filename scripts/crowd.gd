@@ -419,6 +419,7 @@ func _physics_process(delta: float) -> void:
 		var a := _banner_r.pole_node.global_transform * Vector3(0, 1.4, 0)
 		var b := _banner_l.pole_node.global_transform * Vector3(0, 1.4, 0)
 		_banner.set_poles(a, b)
+		_banner.visible = a.distance_to(b) < 6.5      # perches trop écartées : la banderole tombe
 
 
 func _run_later() -> void:
