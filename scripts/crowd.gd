@@ -17,6 +17,9 @@ var actors: Array[Actor] = []          # civils + policiers
 var nav := NavGrid.new()
 var obstacles: Array[Dictionary] = []
 var _obs: Array[Dictionary] = []
+var _obs_c := PackedVector3Array()
+var _obs_r2 := PackedFloat32Array()
+var _obs_tick := 0
 var _hash := {}
 var _nav_dirty := true
 var player: Player
@@ -752,19 +755,33 @@ func rebuild_nav() -> void:
 
 
 func _cache_obstacles() -> void:
+	# les obstacles bougent peu : on ne les relève qu'une image physique sur deux
+	_obs_tick += 1
+	if _obs_tick % 2 == 0 and not _obs.is_empty():
+		return
 	_obs.clear()
+	_obs_c.clear()
+	_obs_r2.clear()
 	for o in obstacles:
 		var node: Node3D = o["node"]
 		if not is_instance_valid(node):
 			continue
 		var xf := node.global_transform
 		var off: Vector2 = o["off"]
-		_obs.append({"c": xf * Vector3(off.x, 0, off.y), "inv": Basis(Vector3.UP, node.global_rotation.y).inverse(),
-			"h": o["half"], "circle": o["circle"]})
+		var c := xf * Vector3(off.x, 0, off.y)
+		var h: Vector2 = o["half"]
+		var r := (h.x + 0.5) if o["circle"] else (h.length() + 0.5)
+		_obs.append({"c": c, "inv": Basis(Vector3.UP, node.global_rotation.y).inverse(), "h": h, "circle": o["circle"]})
+		_obs_c.append(c)
+		_obs_r2.append(r * r)
 	for n in get_tree().get_nodes_in_group("dyn_obstacles"):
 		var info: Array = n.obstacle_box()
 		if info.size() == 3:
-			_obs.append({"c": info[0], "inv": Basis(Vector3.UP, float(info[2])).inverse(), "h": info[1], "circle": false})
+			var hb: Vector2 = info[1]
+			var r2 := hb.length() + 0.5
+			_obs.append({"c": info[0], "inv": Basis(Vector3.UP, float(info[2])).inverse(), "h": hb, "circle": false})
+			_obs_c.append(info[0])
+			_obs_r2.append(r2 * r2)
 
 
 func _rebuild_hash() -> void:
@@ -826,7 +843,13 @@ func separation(n: Actor) -> Vector3:
 
 func resolve(n: Actor, p: Vector3) -> Vector3:
 	var rad := 0.3
-	for o in _obs:
+	for i in _obs.size():
+		var oc: Vector3 = _obs_c[i]
+		var ddx := p.x - oc.x
+		var ddz := p.z - oc.z
+		if ddx * ddx + ddz * ddz > _obs_r2[i]:
+			continue
+		var o: Dictionary = _obs[i]
 		var c: Vector3 = o["c"]
 		var h: Vector2 = o["h"]
 		if o["circle"]:
