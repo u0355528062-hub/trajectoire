@@ -102,6 +102,21 @@ var _over_sent := false
 var crouching := false
 var _crouch_e := 0.0
 var _emote := ""
+## Roue des gestes (maintenir Tab, viser à la souris, relâcher)
+const WHEEL := [["fist", "Poing levé"], ["clap", "Applaudir"], ["dance", "Danser"], ["wave", "Saluer"],
+	["finger", "Doigt d'honneur"], ["point", "Montrer du doigt"], ["cheer", "Bras levés"], ["hands", "Mains en l'air"]]
+var wheel_open := false
+var wheel_vec := Vector2.ZERO
+var _wheel_emote := ""
+var _wheel_t := 0.0
+
+
+## Secteur choisi dans la roue (-1 : aucun, souris au centre)
+func wheel_pick() -> int:
+	if wheel_vec.length() < 30.0:
+		return -1
+	var a := fposmod(atan2(wheel_vec.x, -wheel_vec.y), TAU)
+	return int(round(a / (TAU / float(WHEEL.size())))) % WHEEL.size()
 var _emote_w := 0.0
 var _emote_t := 0.0
 var _emote_evt := 0.0
@@ -239,6 +254,7 @@ func _register_inputs() -> void:
 		"emote_clap": [KEY_N],
 		"emote_hands": [KEY_X],
 		"emote_finger": [KEY_T],
+		"emote_wheel": [KEY_TAB],
 	}
 	for action in map:
 		if not InputMap.has_action(action):
@@ -310,6 +326,12 @@ func select_item(i: int) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion and wheel_open:
+		# roue des gestes ouverte : la souris choisit un geste au lieu de tourner la caméra
+		wheel_vec += event.relative
+		if wheel_vec.length() > 120.0:
+			wheel_vec = wheel_vec.normalized() * 120.0
+		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var sens: float = MOUSE_SENS * float(Settings.d["sensitivity"])
 		_yaw -= event.relative.x * sens
@@ -487,6 +509,20 @@ func _update_gestures(delta: float, iv: Vector2) -> void:
 	_crouch_e = move_toward(_crouch_e, 1.0 if crouching else 0.0, delta * 5.0)
 	var ce := _crouch_e * _crouch_e * (3.0 - 2.0 * _crouch_e)
 	human.crouch_user = 0.8 * ce
+	# roue des gestes
+	var wo := Input.is_action_pressed("emote_wheel") and arrest_phase == "" and down_t <= 0.0
+	if wo and not wheel_open:
+		wheel_vec = Vector2.ZERO
+	elif not wo and wheel_open:
+		var pick := wheel_pick()
+		if pick >= 0:
+			_wheel_emote = WHEEL[pick][0]
+			_wheel_t = 4.0 if _wheel_emote != "dance" else 8.0
+	wheel_open = wo
+	if _wheel_emote != "":
+		_wheel_t -= delta
+		if _wheel_t <= 0.0 or iv.length() > 0.1 or arrest_phase != "" or down_t > 0.0:
+			_wheel_emote = ""
 	# gestes (maintenir la touche)
 	var want := ""
 	if arrest_phase == "" and down_t <= 0.0 and _lift_t < 0.0 and not _grab_bin and not igniter.busy and human.kick_t < 0.0:
@@ -498,6 +534,8 @@ func _update_gestures(delta: float, iv: Vector2) -> void:
 			want = "hands"
 		elif Input.is_action_pressed("emote_finger"):
 			want = "finger"
+		elif _wheel_emote != "":
+			want = _wheel_emote
 	if want != "" and current_item != 0 and not _tools_busy():
 		select_item(0)
 	if want != "" and (current_item != 0 or _tools_busy()):
@@ -515,6 +553,8 @@ func _update_gestures(delta: float, iv: Vector2) -> void:
 		if _emote_evt <= 0.0 and _emote_t > 0.6:
 			_emote_evt = 2.5
 			get_tree().call_group("crowd", "on_event", "player_gesture", {"kind": want, "pos": global_position, "dir": -cam_yaw.global_basis.z})
+		if want == "dance":
+			human.crouch_user = maxf(human.crouch_user, 0.08 * (0.5 + 0.5 * sin(_emote_t * TAU * 1.9)))
 		if want == "hands":
 			wanted = maxf(wanted - delta * 0.08, 0.0)       # les mains en l'air apaisent la police
 		elif want == "finger" and _emote_t > 0.4:
@@ -584,13 +624,28 @@ func _gesture_hands() -> Array:
 	match kind:
 		"fist":
 			var pump := sin(_emote_t * 5.6)
-			r = {"pos": shr + _bdir(Vector3(0.04, 0.5 + 0.05 * pump, 0.08) * k), "f": _bdir(Vector3(0, 1, 0.15)), "p": _bdir(Vector3(-1, 0, 0)), "curl": 1.0, "w": w}
+			# poing levé un peu en avant (bras pas à la verticale : le t-shirt ne se déchire plus sous l'aisselle)
+			r = {"pos": shr + _bdir(Vector3(0.02, 0.4 + 0.04 * pump, 0.2) * k), "f": _bdir(Vector3(0, 1, 0.3)), "p": _bdir(Vector3(-1, 0, 0.2)), "curl": 1.0, "w": w}
 			l = {"pos": shl + _bdir(Vector3(-0.06, -0.42, -0.02) * k), "f": _bdir(Vector3(0.3, -0.75, 0.55)), "p": _bdir(Vector3(1, 0, 0)), "curl": 0.2, "w": w}
 		"clap":
 			var gap := 0.035 + 0.11 * (0.5 + 0.5 * sin(_emote_t * 17.0))
 			var c := mid + _bdir(Vector3(0, -0.22, 0.34) * k)
 			r = {"pos": c + _bdir(Vector3(gap, 0, 0)), "f": _bdir(Vector3(0, 0.35, 0.9)), "p": _bdir(Vector3(-1, 0, 0)), "curl": 0.12, "w": w}
 			l = {"pos": c - _bdir(Vector3(gap, 0, 0)), "f": _bdir(Vector3(0, 0.35, 0.9)), "p": _bdir(Vector3(1, 0, 0)), "curl": 0.12, "w": w}
+		"dance":
+			var bt := _emote_t * 7.5
+			var pm := 0.07 * sin(bt)
+			r = {"pos": shr + _bdir(Vector3(0.1, 0.42 + pm, 0.12) * k), "f": _bdir(Vector3(0.15, 1, 0.1)), "p": _bdir(Vector3(-0.3, 0, 1)), "curl": 0.3, "w": w}
+			l = {"pos": shl + _bdir(Vector3(-0.1, 0.42 - pm, 0.12) * k), "f": _bdir(Vector3(-0.15, 1, 0.1)), "p": _bdir(Vector3(0.3, 0, 1)), "curl": 0.3, "w": w}
+		"wave":
+			var sw := sin(_emote_t * 9.0)
+			r = {"pos": shr + _bdir(Vector3(0.12 + 0.06 * sw, 0.42, 0.12) * k), "f": _bdir(Vector3(0.25 * sw, 1, 0.1)), "p": _bdir(Vector3(0, 0, 1)), "curl": 0.05, "w": w}
+		"point":
+			r = {"pos": shr + _bdir(Vector3(0.0, 0.08, 0.6) * k), "f": _bdir(Vector3(0, 0.1, 1)), "p": _bdir(Vector3(-0.3, -1, 0)), "curl": 1.0, "index": 1.0, "w": w}
+		"cheer":
+			var hop := 0.04 * absf(sin(_emote_t * 6.0))
+			r = {"pos": shr + _bdir(Vector3(0.14, 0.42 + hop, 0.1) * k), "f": _bdir(Vector3(0.2, 1, 0.1)), "p": _bdir(Vector3(-0.2, 0, 1)), "curl": 1.0, "w": w}
+			l = {"pos": shl + _bdir(Vector3(-0.14, 0.42 + hop, 0.1) * k), "f": _bdir(Vector3(-0.2, 1, 0.1)), "p": _bdir(Vector3(0.2, 0, 1)), "curl": 1.0, "w": w}
 		"finger":
 			# bras tendu vers l'avant, dos de la main vers la cible, majeur dressé
 			var jab := 0.04 * maxf(sin(_emote_t * 7.0), 0.0)

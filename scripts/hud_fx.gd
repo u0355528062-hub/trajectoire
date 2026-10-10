@@ -105,6 +105,39 @@ class WantedChip extends Control:
 		draw_rect(Rect2(x0, size.y * 0.5 - 3, 80 * clampf(wanted, 0.0, 1.0), 6), Color(col, a), true)
 
 
+# ----------------------------------------------------------------- roue des gestes (Tab)
+class GestureWheel extends Control:
+	var player: Player
+
+	func _draw() -> void:
+		if player == null or not player.wheel_open:
+			return
+		var c := size * 0.5
+		var font := ThemeDB.fallback_font
+		var n := Player.WHEEL.size()
+		var pick := player.wheel_pick()
+		draw_circle(c, 190.0, Color(0.045, 0.05, 0.075, 0.72))
+		draw_arc(c, 190.0, 0.0, TAU, 64, Color(1, 1, 1, 0.12), 2.0)
+		draw_circle(c, 48.0, Color(0.02, 0.02, 0.03, 0.8))
+		for i in n:
+			var a := -PI * 0.5 + TAU * float(i) / float(n)
+			var p := c + Vector2(cos(a), sin(a)) * 128.0
+			var sel := i == pick
+			if sel:
+				draw_circle(p, 50.0, Color(HudFx.AMBER, 0.85))
+			var txt: String = Player.WHEEL[i][1]
+			var tw := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
+			draw_string(font, p + Vector2(-tw * 0.5, 5), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.05, 0.05, 0.07) if sel else Color(0.93, 0.94, 0.97))
+		# curseur
+		var cur := c + player.wheel_vec * 0.9
+		draw_line(c, cur, Color(1, 1, 1, 0.35), 2.0)
+		draw_circle(cur, 5.0, Color(1, 1, 1, 0.9))
+		var hint := "Relâche Tab pour faire le geste"
+		var hw := font.get_string_size(hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
+		draw_string(font, c + Vector2(-hw * 0.5, 225), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.93, 0.94, 0.97, 0.7))
+
+
+var _wheel: GestureWheel
 var _wanted: WantedChip
 var _hint_wanted := false
 
@@ -132,6 +165,19 @@ uniform float pepper : hint_range(0.0, 1.0) = 0.0;
 uniform float hit : hint_range(0.0, 1.0) = 0.0;
 uniform float blink : hint_range(0.0, 1.0) = 0.0;
 uniform float time_s = 0.0;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	vec2 u = f * f * (3.0 - 2.0 * f);
+	return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float fbm(vec2 p) {
+	float v = 0.0;
+	float a = 0.5;
+	for (int i = 0; i < 4; i++) { v += a * vnoise(p); p *= 2.03; a *= 0.5; }
+	return v;
+}
 void fragment() {
 	vec2 uv = SCREEN_UV;
 	vec2 d = uv - vec2(0.5);
@@ -155,6 +201,16 @@ void fragment() {
 	// voiles : gaz = blanc jaunâtre, poivre = rouge
 	col = mix(col, vec3(0.88, 0.92, 0.8), gas * (0.14 + 0.42 * smoothstep(0.15, 0.95, r)));
 	col = mix(col, vec3(0.62, 0.08, 0.05), pepper * (0.3 + 0.45 * smoothstep(0.05, 0.9, r)));
+	// volutes de lacrymo qui dérivent devant les yeux
+	if (gas > 0.01) {
+		vec2 q = uv * vec2(1.0 / aspect, 1.0);
+		float n1 = fbm(q * 2.6 + vec2(time_s * 0.07, -time_s * 0.035));
+		float n2 = fbm(q * 5.2 - vec2(time_s * 0.11, time_s * 0.06));
+		float puff = smoothstep(0.38, 0.82, n1 * 0.65 + n2 * 0.45);
+		col = mix(col, vec3(0.9, 0.92, 0.86), gas * puff * (0.45 + 0.35 * smoothstep(0.1, 0.8, r)));
+		// les yeux brûlent : la vision se rétrécit
+		col *= 1.0 - gas * 0.5 * smoothstep(0.22, 0.78, r);
+	}
 	// coup reçu : flash rouge sur les bords
 	col = mix(col, vec3(0.8, 0.03, 0.03), hit * (0.2 + 0.6 * smoothstep(0.2, 0.95, r)));
 	col *= 1.0 - amt * 0.18 * (0.5 + 0.5 * sin(time_s * 2.0));
@@ -172,6 +228,10 @@ void fragment() {
 	fx_layer.add_child(_fx)
 
 	# barre de tension
+	_wheel = GestureWheel.new()
+	_wheel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_wheel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_wheel)
 	_wanted = WantedChip.new()
 	_wanted.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	_wanted.offset_left = -185
@@ -382,6 +442,11 @@ func _process(delta: float) -> void:
 		if tension.value > before + 0.0004:
 			_bar.pulse = 1.0
 		_bar.queue_redraw()
+	if player and _wheel:
+		if _wheel.player == null:
+			_wheel.player = player
+		if player.wheel_open or _wheel.visible:
+			_wheel.queue_redraw()
 	if player and _wanted:
 		_wanted.wanted = lerpf(_wanted.wanted, player.wanted, minf(1.0, delta * 3.0))
 		_wanted.t = t

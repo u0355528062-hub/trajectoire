@@ -42,10 +42,23 @@ static func pick_spot(n: Npc) -> Dictionary:
 			var p2: Vector3 = ad.global_position + nz * 0.1 + Vector3.UP * 1.25
 			return {"pos": p2, "normal": nz, "up": Vector3.UP, "stand": p2 + nz * 0.8 - Vector3.UP * 1.25, "car": null}
 	# chaussée devant la ligne, lisible depuis la foule
+	# centré sur la chaussée (le texte court en travers de la rue, mis à l'échelle pour tenir entre les bordures)
 	var gx := minf(n.global_position.x + n._rng.randf_range(1.0, 4.0), crowd.area_max_x() - 2.5)
-	var gz := clampf(n.global_position.z, -10.2, -4.6)
-	var g := Vector3(gx, 0.035, gz)                 # juste au-dessus de l'enrobé (2 cm)
-	return {"pos": g, "normal": Vector3.UP, "up": Vector3.RIGHT, "stand": g - Vector3(0.9, 0.035, 0.0), "car": null}
+	var gz := ROAD_Z + n._rng.randf_range(-0.6, 0.6)
+	var g := Vector3(gx, _ground_y(n, Vector3(gx, 0.0, gz)) + 0.015, gz)
+	return {"pos": g, "normal": Vector3.UP, "up": Vector3.RIGHT, "stand": Vector3(gx - 0.9, 0.0, gz), "car": null}
+
+
+const ROAD_Z := -7.4
+const ROAD_TEXT_W := 4.6          # largeur max du tag au sol (la chaussée fait ~7 m)
+
+
+## Hauteur réelle du sol (enrobé, trottoir) sous un point
+static func _ground_y(n: Npc, p: Vector3) -> float:
+	var q := PhysicsRayQueryParameters3D.create(p + Vector3.UP * 2.0, p - Vector3.UP * 1.0)
+	q.collision_mask = 1
+	var hit := n.get_world_3d().direct_space_state.intersect_ray(q)
+	return (hit["position"] as Vector3).y if not hit.is_empty() else 0.02
 
 
 static func start(n: Npc, spot: Dictionary) -> void:
@@ -126,7 +139,11 @@ static func _make_label(n: Npc) -> Label3D:
 	var lab := Label3D.new()
 	lab.font = _font
 	lab.font_size = 96
-	lab.pixel_size = 0.0062 if (n.data["normal"] as Vector3).y > 0.5 else 0.0028
+	var txt_len := float((n.data["text"] as String).length())
+	if (n.data["normal"] as Vector3).y > 0.5:
+		lab.pixel_size = minf(0.0062, ROAD_TEXT_W / maxf(txt_len * 58.0, 1.0))
+	else:
+		lab.pixel_size = minf(0.0028, 1.0 / maxf(txt_len * 58.0, 1.0))      # tient dans la largeur du panneau
 	lab.modulate = n.data["color"]
 	lab.outline_size = 0
 	lab.shaded = true

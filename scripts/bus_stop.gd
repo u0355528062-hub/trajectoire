@@ -16,6 +16,14 @@ var _sign_pivot: Node3D
 var _rng := RandomNumberGenerator.new()
 var _crack_shader: Shader
 var _tex_cache := {}
+var _frame_nodes: Array = []        # montants et traverses (s'effondrent avec le toit)
+var _roof: Node3D
+var _roof_pos := Vector3.ZERO
+var collapsed := false
+var _shake := 0.0                    # secousses cumulées (manifestants accrochés aux montants)
+var _shake_now := 0.0                # intensité en cours
+var _rattle_t := 0.0
+const SHAKE_TO_COLLAPSE := 34.0      # ~6 manifestants pendant 6 s
 
 
 func _tex(f: String) -> Texture2D:
@@ -165,20 +173,20 @@ func _build_frame() -> void:
 	chrome.roughness = 0.14
 	for x in [-1.85, 1.85]:
 		for z in [-0.75, 0.75]:
-			_box(self, Vector3(0.09, 2.55, 0.09), Vector3(x, 1.355, z), _graphite)
+			_frame_nodes.append(_box(self, Vector3(0.09, 2.55, 0.09), Vector3(x, 1.355, z), _graphite))
 			_cyl(self, 0.062, 0.1, Vector3(x, 0.13, z), chrome)       # manchon chromé au pied
 			for a in 4:                                                # boulons
 				var ang := a * PI * 0.5 + PI * 0.25
 				_cyl(self, 0.008, 0.012, Vector3(x + cos(ang) * 0.075, 0.09, z + sin(ang) * 0.075), chrome)
 	for x in [-0.62, 0.62]:
-		_box(self, Vector3(0.05, 2.3, 0.05), Vector3(x, 1.23, -0.75), _graphite)
+		_frame_nodes.append(_box(self, Vector3(0.05, 2.3, 0.05), Vector3(x, 1.23, -0.75), _graphite))
 	for z in [-0.75, 0.75]:
-		_box(self, Vector3(3.8, 0.07, 0.07), Vector3(0, 2.52, z), _graphite)
-	_box(self, Vector3(3.8, 0.08, 0.07), Vector3(0, 0.16, -0.75), _graphite)
-	_box(self, Vector3(0.07, 0.08, 1.5), Vector3(-1.85, 0.16, 0), _graphite)
-	_box(self, Vector3(0.07, 0.08, 1.5), Vector3(1.85, 0.16, 0), _graphite)
-	_box(self, Vector3(0.07, 0.07, 1.5), Vector3(-1.85, 2.52, 0), _graphite)
-	_box(self, Vector3(0.07, 0.07, 1.5), Vector3(1.85, 2.52, 0), _graphite)
+		_frame_nodes.append(_box(self, Vector3(3.8, 0.07, 0.07), Vector3(0, 2.52, z), _graphite))
+	_frame_nodes.append(_box(self, Vector3(3.8, 0.08, 0.07), Vector3(0, 0.16, -0.75), _graphite))
+	_frame_nodes.append(_box(self, Vector3(0.07, 0.08, 1.5), Vector3(-1.85, 0.16, 0), _graphite))
+	_frame_nodes.append(_box(self, Vector3(0.07, 0.08, 1.5), Vector3(1.85, 0.16, 0), _graphite))
+	_frame_nodes.append(_box(self, Vector3(0.07, 0.07, 1.5), Vector3(-1.85, 2.52, 0), _graphite))
+	_frame_nodes.append(_box(self, Vector3(0.07, 0.07, 1.5), Vector3(1.85, 2.52, 0), _graphite))
 	_static_box(Vector3(0.1, 2.5, 0.1), Vector3(-1.85, 1.35, 0.75))
 	_static_box(Vector3(0.1, 2.5, 0.1), Vector3(1.85, 1.35, 0.75))
 	_static_box(Vector3(0.1, 2.5, 0.1), Vector3(-1.85, 1.35, -0.75))
@@ -190,6 +198,8 @@ func _build_roof() -> void:
 	roof.position = Vector3(0, 2.62, 0.05)
 	roof.rotation.x = -0.03
 	add_child(roof)
+	_roof = roof
+	_roof_pos = roof.position
 	_box(roof, Vector3(4.1, 0.1, 1.94), Vector3.ZERO, _graphite)
 	_box(roof, Vector3(4.18, 0.025, 2.02), Vector3(0, 0.066, 0), _alu)
 	# bords arrondis (tubes) à l'avant et à l'arrière
@@ -507,3 +517,69 @@ func _wobble_sign() -> void:
 		var a := 0.06 * (1.0 - float(k) / 8.0) * (1.0 if k % 2 == 0 else -1.0)
 		tw.tween_property(_sign_pivot, "rotation", Vector3(a * 0.4, 0, a), 0.06)
 	tw.tween_property(_sign_pivot, "rotation", Vector3.ZERO, 0.06)
+
+
+# ------------------------------------------------------------------ secousses et effondrement
+## Un manifestant accroché à un montant secoue l'abribus pendant `dt` secondes
+func add_shake(dt: float) -> void:
+	if collapsed:
+		return
+	_shake += dt
+	_shake_now = minf(_shake_now + dt * 3.0, 3.0)
+	if _shake >= SHAKE_TO_COLLAPSE:
+		collapse()
+
+
+func _process(delta: float) -> void:
+	if collapsed or _roof == null:
+		return
+	_shake_now = move_toward(_shake_now, 0.0, delta * 2.0)
+	if _shake_now <= 0.0:
+		if _roof.position != _roof_pos:
+			_roof.position = _roof_pos
+		return
+	# le toit et les vitres vibrent, de plus en plus à mesure que la structure cède
+	var t := Time.get_ticks_msec() / 1000.0
+	var k := 0.012 * _shake_now * (0.6 + _shake / SHAKE_TO_COLLAPSE)
+	_roof.position = _roof_pos + Vector3(sin(t * 23.0) * k, sin(t * 31.0) * k * 0.4, cos(t * 19.0) * k)
+	_rattle_t -= delta
+	if _rattle_t <= 0.0:
+		_rattle_t = randf_range(0.18, 0.4)
+		AudioLib.play_at(self, "barrier_hit", global_position + Vector3.UP * 2.0, -8.0 + 2.0 * _shake_now, 10.0, randf_range(0.8, 1.1))
+		for pn in _panes:
+			if not pn.is_broken and randf() < 0.3:
+				pn._vibrate()
+
+
+## L'abribus cède : les vitres éclatent, les montants plient vers l'arrière, le toit s'écrase
+func collapse() -> void:
+	if collapsed:
+		return
+	collapsed = true
+	for pn in _panes:
+		if not pn.is_broken:
+			pn.hit(pn.global_position + Vector3(randf_range(-0.3, 0.3), randf_range(-0.4, 0.4), 0), 10.0, -global_basis.z)
+	var pivot := Node3D.new()
+	add_child(pivot)
+	pivot.position = Vector3(0, 0.1, -0.75)
+	for nd in _frame_nodes + [_roof]:
+		if is_instance_valid(nd):
+			(nd as Node3D).reparent(pivot, true)
+	var tw := create_tween()
+	tw.tween_property(pivot, "rotation", Vector3(-0.22, 0.0, 0.05), 0.35).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(pivot, "rotation", Vector3(-0.78, 0.0, 0.12), 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.tween_property(pivot, "position", Vector3(0, -0.15, -0.75), 0.08)
+	tw.tween_property(pivot, "position", Vector3(0, -0.05, -0.75), 0.12)
+	var snd := create_tween()
+	snd.tween_interval(0.78)
+	snd.tween_callback(func():
+		AudioLib.play_at(self, "car_explosion", global_position + Vector3.UP * 0.5, -8.0, 14.0, 1.6)
+		AudioLib.play_at(self, "barrier_fall", global_position + Vector3.UP, 4.0, 14.0, 0.7)
+		var dust := Fx.smoke(Color(0.5, 0.47, 0.42, 0.5), 18, 2.4, 1.2, true, 0.4, 3.0)
+		dust.one_shot = true
+		dust.explosiveness = 0.9
+		get_tree().current_scene.add_child(dust)
+		dust.global_position = global_position + Vector3(0, 0.3, -1.0)
+		dust.emitting = true
+		get_tree().create_timer(4.0).timeout.connect(func(): if is_instance_valid(dust): dust.queue_free())
+		get_tree().call_group("crowd", "on_event", "bus_collapse", {"pos": global_position}))

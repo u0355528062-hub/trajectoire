@@ -1013,7 +1013,8 @@ func _think_arrest(delta: float) -> void:
 			if not has_goal or goal.distance_to(dest) > 1.5:
 				go(dest, false, 0.6)
 			if arrestee is Npc:
-				(arrestee as Npc).escort_to(global_position - forward() * 0.55 + global_basis.x * 0.2)
+				# l'interpellé marche devant, le CRS juste derrière lui le tient par le bras
+				(arrestee as Npc).escort_to(global_position + forward() * 0.62 + global_basis.x * 0.12)
 			if global_position.distance_to(dest) < 1.8 or sub_t > 40.0:
 				if arrestee is Npc:
 					(arrestee as Npc).on_boarded(van)

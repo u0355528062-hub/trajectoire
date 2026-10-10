@@ -29,6 +29,7 @@ Ouvrir le dossier dans Godot 4.4+ et lancer (F5). Au premier lancement, laisser 
 | F | Coup de pied : vitres, abribus, poubelles, barrières, panneaux, lampadaires, voitures de police, grenades |
 | G | Appeler la foule : « Venez ! » — certains te suivent pour casser l'abribus ou s'en prendre à une voiture |
 | B / N / X | Poing levé / applaudir / mains en l'air (la foule suit ; mains en l'air = les CRS se calment) |
+| Tab | Roue des gestes : maintenir, viser à la souris, relâcher (poing, applaudir, danser, saluer, doigt d'honneur, montrer du doigt, bras levés, mains en l'air) |
 | T | Doigt d'honneur : les plus hardis t'imitent ; les CRS qui le voient te repèrent, et quand ça chauffe une équipe vient te chercher |
 | R | Recharger obus, fumigènes et pétards (test) |
 | H | Masquer l'aide |

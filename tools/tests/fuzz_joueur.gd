@@ -7,7 +7,7 @@ var pol: Police
 var ten: Tension
 var rng := RandomNumberGenerator.new()
 var acts := ["move_forward", "move_back", "move_left", "move_right", "run", "jump", "kick", "slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6",
-	"interact", "call_crowd", "crouch", "emote_fist", "emote_clap", "emote_hands", "emote_finger", "reload_cheat", "aim", "fire", "toggle_view"]
+	"interact", "call_crowd", "crouch", "emote_fist", "emote_clap", "emote_hands", "emote_finger", "emote_wheel", "reload_cheat", "aim", "fire", "toggle_view"]
 var held := {}
 var calls := {}
 func _initialize() -> void:

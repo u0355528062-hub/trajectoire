@@ -273,7 +273,7 @@ static func think_rear(n: Npc, delta: float) -> void:
 		return
 	n._home_t = 0.0
 	var r := n._rng.randf()
-	if n.fear > 0.5 and r < 0.6:
+	if n.fear > 0.65 and r < 0.45:
 		n._home_sub = "r_head"
 		if n._rng.randf() < 0.5:
 			n.say_cat("fear" if n._rng.randf() < 0.6 else "retreat", true)

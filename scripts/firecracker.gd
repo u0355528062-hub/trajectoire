@@ -134,13 +134,13 @@ func explode(at := Vector3.INF) -> void:
 	# --- éclair : lueur brève + halo doux (sprite orienté vers la caméra)
 	var flash := OmniLight3D.new()
 	flash.light_color = Color(1.0, 0.82, 0.55)
-	flash.light_energy = 4.0 if big else 1.6
-	flash.omni_range = 7.0 if big else 3.5
+	flash.light_energy = 6.0 if big else 2.6
+	flash.omni_range = 9.0 if big else 5.0
 	flash.shadow_enabled = false
 	scene.add_child(flash)
 	flash.global_position = pos + Vector3.UP * 0.1
 	var tw := flash.create_tween()
-	tw.tween_property(flash, "light_energy", 0.0, 0.2 if big else 0.1)
+	tw.tween_property(flash, "light_energy", 0.0, 0.26 if big else 0.15)
 	tw.tween_callback(flash.queue_free)
 	var ball := MeshInstance3D.new()
 	var qm := QuadMesh.new()
@@ -158,28 +158,28 @@ func explode(at := Vector3.INF) -> void:
 	ball.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	scene.add_child(ball)
 	ball.global_position = pos + Vector3.UP * 0.05
-	var r := 0.9 if big else 0.4
+	var r := 1.35 if big else 0.65
 	ball.scale = Vector3.ONE * r * 0.35
 	var tb := ball.create_tween().set_parallel(true)
 	tb.tween_property(ball, "scale", Vector3.ONE * r, 0.1)
-	tb.tween_property(bm, "albedo_color:a", 0.0, 0.16)
+	tb.tween_property(bm, "albedo_color:a", 0.0, 0.2)
 	tb.chain().tween_callback(ball.queue_free)
 	# --- étincelles + fumée
-	var sp := Fx.embers(36 if big else 16, Vector3(0.01, 0.01, 0.01), Color(1.0, 0.7, 0.35), 1.0)
+	var sp := Fx.embers(56 if big else 26, Vector3(0.01, 0.01, 0.01), Color(1.0, 0.7, 0.35), 1.0)
 	sp.one_shot = true
 	sp.explosiveness = 1.0
 	sp.lifetime = 0.7
 	var spm := sp.process_material as ParticleProcessMaterial
 	spm.spread = 180.0
 	spm.initial_velocity_min = 2.0
-	spm.initial_velocity_max = 8.0 if big else 4.5
+	spm.initial_velocity_max = 10.0 if big else 6.0
 	spm.gravity = Vector3(0, -9.0, 0)
 	spm.damping_min = 0.5
 	spm.damping_max = 1.5
 	scene.add_child(sp)
 	sp.global_position = pos
 	sp.emitting = true
-	var sk := Fx.smoke(Color(0.62, 0.6, 0.58, 0.5 if big else 0.34), 14 if big else 7, 2.2 if big else 1.4, 0.7 if big else 0.4, true, 0.5, 3.0)
+	var sk := Fx.smoke(Color(0.62, 0.6, 0.58, 0.55 if big else 0.4), 16 if big else 9, 2.6 if big else 1.8, 0.95 if big else 0.6, true, 0.5, 3.0)
 	sk.one_shot = true
 	sk.explosiveness = 0.95
 	scene.add_child(sk)

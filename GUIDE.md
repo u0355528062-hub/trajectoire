@@ -46,6 +46,7 @@
 | **G** | Appeler la foule (« Venez ! ») |
 | **F** | Coup de pied (vitres, poubelles, barrières, panneaux, voitures de police…) |
 | **B / N / X** | Poing levé / applaudir / mains en l'air : la foule autour de toi suit |
+| **Tab** | Roue des gestes : maintenir, viser avec la souris, relâcher |
 | **T** | Doigt d'honneur aux CRS (provocation : attention, ils s'en souviennent) |
 | **R** | Recharger obus, fumigènes et pétards (pour tester) |
 | **H** | Afficher / masquer l'aide |

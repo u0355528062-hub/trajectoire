@@ -238,6 +238,15 @@ func _pose(name: String, t: float, p: Dictionary) -> Array:
 			var hh := sr + dh.normalized() * minf(dh.length(), 0.56 * k)
 			var smack := clampf(t / 0.35, 0.0, 1.0)
 			return [_h(sr.lerp(hh, smack), Vector3(0, 1, 0.2), (tgf - sr).normalized(), 0.05, 0.0, Vector3(1, -0.6, -0.3)), null]
+		"shake":
+			# agrippe un montant à deux mains et le secoue (cible dans le repère du corps)
+			var tgk: Vector3 = p.get("target", Vector3(0, 1.25, 0.5))
+			var jk := sin(t * 9.0 + float(idx)) * 0.06
+			var reach_k := tgk - (sr + sl) * 0.5
+			if reach_k.length() > 0.5 * k:
+				tgk = (sr + sl) * 0.5 + reach_k.normalized() * 0.5 * k
+			return [_h(tgk + Vector3(0.05, 0.12, -jk), Vector3(-0.6, 0.0, 0.8), Vector3(-1, 0, 0), 0.95, 0.0, Vector3(1, -1, -0.3)),
+				_h(tgk + Vector3(-0.05, -0.12, -jk), Vector3(0.6, 0.0, 0.8), Vector3(1, 0, 0), 0.95, 0.0, Vector3(-1, -1, -0.3))]
 		"link":
 			# chaîne humaine : bras écartés bas, mains tendues vers les voisins
 			return [_h(sr + Vector3(0.4, -0.42, 0.12) * k, Vector3(1, -0.5, 0.2), Vector3(0, 0, -1), 0.65, 0.0, Vector3(1, -1, -0.5)),
@@ -652,6 +661,9 @@ func face(p: Vector3) -> void:
 
 
 func _move(delta: float) -> void:
+	if human.fall > 0.35:
+		vel = Vector3.ZERO           # à terre : on ne glisse pas (on se relève d'abord)
+		return
 	var pos := global_position
 	var desired := Vector3.ZERO
 	if has_goal:

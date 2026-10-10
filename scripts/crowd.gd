@@ -26,6 +26,7 @@ var player: Player
 var bus: BusStop
 var excitement := 0.3
 var rally_active := false
+var surge := false                 # grand mouvement de foule : on secoue l'abribus jusqu'à l'effondrer
 var _rally_t := 0.0
 var _rally_far_t := 0.0
 var _slots := {}
@@ -1131,6 +1132,16 @@ func attack_slot(n: Npc) -> Dictionary:
 			var lp2 := Vector3(xo + float(i) * 0.15, 0, 6.2 + float(i % 2) * 0.9)
 			var tgt := c + Vector3(_rng.randf_range(-0.2, 0.2), _rng.randf_range(-0.35, 0.25), 0)
 			cands.append({"kind": "throw", "pane": i, "pos": bus.to_global(lp2), "face": tgt, "target": tgt, "key": "t%d%s" % [i, xo]})
+	# vague : on s'agrippe aux montants pour secouer (deux places par montant)
+	if surge and not bus.collapsed:
+		cands.clear()
+		for px in [-1.85, 1.85]:
+			for pz in [-0.75, 0.75]:
+				for ang in [0.0, 1.0]:
+					var outv := Vector3(signf(px) * (0.6 if ang == 0.0 else 0.2), 0, signf(pz) * (0.2 if ang == 0.0 else 0.6))
+					var post := Vector3(px, 0, pz)
+					cands.append({"kind": "shake", "pane": -1, "pos": bus.to_global(post + outv), "face": bus.to_global(post + Vector3.UP * 1.25),
+						"target": bus.to_global(post + Vector3.UP * 1.25), "key": "s%s%s%s" % [px, pz, ang]})
 	var taken := {}
 	for k in _slots:
 		if is_instance_valid(k) and k != n:
@@ -1166,7 +1177,7 @@ func _update_rally(delta: float) -> void:
 	_rally_t += delta
 	var near_bus := player != null and bus != null and player.global_position.distance_to(bus.global_position) < 18.0
 	_rally_far_t = 0.0 if near_bus else _rally_far_t + delta
-	if _rally_t > 75.0 or _rally_far_t > 12.0 or (bus and bus.all_broken()):
+	if _rally_t > 75.0 or _rally_far_t > 12.0 or (bus and bus.all_broken() and not surge) or (bus and bus.collapsed):
 		rally_active = false
 		_slots.clear()
 		return
@@ -1247,12 +1258,22 @@ func on_event(type: String, d: Dictionary) -> void:
 			_ev_call(d)
 		"player_gesture":
 			_ev_player_gesture(d)
+		"bus_collapse":
+			surge = false
+			excitement = minf(excitement + 0.3, 1.0)
+			celebrate(d["pos"], 4)
+			later(0.4, func(): _crowd_sound("cheer_big", d["pos"] + Vector3.UP * 2.0, 2.0, 6.0))
+			later(1.4, func(): _crowd_sound("applause", d["pos"] + Vector3.UP * 2.0, -2.0, 6.0))
+			if police and police.tension:
+				police.tension.add(0.05, "abribus effondré")
+			if player:
+				player.message.emit("L'abribus s'effondre !")
 		"police_bang":
 			# les boucliers claquent : les timides reculent d'un pas, les hardis répondent
 			for n in _near(d["pos"], 30.0):
 				n.look(d["pos"] + Vector3.UP * 1.4, 1.0)
 				if n.bold < 0.45:
-					n.scare(0.12)
+					n.scare(0.06)
 				else:
 					n.enrage(0.08)
 					if n.state == "home" and n.react_cd <= 0.0 and _rng.randf() < 0.3:
@@ -1360,6 +1381,15 @@ func _ev_player_gesture(d: Dictionary) -> void:
 		if joined >= 4 or n.busy() or n.state != "home" or n.react_cd > 0.0 or _rng.randf() > 0.45 + 0.3 * n.bold:
 			continue
 		joined += 1
+		if kind == "dance":
+			# ça danse autour de toi
+			if n.prop == "" and n.fear < 0.4 and _rng.randf() < 0.7:
+				n.react("dance", _rng.randf_range(4.0, 7.0), p + Vector3.UP * 1.6, {"voice": "ouais", "voice_p": 0.3, "prm": {"style": n.idx % 3}})
+				n.stomp = true
+			continue
+		if kind == "wave":
+			n.react("wave", 2.0, p + Vector3.UP * 1.6, {"voice": "ouais", "voice_p": 0.2})
+			continue
 		if kind == "finger":
 			# les plus hardis l'imitent face à la police, les autres rigolent et encouragent
 			var cops_at := police.line_c + Vector3.UP * 1.5 if police else p + Vector3.UP * 1.7
@@ -2369,12 +2399,17 @@ func _ev_call(d: Dictionary) -> void:
 		return
 	var near_bus := p.distance_to(bus.global_position) < 22.0
 	var cap := 3 + int(excitement * 5.0) + (1 if near_bus else 0)
+	# de temps en temps l'appel prend : grand mouvement de foule, on va secouer l'abribus jusqu'à le faire tomber
+	surge = false
+	if not bus.collapsed and near_bus and _near(p, 45.0).size() >= 10 and _rng.randf() < 0.25 + 0.45 * excitement:
+		surge = true
+		cap = 10 + int(excitement * 6.0)
 	var joiners := 0
 	var already := 0
 	for n in npcs:
 		if n.state == "rally":
 			already += 1
-	var cands := _near(p, 28.0)
+	var cands := _near(p, 45.0 if surge else 28.0)
 	cands.sort_custom(func(a, b): return (a as Npc).global_position.distance_to(p) < (b as Npc).global_position.distance_to(p))
 	var refusers := 0
 	for n in cands:
@@ -2385,7 +2420,7 @@ func _ev_call(d: Dictionary) -> void:
 				n.look(p + Vector3.UP * 1.6, 1.0)
 			continue
 		var dist := n.global_position.distance_to(p)
-		var pj := 0.12 + n.bold * 0.6 + excitement * 0.3 + (0.25 if n.role == "bloc" else 0.0) - dist * 0.012
+		var pj := 0.12 + n.bold * 0.6 + excitement * 0.3 + (0.25 if n.role == "bloc" else 0.0) - dist * 0.012 + (0.35 if surge else 0.0)
 		if n.role == "march":
 			pj -= 0.15
 		if joiners + already < cap and _rng.randf() < pj:
@@ -2410,7 +2445,11 @@ func _ev_call(d: Dictionary) -> void:
 		_rally_far_t = 0.0
 		excitement = minf(excitement + 0.1, 1.0)
 		later(0.8, func(): _crowd_sound("cheer_small", p + Vector3.UP * 1.5, -2.0, 3.0))
-		player.message.emit(("%d manifestants te suivent !" % joiners) if joiners > 1 else "Un manifestant te suit !")
+		if surge:
+			player.message.emit("La foule déferle sur l'abribus ! (%d manifestants)" % joiners)
+			_crowd_sound("crowd_anger", p + Vector3.UP * 1.5, 0.0, 3.0)
+		else:
+			player.message.emit(("%d manifestants te suivent !" % joiners) if joiners > 1 else "Un manifestant te suit !")
 	elif already > 0:
 		player.message.emit("Ils sont déjà avec toi !")
 	else:

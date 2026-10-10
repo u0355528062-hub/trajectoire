@@ -88,12 +88,14 @@ func _pre_tick(delta: float) -> void:
 	_glance_cd = maxf(_glance_cd - delta, 0.0)
 	_look_cd = maxf(_look_cd - delta, 0.0)
 	state_t += delta
+	if human.fall > 0.0 and state != "hit":
+		human.fall = move_toward(human.fall, 0.0, delta * 1.6)        # on se relève avant de faire autre chose
 	if stomp and state != "home":
 		stomp = false
 		human.crouch = 0.0
 	if tag_can != null and state != "tag":
 		NpcTag.cleanup(self)
-	fear = maxf(fear - delta * 0.035, 0.0)
+	fear = maxf(fear - delta * (0.035 + 0.05 * fear), 0.0)
 	anger = maxf(anger - delta * 0.012, 0.0)
 	fatigue = clampf(fatigue + delta * (0.0035 if human.sit < 0.5 else -0.02), 0.0, 1.0)
 	thirst = minf(thirst + delta * 0.004, 1.0)
@@ -108,7 +110,8 @@ func _pre_tick(delta: float) -> void:
 
 ## La peur monte plus vite chez les craintifs
 func scare(a: float) -> void:
-	fear = clampf(fear + a * (1.35 - bold), 0.0, 1.0)
+	# accoutumance : plus on a déjà peur, moins chaque nouvelle alerte compte (on ne reste pas figé à 100 %)
+	fear = clampf(fear + a * (1.35 - bold) * (1.0 - 0.6 * fear), 0.0, 1.0)
 
 
 ## La colère monte plus vite chez les audacieux et les moins calmes
@@ -212,6 +215,7 @@ func _drop_flare(f: Flare) -> void:
 
 # =================================================================== accessoires (placement)
 func _place_props() -> void:
+	_place_cuffs()
 	var phone_on := act in ["phone", "film", "call", "selfie"] and _blend > 0.4
 	if _prev_act in ["phone", "film", "call", "selfie"] and act in ["phone", "film", "call", "selfie"]:
 		phone_on = true
@@ -1392,11 +1396,29 @@ func _think_rally(delta: float) -> void:
 		"go":
 			var s2: Dictionary = data["slot"]
 			look(s2["target"], 0.8)
+			if s2["kind"] == "shake":
+				if bus.collapsed:
+					_end_rally(true)
+					return
+				if not has_goal or sub_t > 12.0:
+					stop_move()
+					sub = "shake"
+					sub_t = 0.0
+				return
 			if not bus.pane_alive(s2["pane"]):
 				crowd.free_slot(self)
 				sub = "pick_slot"
 				return
 			if not has_goal or sub_t > 14.0:
+				# coincé loin de la vitre (bousculé) : on se replace, ou on change de place ; sinon on frapperait dans le vide
+				var gap := Vector2(global_position.x - (s2["pos"] as Vector3).x, global_position.z - (s2["pos"] as Vector3).z).length()
+				if s2["kind"] == "kick" and gap > 0.45:
+					if sub_t < 14.0:
+						go(s2["pos"], false, 0.15)
+						return
+					crowd.free_slot(self)
+					sub = "pick_slot"
+					return
 				stop_move()
 				face(s2["face"])
 				sub = "kick" if s2["kind"] == "kick" else "stone_pick"
@@ -1408,6 +1430,12 @@ func _think_rally(delta: float) -> void:
 			set_act(_idle_pose if prop == "" else _prop_rest_pose(), {}, 2.0)
 			if not bus.pane_alive(s3["pane"]):
 				_on_pane_broken()
+				return
+			var gap2 := Vector2(global_position.x - (s3["pos"] as Vector3).x, global_position.z - (s3["pos"] as Vector3).z).length()
+			if gap2 > 0.6 and human.kick_t < 0.0:
+				sub = "go"                     # repoussé par la foule : on revient au contact avant de frapper
+				sub_t = 0.0
+				go(s3["pos"], false, 0.15)
 				return
 			if sub_t > 0.0 and human.kick_t < 0.0 and absf(wrapf(_yaw_to(s3["face"]) - yaw, -PI, PI)) < 0.25:
 				human.start_kick()
@@ -1447,6 +1475,20 @@ func _think_rally(delta: float) -> void:
 				sub_t = -_rng.randf_range(1.6, 3.4)
 				if _rng.randf() < 0.4:
 					say_cat("allez" if _rng.randf() < 0.5 else "ouais", true)
+		"shake":
+			# accroché au montant, on secoue de tout son poids
+			var s6: Dictionary = data["slot"]
+			if bus.collapsed:
+				human.lean_extra = 0.0
+				_end_rally(true)
+				return
+			face(s6["face"])
+			stop_move()
+			set_act("shake", {"target": _wb(s6["target"])}, 6.0)
+			human.lean_extra = 0.12 * sin(sub_t * 9.0 + float(idx))
+			bus.add_shake(delta)
+			if _rng.randf() < delta * 0.25:
+				say_cat("allez" if _rng.randf() < 0.5 else "ouais", true)
 		"celebrate":
 			if sub_t > 3.5:
 				_end_rally()
@@ -2058,6 +2100,61 @@ func on_cuffed(_cop: Node3D) -> void:
 	sub = "kneel"
 	sub_t = 0.0
 	set_act("cuffed", {}, 5.0)
+	_make_cuffs()
+
+
+## Menottes visibles : deux bracelets métalliques reliés, placés sur les poignets à chaque image
+var cuffs: Node3D = null
+
+func _make_cuffs() -> void:
+	if cuffs != null:
+		return
+	cuffs = Node3D.new()
+	cuffs.top_level = true
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.72, 0.74, 0.78)
+	m.metallic = 0.9
+	m.roughness = 0.25
+	for i in 2:
+		var ring := MeshInstance3D.new()
+		var tm := TorusMesh.new()
+		tm.inner_radius = 0.034
+		tm.outer_radius = 0.047
+		tm.rings = 10
+		tm.ring_segments = 6
+		ring.mesh = tm
+		ring.material_override = m
+		ring.name = "R%d" % i
+		cuffs.add_child(ring)
+	var link := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.012, 0.012, 0.06)
+	link.mesh = bm
+	link.material_override = m
+	link.name = "Link"
+	cuffs.add_child(link)
+	add_child(cuffs)
+
+
+func _place_cuffs() -> void:
+	if cuffs == null:
+		return
+	if state != "arrested" or sub == "struggle":
+		cuffs.queue_free()
+		cuffs = null
+		return
+	var a: Vector3 = human.palm("R")["pos"]
+	var b: Vector3 = human.palm("L")["pos"]
+	var arm := (b - a)
+	var x := arm.normalized() if arm.length() > 0.01 else global_basis.x
+	for i in 2:
+		var r := cuffs.get_node("R%d" % i) as Node3D
+		var pal: Dictionary = human.palm("R" if i == 0 else "L")
+		# le bracelet entoure le poignet : son axe suit l'avant-bras (direction des doigts)
+		var wp: Vector3 = (pal["pos"] as Vector3) - (pal["f"] as Vector3) * 0.07
+		r.global_transform = Transform3D(Props.basis_up(pal["f"], x), wp)
+	var l := cuffs.get_node("Link") as Node3D
+	l.global_transform = Transform3D(Basis.looking_at(x if absf(x.y) < 0.95 else Vector3.FORWARD, Vector3.UP), (a + b) * 0.5 + Vector3.UP * 0.05)
 
 
 func escort_to(p: Vector3) -> void:
