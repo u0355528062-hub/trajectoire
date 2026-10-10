@@ -375,6 +375,8 @@ func _react_insult(d: Dictionary) -> void:
 		return
 	_insult_t = _t
 	_insults += 1
+	if _insults == 1:
+		player.message.emit("Les CRS t'ont vu… ils s'en souviendront")
 	player.wanted = minf(player.wanted + 0.1 + 0.04 * float(mini(_insults, 5)), 1.0)
 	tension.add(0.006, "provocation")
 	seen.look(p + Vector3.UP * 1.6, 1.0)

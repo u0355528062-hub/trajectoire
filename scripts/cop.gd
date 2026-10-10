@@ -518,6 +518,8 @@ func _line_melee() -> bool:
 		_warn_t = _rng.randf_range(1.0, 1.6)
 		set_act("cop_stop", {}, 6.0)
 		_say_pol("pol_warn", true, 4.0)
+		if best is Player:
+			(best as Player).message.emit("« Reculez ! » Un CRS te somme de t'écarter de la ligne")
 		return true
 	target = best
 	_start_strike("push" if lvl < 0.8 else "baton")
@@ -1056,7 +1058,7 @@ func on_hit(kind: String, from_dir: Vector3, power := 1.0, by: Node3D = null) ->
 	_neighbors_cover(kind)
 	hp -= 0.12 * power
 	human.kick_back(1.0)
-	AudioLib.play_at(self, "punch" if kind != "stone" else "stone_thud", global_position + Vector3.UP * 1.5, -2.0, 6.0)
+	AudioLib.play_at(self, "punch" if kind != "stone" else "sfx:stone_thud", global_position + Vector3.UP * 1.5, -2.0, 6.0)
 	_say_pol("pol_hit", true, 2.5)
 	get_tree().call_group("crowd", "on_event", "cop_hit", {"pos": global_position, "kind": kind})
 	if police:

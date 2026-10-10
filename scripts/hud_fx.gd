@@ -76,6 +76,39 @@ class TensionBar extends Control:
 		draw_rect(Rect2(cx - 1.5, y - 4, 3.0, h + 8), Color(1, 1, 1, 0.9), true)
 
 
+# ----------------------------------------------------------------- attention de la police sur le joueur
+class WantedChip extends Control:
+	var wanted := 0.0
+	var t := 0.0
+
+	func _draw() -> void:
+		if wanted < 0.15:
+			return
+		var font := ThemeDB.fallback_font
+		var hot := wanted >= 0.55
+		var col := Color(1.0, 0.3, 0.25) if hot else HudFx.AMBER
+		var a := clampf((wanted - 0.15) / 0.1, 0.0, 1.0)
+		if hot:
+			a *= 0.75 + 0.25 * sin(t * 6.0)
+		var w := size.x
+		draw_rect(Rect2(0, 0, w, size.y), Color(0.045, 0.05, 0.075, 0.78 * a), true)
+		# œil
+		var c := Vector2(18, size.y * 0.5)
+		draw_arc(c, 8.0, PI * 0.15, PI * 0.85, 10, Color(col, a), 2.0)
+		draw_arc(c, 8.0, PI * 1.15, PI * 1.85, 10, Color(col, a), 2.0)
+		draw_circle(c, 3.0, Color(col, a))
+		var txt := "RECHERCHÉ PAR LA POLICE" if hot else "REPÉRÉ PAR LES CRS"
+		draw_string(font, Vector2(34, size.y * 0.5 + 5), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(col.lightened(0.2), a))
+		# jauge
+		var x0 := w - 96.0
+		draw_rect(Rect2(x0, size.y * 0.5 - 3, 80, 6), Color(1, 1, 1, 0.12 * a), true)
+		draw_rect(Rect2(x0, size.y * 0.5 - 3, 80 * clampf(wanted, 0.0, 1.0), 6), Color(col, a), true)
+
+
+var _wanted: WantedChip
+var _hint_wanted := false
+
+
 func _ready() -> void:
 	layer = 12
 	_t0 = Time.get_ticks_msec() / 1000.0
@@ -139,6 +172,14 @@ void fragment() {
 	fx_layer.add_child(_fx)
 
 	# barre de tension
+	_wanted = WantedChip.new()
+	_wanted.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_wanted.offset_left = -150
+	_wanted.offset_right = 150
+	_wanted.offset_top = 74
+	_wanted.offset_bottom = 100
+	_wanted.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_wanted)
 	_bar = TensionBar.new()
 	_bar.custom_minimum_size = Vector2(460, 54)
 	_bar.size = Vector2(460, 54)
@@ -341,6 +382,13 @@ func _process(delta: float) -> void:
 		if tension.value > before + 0.0004:
 			_bar.pulse = 1.0
 		_bar.queue_redraw()
+	if player and _wanted:
+		_wanted.wanted = lerpf(_wanted.wanted, player.wanted, minf(1.0, delta * 3.0))
+		_wanted.t = t
+		_wanted.queue_redraw()
+		if player.wanted >= 0.55 and not _hint_wanted and player.arrest_phase == "":
+			_hint_wanted = true
+			player.message.emit("Recherché : lève les mains (X) pour calmer les CRS, ou fonds-toi dans la foule")
 	if player:
 		var fxk := float(Settings.d["gas_fx"])
 		var gas := player.gas_level * fxk

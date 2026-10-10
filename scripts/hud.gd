@@ -628,5 +628,5 @@ func _toast_show(text: String) -> void:
 		_toast_tween.kill()
 	_toast.modulate.a = 1.0
 	_toast_tween = create_tween()
-	_toast_tween.tween_interval(1.5)
+	_toast_tween.tween_interval(1.5 + float(text.length()) / 30.0)      # le temps de lire
 	_toast_tween.tween_property(_toast, "modulate:a", 0.0, 0.6)
