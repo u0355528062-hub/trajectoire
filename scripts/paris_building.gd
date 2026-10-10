@@ -22,6 +22,9 @@ var crowd: Crowd
 var lod_far := false        # bâtiment lointain : moins de détails (pas de balustres, pas de denticules)
 
 var shop_nodes: Array = []  # Shop
+## Places pour les habitants (balcons, fenêtres ouvertes) : [{"xf": Transform3D monde (pieds, -Z local = vers la rue
+## est +Z de xf.basis... voir resident_spot()), "kind": "balcony" | "window", "floor": int}]
+var resident_spots: Array = []
 var _rng := RandomNumberGenerator.new()
 var _acc := {}              # matériau -> SurfaceTool
 var _body: StaticBody3D
@@ -118,6 +121,7 @@ func _ready() -> void:
 	_build_cornice()
 	_build_roof()
 	_commit()
+	add_to_group("paris_buildings")
 
 
 func _st(key: String) -> SurfaceTool:
