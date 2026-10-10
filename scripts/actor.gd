@@ -62,6 +62,7 @@ var _voice: AudioStreamPlayer3D
 var _steps: AudioStreamPlayer3D
 var _pocket_style := "jeans"
 var _rng := RandomNumberGenerator.new()
+var stomp := false                     # piétine sur place (danse, sauts de chant)
 var _k := 1.0                # échelle des bras
 
 
@@ -206,6 +207,41 @@ func _pose(name: String, t: float, p: Dictionary) -> Array:
 			return [_h(pos2, Vector3(0, 1, 0), (eye - pos2), 0.62, 0.0, Vector3(1, -0.8, 0)), null]
 		"call":
 			return [_h(hd + Vector3(0.09, -0.03, 0.05), Vector3(0, 0.55, -0.8), Vector3(-1, 0, 0), 0.55, 0.0, Vector3(0.3, -1, 0.6)), null]
+		"dance":
+			# danse : trois styles (mains en l'air qui pompent, bras qui balancent, poings alternés)
+			var stl: int = int(p.get("style", 0))
+			var bt := t * 7.5 + float(idx)
+			if stl == 0:
+				var pm := 0.07 * sin(bt)
+				return [_h(sr + Vector3(0.12, 0.45 + pm, 0.1) * k, Vector3(0.15, 1, 0.1), Vector3(-0.3, 0, 1), 0.3, 0.0, Vector3(1, -0.2, -0.3)),
+					_h(sl + Vector3(-0.12, 0.45 - pm, 0.1) * k, Vector3(-0.15, 1, 0.1), Vector3(0.3, 0, 1), 0.3, 0.0, Vector3(-1, -0.2, -0.3))]
+			elif stl == 1:
+				var sw := sin(bt * 0.5)
+				var c := (sr + sl) * 0.5 + Vector3(0.25 * sw, -0.12 + 0.1 * absf(sw), 0.32) * k
+				return [_h(c + Vector3(0.12, 0, 0), Vector3(0.3 * sw, 0.4, 1), Vector3(-1, 0, 0), 0.7, 0.0, Vector3(1, -1, -0.3)),
+					_h(c + Vector3(-0.12, 0, 0), Vector3(0.3 * sw, 0.4, 1), Vector3(1, 0, 0), 0.7, 0.0, Vector3(-1, -1, -0.3))]
+			var a1 := maxf(sin(bt * 0.5), 0.0)
+			var a2 := maxf(-sin(bt * 0.5), 0.0)
+			return [_h(sr + Vector3(0.05, 0.05 + 0.45 * a1, 0.15) * k, Vector3(0, 1, 0.15), Vector3(-0.6, 0, 0.8), 1.0, 0.0, Vector3(1, -0.4, -0.2)),
+				_h(sl + Vector3(-0.05, 0.05 + 0.45 * a2, 0.15) * k, Vector3(0, 1, 0.15), Vector3(0.6, 0, 0.8), 1.0, 0.0, Vector3(-1, -0.4, -0.2))]
+		"link":
+			# chaîne humaine : bras écartés bas, mains tendues vers les voisins
+			return [_h(sr + Vector3(0.4, -0.42, 0.12) * k, Vector3(1, -0.5, 0.2), Vector3(0, 0, -1), 0.65, 0.0, Vector3(1, -1, -0.5)),
+				_h(sl + Vector3(-0.4, -0.42, 0.12) * k, Vector3(-1, -0.5, 0.2), Vector3(0, 0, -1), 0.65, 0.0, Vector3(-1, -1, -0.5))]
+		"comfort":
+			# main posée sur l'épaule de quelqu'un (cible dans le repère du corps)
+			var tgc: Vector3 = p.get("target", Vector3(0.35, 1.35, 0.35))
+			var reach := tgc - sr
+			if reach.length() > 0.55 * k:
+				tgc = sr + reach.normalized() * 0.55 * k          # l'autre s'est éloigné : la main reste à portée
+			return [_h(tgc + Vector3(0, 0.02 + 0.01 * sin(t * 3.0), 0), Vector3(0.3, -0.4, 1), Vector3(0, -1, 0.2), 0.45, 0.0, Vector3(1, -1, -0.3)),
+				_h(sl + Vector3(-0.04, -0.46, 0.05) * k, Vector3(0, -1, 0.2), Vector3(1, 0, 0), 0.35)]
+		"drum":
+			# tape en rythme sur un couvercle de poubelle (cible dans le repère du corps)
+			var tgd: Vector3 = p.get("target", Vector3(0, 0.95, 0.45))
+			var db := t * 11.0
+			return [_h(tgd + Vector3(0.1, 0.03 + 0.16 * maxf(sin(db), 0.0), 0), Vector3(0, -0.3, 1), Vector3(0, -1, 0), 0.85, 0.0, Vector3(1, -1, -0.3)),
+				_h(tgd + Vector3(-0.1, 0.03 + 0.16 * maxf(-sin(db), 0.0), 0), Vector3(0, -0.3, 1), Vector3(0, -1, 0), 0.85, 0.0, Vector3(-1, -1, -0.3))]
 		"finger":
 			# doigt d'honneur : bras tendu, dos de la main vers la cible, majeur dressé
 			var jb := maxf(sin(t * 7.0 + float(idx)), 0.0) * 0.04
@@ -656,7 +692,7 @@ func _move(delta: float) -> void:
 	var rate := 5.0 if hv > 0.35 else 2.8
 	yaw += clampf(err, -rate * delta, rate * delta)
 	rotation = Vector3(0, yaw, 0)
-	human.step_in_place = 1.0 if (hv < 0.3 and absf(err) > 0.35 and human.kick_t < 0.0 and human.crouch < 0.3) else 0.0
+	human.step_in_place = 1.0 if (hv < 0.3 and (stomp or absf(err) > 0.35) and human.kick_t < 0.0 and human.crouch < 0.3) else 0.0
 
 
 # =================================================================== boucle

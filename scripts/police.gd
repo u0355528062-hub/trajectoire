@@ -296,6 +296,14 @@ func on_event(type: String, d: Dictionary) -> void:
 		"player_gesture":
 			if d.get("kind", "") == "finger":
 				_react_insult(d)
+		"gas_back":
+			# une grenade renvoyée : on repère le lanceur, le LBD le prend pour cible
+			feel(0.08)
+			var who: Node3D = d.get("who")
+			if who != null and is_instance_valid(who) and stage >= 2:
+				var sh := _free_cops(["lbd"])
+				if not sh.is_empty() and sh[0].global_position.distance_to(who.global_position) > 7.0 and _rng.randf() < 0.6:
+					sh[0].fire_lbd(who, 1)
 
 
 # =================================================================== évaluation du danger

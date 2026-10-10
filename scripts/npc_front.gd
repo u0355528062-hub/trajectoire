@@ -79,6 +79,16 @@ static func think(n: Npc, delta: float) -> void:
 		"f_akimbo": 0.5 + 0.4 * n.bold,
 		"f_clap": 0.3 + 0.7 * n.anger,
 	}
+	if n.prop == "":
+		# doigt d'honneur aux CRS
+		w["f_finger"] = 0.1 + 1.2 * n.anger * n.bold
+		# chaîne humaine : quand la police pousse, le premier rang se tient bras dessus bras dessous
+		var pushing: bool = crowd.police != null and crowd.police.mode == "push"
+		if pushing and so.row_of(n) == 0 and n.fear < 0.45:
+			w["f_link"] = 1.5 + 2.0 * n.anger + 1.0 * n.bold
+		# ambiance festive tant que ce n'est que « tendu » : on danse, on saute en chantant
+		if st <= 2 and n.fear < 0.25:
+			w["f_dance"] = 0.3 + 0.8 * n.calm + (1.2 if crowd.chanting else 0.0)
 	if n.prop == "" and n.fear < 0.3 and n.calm > 0.6:
 		# les plus posés tentent de ramener le calme quand la colère monte autour d'eux
 		w["f_calm"] = 1.8 * clampf(n.calm - 0.55, 0.0, 1.0) * (0.25 + so.anger_avg)
@@ -127,6 +137,17 @@ static func think(n: Npc, delta: float) -> void:
 				n.say_cat("fear" if n._rng.randf() < 0.5 else "retreat", true)
 		"f_clap":
 			n._home_dur = n._rng.randf_range(3.0, 6.0)
+		"f_finger":
+			n._home_dur = n._rng.randf_range(1.8, 3.2)
+			n.hostile = minf(n.hostile + 0.05, 0.3)
+			if n._rng.randf() < 0.5:
+				n.say_cat("defy" if n._rng.randf() < 0.6 else "police", true)
+		"f_link":
+			n._home_dur = n._rng.randf_range(5.0, 10.0)
+			if n._rng.randf() < 0.4:
+				n.say_cat("defy", true)
+		"f_dance":
+			n._home_dur = n._rng.randf_range(5.0, 11.0)
 		"f_hold":
 			n._home_dur = n._rng.randf_range(4.0, 9.0)
 			if n._rng.randf() < 0.25 + 0.5 * n.anger:
@@ -183,8 +204,24 @@ static func _run_sub(n: Npc, delta: float, tp: Vector3, cop: Cop) -> void:
 			_run_sit(n, delta, tp, cop)
 		"f_akimbo":
 			n.set_act("akimbo", {}, 3.0)
+		"f_finger":
+			n.set_act("finger", {}, 4.0)
+		"f_link":
+			n.set_act("link", {}, 3.0)
+			n.human.lean_extra = lerpf(n.human.lean_extra, 0.12, minf(1.0, delta * 2.0))     # on fait corps, penché vers l'avant
+		"f_dance":
+			n.stomp = true
+			n.set_act("dance", {"style": n.idx % 3}, 3.0)
+			n.human.crouch = 0.08 * (0.5 + 0.5 * sin(n._home_t * TAU * 1.9))
+			if n.crowd.chanting and int(n._home_t * 1.6) != int((n._home_t - delta) * 1.6) and n._rng.randf() < 0.5:
+				n.hop(1)
 		_:
 			n.set_act("crossed", {}, 3.0)
+	if n._home_sub != "f_dance" and n.stomp:
+		n.stomp = false
+		n.human.crouch = 0.0
+	if n._home_sub != "f_link" and n.human.lean_extra > 0.0:
+		n.human.lean_extra = move_toward(n.human.lean_extra, 0.0, delta * 0.5)
 	if n._home_sub != "f_scared":
 		n.human.hunch = lerpf(n.human.hunch, 0.0, minf(1.0, delta * 2.0))
 

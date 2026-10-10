@@ -22,6 +22,7 @@ var react_cd := 0.0
 var _idle_t := 0.0
 var _idle_pose := "idle"
 var _glance_cd := 0.0
+var _drum_bin: TrashBin = null
 var _replan_t := 0.0             # dernier recalcul de chemin vers sa place dans le cortège
 var _look_cd := 0.0
 var _home_sub := ""
@@ -85,6 +86,9 @@ func _pre_tick(delta: float) -> void:
 	_glance_cd = maxf(_glance_cd - delta, 0.0)
 	_look_cd = maxf(_look_cd - delta, 0.0)
 	state_t += delta
+	if stomp and state != "home":
+		stomp = false
+		human.crouch = 0.0
 	fear = maxf(fear - delta * 0.035, 0.0)
 	anger = maxf(anger - delta * 0.012, 0.0)
 	fatigue = clampf(fatigue + delta * (0.0035 if human.sit < 0.5 else -0.02), 0.0, 1.0)
@@ -334,7 +338,7 @@ func _prop_cheer_pose() -> Array:
 
 
 func busy() -> bool:
-	return state in ["rally", "feed", "mortar", "panic", "dodge", "gassed", "hit", "sprayed", "arrested", "boarded", "rescue", "throwcop", "carattack", "vandal", "aid", "brawl", "barricade"]
+	return state in ["rally", "feed", "mortar", "panic", "dodge", "gassed", "hit", "sprayed", "arrested", "boarded", "rescue", "throwcop", "carattack", "vandal", "aid", "brawl", "barricade", "throwback"]
 
 
 ## Réaction courte : pose, durée, point regardé, options {voice, loud, hop, face, run_to}
@@ -432,6 +436,8 @@ func _think(delta: float) -> void:
 			NpcCare.think(self, delta)
 		"barricade":
 			NpcBarricade.think(self, delta)
+		"throwback":
+			_think_throwback(delta)
 		"brawl":
 			_think_brawl(delta)
 		"goto_look":
@@ -470,6 +476,22 @@ func _think_home(delta: float) -> void:
 			else:
 				_home_loner(delta)
 	_home_props(delta)
+
+
+## Ambiance de fête : pendant un chant, ou tant que la police n'est pas au contact
+func _festive() -> bool:
+	if crowd == null:
+		return false
+	var st: int = crowd.police.stage if crowd.police else 0
+	return crowd.chanting or st <= 1
+
+
+func _near_bin() -> TrashBin:
+	for b in get_tree().get_nodes_in_group("bins"):
+		var bin := b as TrashBin
+		if bin and not bin.tipped and not bin.burning and bin.grabbed_by == null and bin.global_position.distance_to(global_position) < 5.0:
+			return bin
+	return null
 
 
 func _home_rear(delta: float) -> void:
@@ -692,6 +714,9 @@ func _run_need(delta: float) -> bool:
 
 ## Petites occupations quand on n'a rien de particulier à faire
 func _home_idle_cycle(delta: float, marching := false) -> void:
+	if _home_sub not in ["dance", "drum"] and stomp:
+		stomp = false
+		human.crouch = 0.0
 	if _home_sub == "whistle":
 		if _home_t > 1.4:
 			_home_sub = ""
@@ -725,7 +750,16 @@ func _home_idle_cycle(delta: float, marching := false) -> void:
 		elif r < 0.44 and not marching and smoker:
 			_home_sub = "smoke"
 			_home_dur = _rng.randf_range(10.0, 20.0)
-		elif r < 0.5 and not marching:
+		elif r < 0.56 and not marching and _festive() and fear < 0.3 and anger < 0.6:
+			_home_sub = "dance"
+			_home_dur = _rng.randf_range(6.0, 14.0)
+			if _rng.randf() < 0.4:
+				say_cat("ouais", true)
+		elif r < 0.6 and not marching and _festive() and _near_bin() != null:
+			_home_sub = "drum"
+			_drum_bin = _near_bin()
+			_home_dur = _rng.randf_range(6.0, 12.0)
+		elif r < 0.66 and not marching:
 			_home_sub = "film"
 			_home_dur = _rng.randf_range(5.0, 10.0)
 			Props.set_phone_screen(phone, "cam")
@@ -738,6 +772,30 @@ func _home_idle_cycle(delta: float, marching := false) -> void:
 	if _run_need(delta):
 		return
 	match _home_sub:
+		"dance":
+			stomp = true
+			set_act("dance", {"style": idx % 3}, 3.0)
+			human.crouch = 0.08 * (0.5 + 0.5 * sin(_home_t * TAU * 1.9))
+			if _look_cd <= 0.0:
+				_look_cd = _rng.randf_range(1.5, 3.0)
+				look(crowd.interest_point(self) if crowd else _bw(Vector3(0, 1.5, 5)), 0.7)
+		"drum":
+			if _drum_bin == null or not is_instance_valid(_drum_bin) or _drum_bin.tipped or _drum_bin.burning:
+				_home_sub = ""
+				return
+			var bp := _drum_bin.global_position
+			var to := Vector3(bp.x - global_position.x, 0, bp.z - global_position.z)
+			if to.length() > 0.85:
+				if not has_goal or goal.distance_to(bp - to.normalized() * 0.6) > 0.5:
+					go(bp - to.normalized() * 0.6, false, 0.2)
+				return
+			stop_move()
+			face(bp)
+			stomp = true
+			set_act("drum", {"target": _wb(_drum_bin.top_center())}, 4.0)
+			var beat := int(_home_t * 11.0 / PI)
+			if beat != int((_home_t - delta) * 11.0 / PI):
+				AudioLib.play_at(self, "bin_hit", _drum_bin.top_center(), -14.0, 6.0, _rng.randf_range(0.95, 1.12))
 		"phone":
 			set_act("phone", {"two": idx % 2 == 0}, 2.5)
 			look(phone.global_position if phone.visible else _bw(Vector3(0.05, 1.2, 0.4)), 0.9)
@@ -1818,7 +1876,7 @@ func on_gas(density: float, from: Vector3) -> void:
 	if state == "gassed":
 		data["from"] = from
 		return
-	if state in ["arrested", "boarded", "hit", "sprayed", "mortar"] or density < 0.12:
+	if state in ["arrested", "boarded", "hit", "sprayed", "mortar", "throwback"] or density < 0.12:
 		return
 	# les cagoulés tiennent un peu plus : ils toussent sur place
 	var tough: bool = outfit.get("face", "") == "balaclava" and bold > 0.6 and _rng.randf() < 0.5
@@ -2104,6 +2162,77 @@ func _think_rescue(delta: float) -> void:
 		hostile = 1.0
 	elif sub_t > 0.8:
 		panic(cop.global_position, 1.0)
+
+
+# --- renvoi d'une grenade lacrymogène vers la police
+func throw_back(g: GasGrenade) -> void:
+	if busy() or g == null or not is_instance_valid(g):
+		return
+	_drop_item()
+	state = "throwback"
+	state_t = 0.0
+	sub = "run"
+	sub_t = 0.0
+	data = {"g": g}
+	set_act("cover", {}, 5.0)
+	if _rng.randf() < 0.6:
+		say_cat("defy", true)
+
+
+func _think_throwback(delta: float) -> void:
+	sub_t += delta
+	var g := dnode("g") as GasGrenade
+	if g == null or state_t > 9.0:
+		if g != null and g.freeze:
+			g.freeze = false
+		go_home()
+		return
+	human.hunch = lerpf(human.hunch, 0.3, minf(1.0, delta * 3.0))
+	match sub:
+		"run":
+			var to := g.global_position - global_position
+			to.y = 0.0
+			if to.length() > 0.65:
+				var dest := g.global_position - to.normalized() * 0.45
+				if not has_goal or goal.distance_to(dest) > 0.5:
+					go(dest, true, 0.2)
+				return
+			stop_move()
+			face(g.global_position)
+			sub = "pick"
+			sub_t = 0.0
+			set_act("pick", {"target": _wb(g.global_position)}, 6.0)
+		"pick":
+			if sub_t > 0.45:
+				g.freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+				g.freeze = true
+				sub = "wind"
+				sub_t = 0.0
+				var tgt := _throwback_target()
+				face(tgt)
+				set_act("throw", {"dir": _wbd((tgt + Vector3.UP * 2.0 - head_pos()).normalized())}, 10.0)
+		"wind":
+			var pr := human.palm("R")
+			g.global_position = (pr["pos"] as Vector3) + Vector3.UP * 0.04
+			if sub_t > 0.47:
+				g.freeze = false
+				g.launch_to(_throwback_target(), 15.0)
+				hostile = minf(hostile + 0.5, 1.5)
+				say_cat("throw" if _rng.randf() < 0.5 else "defy", true)
+				get_tree().call_group("crowd", "on_event", "gas_back", {"pos": global_position, "who": self})
+				sub = "done"
+				sub_t = 0.0
+		"done":
+			if sub_t > 0.7:
+				human.hunch = 0.0
+				go_home()
+
+
+func _throwback_target() -> Vector3:
+	if crowd and crowd.police:
+		var lc: Vector3 = crowd.police.line_c
+		return lc + Vector3(_rng.randf_range(-1.0, 2.5), 0.0, _rng.randf_range(-3.0, 3.0))
+	return global_position + forward() * 12.0
 
 
 # --- jets d'objets sur la police

@@ -85,6 +85,7 @@ var _barricade_by: Array = [null, null, null]  # Npc qui y porte une barrière
 var _barricade_cd := 25.0
 var _carat_cd := 30.0
 var _taunt_cd := 6.0
+var _comfort_cd := 3.0
 var _rescuers := 0
 var _arson_cd := 140.0
 var _later: Array = []
@@ -410,6 +411,7 @@ func _physics_process(delta: float) -> void:
 	_update_barricade(delta)
 	_update_car_attacks(delta)
 	_update_taunts(delta)
+	_update_comfort(delta)
 	standoff.update(delta)
 	_update_gas_awareness(delta)
 	_update_aid(delta)
@@ -1384,6 +1386,24 @@ func _ev_police_gas(d: Dictionary) -> void:
 func _ev_gas_land(d: Dictionary) -> void:
 	var p: Vector3 = d["pos"]
 	excitement = minf(excitement + 0.1, 1.0)
+	# un téméraire va ramasser la grenade et la renvoie aux CRS
+	var g: GasGrenade = null
+	for o in get_tree().get_nodes_in_group("gas_grenades"):
+		if (o as Node3D).global_position.distance_to(p) < 1.5 and not (o as RigidBody3D).freeze:
+			g = o as GasGrenade
+			break
+	if g != null:
+		var best: Npc = null
+		var bd := 10.0
+		for n in npcs:
+			if n.busy() or n.state not in ["home", "react"] or n.bold < 0.7 or n.anger < 0.3 or n.prop != "" or n.role in ["medic", "press"]:
+				continue
+			var dd := n.global_position.distance_to(p)
+			if dd < bd:
+				bd = dd
+				best = n
+		if best != null and _rng.randf() < 0.3 + 0.4 * best.anger:
+			best.throw_back(g)
 	_crowd_sound("crowd_gasp", p + Vector3.UP * 1.5, -2.0, 6.0)
 	later(0.8, func(): _crowd_sound("crowd_gas", p + Vector3.UP * 1.5, -4.0, 8.0))
 
@@ -2078,6 +2098,28 @@ func _update_car_attacks(delta: float) -> void:
 				best = n
 		if best != null:
 			best.attack_car(v)
+			return
+
+
+## Quelqu'un est terrorisé : un voisin calme vient lui poser la main sur l'épaule, ça l'apaise un peu
+func _update_comfort(delta: float) -> void:
+	_comfort_cd -= delta
+	if _comfort_cd > 0.0:
+		return
+	_comfort_cd = _rng.randf_range(2.0, 4.0)
+	for n in npcs:
+		if n.fear < 0.65 or n.state not in ["home", "react"]:
+			continue
+		for o in neighbors(n.global_position, 1.3):
+			if not (o is Npc) or o == n:
+				continue
+			var m := o as Npc
+			if m.busy() or m.state != "home" or m.fear > 0.35 or m.react_cd > 0.0 or m.prop != "":
+				continue
+			var sh := n.human.shoulder_world("L" if (n.global_position - m.global_position).dot(m.global_basis.x) > 0.0 else "R")
+			m.react("comfort", 3.0, n.head_pos(), {"prm": {"target": m._wb(sh)}, "voice": "calm", "voice_p": 0.5})
+			n.fear = maxf(n.fear - 0.25, 0.0)
+			n.look(m.head_pos(), 1.0)
 			return
 
 

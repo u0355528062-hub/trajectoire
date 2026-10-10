@@ -65,6 +65,10 @@ voiture attaquée ou incendiée, projectiles sur les policiers…) et avec ce qu
 - **Une foule qui vit sa vie** : sans toi, les manifestants allument des feux, lancent sur la ligne (les plus en
   colère d'abord), s'en prennent aux voitures de police mal gardées, provoquent les CRS (doigts d'honneur, poings
   levés), montent des barricades, se battent au corps à corps.
+- **Gestes et actions** : les CRS frappent leurs boucliers en rythme pour intimider, se baissent derrière quand ça
+  pleut, désignent leurs cibles, le chef ordonne « en avant » / « halte », ils relèvent un collègue à terre. Les
+  manifestants dansent pendant les chants, tapent sur les poubelles, font la chaîne humaine bras dessus bras dessous
+  quand la police pousse, réconfortent un voisin terrorisé, renvoient les grenades lacrymogènes aux CRS.
 - **Sons** : sirène deux-tons à l'arrivée des renforts (sirène rapide à partir d'AFFRONTEMENT), radio de bord
   qui grésille près des véhicules, portes arrière du fourgon, grondement d'une voiture qui flambe,
   « Libérez-le ! » repris par la foule quand quelqu'un est agrippé.
