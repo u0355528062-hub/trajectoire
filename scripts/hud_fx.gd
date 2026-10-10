@@ -174,8 +174,8 @@ void fragment() {
 	# barre de tension
 	_wanted = WantedChip.new()
 	_wanted.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	_wanted.offset_left = -150
-	_wanted.offset_right = 150
+	_wanted.offset_left = -185
+	_wanted.offset_right = 185
 	_wanted.offset_top = 74
 	_wanted.offset_bottom = 100
 	_wanted.mouse_filter = Control.MOUSE_FILTER_IGNORE
