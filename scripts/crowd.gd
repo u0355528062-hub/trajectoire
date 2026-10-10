@@ -83,6 +83,8 @@ var barricade_x := NAN
 var _barricade: Array = [null, null, null]     # Barrier posée à chaque place
 var _barricade_by: Array = [null, null, null]  # Npc qui y porte une barrière
 var _barricade_cd := 25.0
+var _carat_cd := 30.0
+var _taunt_cd := 6.0
 var _rescuers := 0
 var _arson_cd := 140.0
 var _later: Array = []
@@ -406,6 +408,8 @@ func _physics_process(delta: float) -> void:
 	_update_brawls(delta)
 	_update_vandalism(delta)
 	_update_barricade(delta)
+	_update_car_attacks(delta)
+	_update_taunts(delta)
 	standoff.update(delta)
 	_update_gas_awareness(delta)
 	_update_aid(delta)
@@ -1004,22 +1008,26 @@ func _update_arson(delta: float) -> void:
 	if _arson_cd > 0.0 or player == null:
 		return
 	_arson_cd = 20.0
+	var st := police.stage if police else 0
 	var active := 0
 	for fs in fire_srcs:
 		if fs.burning:
 			active += 1
-	if active >= 2 or rally_active:
+	if active >= (2 if st < 3 else 3) or rally_active:
 		return
-	if _rng.randf() > 0.25 + excitement * 0.5:
+	if _rng.randf() > 0.25 + excitement * 0.5 + 0.08 * float(st):
 		return
+	# les manifestants allument leurs feux d'eux-mêmes, de préférence (pas forcément) là où est le joueur
 	var cands: Array[Npc] = []
+	var near_player := _rng.randf() < 0.5
 	for n in npcs:
-		if n.state == "home" and n.role != "march" and n.prop == "" and n.bold > 0.6 and not n.busy() and n.global_position.distance_to(player.global_position) < 40.0:
+		if n.state == "home" and n.role != "march" and n.prop == "" and n.bold > 0.6 and not n.busy() \
+				and (not near_player or n.global_position.distance_to(player.global_position) < 40.0):
 			cands.append(n)
 	if cands.is_empty():
 		return
 	var who: Npc = cands[_rng.randi() % cands.size()]
-	_arson_cd = _rng.randf_range(170.0, 340.0)
+	_arson_cd = _rng.randf_range(170.0, 340.0) / (1.0 + 0.4 * float(st))
 	# une poubelle fermée, pas encore brûlée, à proximité ?
 	if _rng.randf() < 0.3:
 		for b in get_tree().get_nodes_in_group("bins"):
@@ -1279,7 +1287,17 @@ func _update_hostility(delta: float) -> void:
 			cands.append(n)
 	if cands.is_empty():
 		return
-	var n2: Npc = cands[_rng.randi() % cands.size()]
+	# les plus en colère lancent le plus souvent
+	var tot := 0.0
+	for c2 in cands:
+		tot += 0.15 + c2.anger + c2.hostile
+	var pick := _rng.randf() * tot
+	var n2: Npc = cands[0]
+	for c2 in cands:
+		pick -= 0.15 + c2.anger + c2.hostile
+		if pick <= 0.0:
+			n2 = c2
+			break
 	var tcop := police.nearest_cop(n2.global_position, 30.0)
 	if tcop:
 		n2.throw_at(tcop)
@@ -1325,7 +1343,14 @@ func _ev_player_gesture(d: Dictionary) -> void:
 		if joined >= 4 or n.busy() or n.state != "home" or n.react_cd > 0.0 or _rng.randf() > 0.45 + 0.3 * n.bold:
 			continue
 		joined += 1
-		if kind == "fist":
+		if kind == "finger":
+			# les plus hardis l'imitent face à la police, les autres rigolent et encouragent
+			var cops_at := police.line_c + Vector3.UP * 1.5 if police else p + Vector3.UP * 1.7
+			if n.prop == "" and n.bold > 0.55 and _rng.randf() < 0.6:
+				n.react("finger", 2.5, cops_at, {"voice": "defy", "voice_p": 0.5})
+			else:
+				n.react("clap" if n.prop == "" else n._prop_cheer_pose()[0], 2.5, p + Vector3.UP * 1.7, {"voice": "ouais", "voice_p": 0.4, "prm": {"gap": 0.1} if n.prop == "" else n._prop_cheer_pose()[1]})
+		elif kind == "fist":
 			n.react("fist" if n.prop == "" else n._prop_cheer_pose()[0], 3.0, p + Vector3.UP * 1.7, {"voice": "allez" if _rng.randf() < 0.5 else "ouais", "voice_p": 0.6, "prm": {"k": 1.0} if n.prop == "" else n._prop_cheer_pose()[1]})
 		else:
 			n.react("clap" if n.prop == "" else n._prop_cheer_pose()[0], 3.0, p + Vector3.UP * 1.7, {"voice": "bravo", "voice_p": 0.4, "prm": {"gap": 0.1} if n.prop == "" else n._prop_cheer_pose()[1]})
@@ -2008,6 +2033,65 @@ func _update_vandalism(delta: float) -> void:
 		if t != null:
 			n.start_vandal(t)
 			return
+
+
+## Une voiture de police mal gardée près de la foule : des enragés s'en prennent à elle d'eux-mêmes
+func _update_car_attacks(delta: float) -> void:
+	if police == null or police.stage < 2:
+		return
+	_carat_cd -= delta
+	if _carat_cd > 0.0:
+		return
+	_carat_cd = _rng.randf_range(14.0, 30.0) / (0.6 + excitement + 0.2 * float(police.stage - 2))
+	var active := 0
+	for n in npcs:
+		if n.state == "carattack":
+			active += 1
+	if active >= 2:
+		return
+	for v in police.vehicles:
+		# seulement une voiture du côté de la foule (celles garées derrière la ligne sont hors d'atteinte)
+		if not is_instance_valid(v) or not v.is_parked() or v.burning or v.global_position.x > area_max_x() + 1.5:
+			continue
+		var guard := police.nearest_cop(v.global_position, 8.0)
+		if guard != null:
+			continue
+		var best: Npc = null
+		var bd := 26.0
+		for n in npcs:
+			if n.state != "home" or n.busy() or n.bold < 0.6 or n.anger < 0.4 or n.fear > 0.4 or n.prop != "" or n.role in ["march", "medic", "press"]:
+				continue
+			var d := n.global_position.distance_to(v.global_position)
+			if d < bd:
+				bd = d
+				best = n
+		if best != null:
+			best.attack_car(v)
+			return
+
+
+## Face-à-face : on provoque la ligne (doigt d'honneur, poing levé, insultes)
+func _update_taunts(delta: float) -> void:
+	if police == null or police.stage < 1 or not standoff.active:
+		return
+	_taunt_cd -= delta
+	if _taunt_cd > 0.0:
+		return
+	_taunt_cd = _rng.randf_range(2.5, 6.0) / (0.6 + excitement)
+	var at := police.line_c + Vector3.UP * 1.5
+	var cands: Array[Npc] = []
+	for n in _near(standoff.center, 16.0):
+		if n.state == "home" and not n.busy() and n.react_cd <= 0.5 and n.anger >= 0.3 and n.fear <= 0.55 \
+				and n.prop not in ["banner", "megaphone", "mortar"]:
+			cands.append(n)
+	if cands.is_empty():
+		return
+	var n2: Npc = cands[_rng.randi() % cands.size()]
+	# doigt d'honneur (mains libres) ou poing / pancarte brandie
+	var pose := "finger" if n2.prop == "" and _rng.randf() < 0.45 * n2.bold + 0.25 else "fist"
+	n2.react(pose, _rng.randf_range(1.8, 3.0), at, {"voice": "defy", "voice_p": 0.5, "prm": {"k": 1.0}})
+	if pose == "finger":
+		n2.hostile = minf(n2.hostile + 0.06, 0.3)      # les CRS repèrent les provocateurs
 
 
 ## Quand la police avance pour de bon, des manifestants montent une barricade avec les barrières qui traînent

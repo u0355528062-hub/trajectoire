@@ -238,6 +238,7 @@ func _register_inputs() -> void:
 		"emote_fist": [KEY_B],
 		"emote_clap": [KEY_N],
 		"emote_hands": [KEY_X],
+		"emote_finger": [KEY_T],
 	}
 	for action in map:
 		if not InputMap.has_action(action):
@@ -495,6 +496,8 @@ func _update_gestures(delta: float, iv: Vector2) -> void:
 			want = "clap"
 		elif Input.is_action_pressed("emote_hands"):
 			want = "hands"
+		elif Input.is_action_pressed("emote_finger"):
+			want = "finger"
 	if want != "" and current_item != 0 and not _tools_busy():
 		select_item(0)
 	if want != "" and (current_item != 0 or _tools_busy()):
@@ -514,6 +517,8 @@ func _update_gestures(delta: float, iv: Vector2) -> void:
 			get_tree().call_group("crowd", "on_event", "player_gesture", {"kind": want, "pos": global_position, "dir": -cam_yaw.global_basis.z})
 		if want == "hands":
 			wanted = maxf(wanted - delta * 0.08, 0.0)       # les mains en l'air apaisent la police
+		elif want == "finger" and _emote_t > 0.4:
+			wanted = minf(wanted + delta * 0.05, 1.0)       # provocation : les CRS ne l'oublient pas
 	# petits gestes d'attente : on regarde autour, on frotte les mains, on sort le téléphone
 	var idle := iv.length() < 0.1 and is_on_floor() and _busy() == false and aiming == false and want == "" and arrest_phase == "" and down_t <= 0.0 and gas_level < 0.2
 	if idle and current_item == 0:
@@ -586,6 +591,11 @@ func _gesture_hands() -> Array:
 			var c := mid + _bdir(Vector3(0, -0.22, 0.34) * k)
 			r = {"pos": c + _bdir(Vector3(gap, 0, 0)), "f": _bdir(Vector3(0, 0.35, 0.9)), "p": _bdir(Vector3(-1, 0, 0)), "curl": 0.12, "w": w}
 			l = {"pos": c - _bdir(Vector3(gap, 0, 0)), "f": _bdir(Vector3(0, 0.35, 0.9)), "p": _bdir(Vector3(1, 0, 0)), "curl": 0.12, "w": w}
+		"finger":
+			# bras tendu vers l'avant, dos de la main vers la cible, majeur dressé
+			var jab := 0.04 * maxf(sin(_emote_t * 7.0), 0.0)
+			r = {"pos": shr + _bdir(Vector3(0.02, 0.14 + jab * 0.5, 0.62 + jab) * k), "f": _bdir(Vector3(0, 1, 0.2)), "p": _bdir(Vector3(0, -0.15, -1)), "curl": 1.0, "middle": 1.0, "thumb": 1.0, "w": w}
+			l = {"pos": shl + _bdir(Vector3(-0.04, -0.42, 0.0) * k), "f": _bdir(Vector3(0.2, -0.8, 0.5)), "p": _bdir(Vector3(1, 0, 0)), "curl": 0.5, "w": w}
 		"hands":
 			var sway := sin(t * 3.0) * 0.012
 			r = {"pos": shr + _bdir(Vector3(0.12, 0.4 + sway, 0.12) * k), "f": _bdir(Vector3(0.1, 1, 0.2)), "p": _bdir(Vector3(0, 0, 1)), "curl": 0.05, "w": w}
@@ -619,6 +629,11 @@ func _status_speed() -> float:
 
 ## Appelé à chaque image par les nuages de gaz (densité 0..1 à la position du joueur)
 ## Un secouriste soigne le joueur : yeux rincés, souffle repris, remis sur pied plus vite
+## Geste en cours ("" si aucun) : "fist", "clap", "hands", "finger"
+func gesture() -> String:
+	return _emote if _emote_w > 0.5 else ""
+
+
 func receive_aid(dt: float) -> void:
 	pepper_level = maxf(pepper_level - dt * 0.4, 0.0)
 	gas_level = maxf(gas_level - dt * 0.3, 0.0)

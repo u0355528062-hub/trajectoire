@@ -1867,6 +1867,20 @@ func _think_gassed(delta: float) -> void:
 func on_police_hit(kind: String, dir: Vector3, cop: Node3D) -> void:
 	if state in ["arrested", "boarded"]:
 		return
+	if kind == "push":
+		# repoussé au bouclier : on recule de quelques pas, sans tomber
+		scare(0.15)
+		enrage(0.1)
+		var dp := Vector3(dir.x, 0, dir.z)
+		dp = dp.normalized() if dp.length() > 0.01 else -forward()
+		state = "hit"
+		state_t = 0.0
+		sub = "stagger"
+		data = {"dir": dp, "dur": _rng.randf_range(0.8, 1.4), "cop": cop, "push": true}
+		human.kick_back(0.6)
+		set_act("head", {}, 8.0)
+		AudioLib.play_at(self, "shove", global_position + Vector3.UP * 0.9, -6.0, 6.0)
+		return
 	scare(0.4)
 	enrage(0.3)
 	_drop_item()
@@ -1927,6 +1941,12 @@ func _think_hit(delta: float) -> void:
 				return
 			var cop: Node3D = dnode("cop")
 			panic(cop.global_position if cop and is_instance_valid(cop) else global_position - forward() * 3.0, 1.0)
+	elif data.get("push", false):
+		# simplement repoussé : on reprend sa place, sans paniquer
+		if state_t > float(data.get("dur", 1.0)):
+			var back: Vector3 = global_position + (data.get("dir", -forward()) as Vector3) * 2.5
+			go_home()
+			go(crowd.clamp_area(back) if crowd else back, false, 0.4)
 	else:
 		if state_t > 1.4:
 			var cop2: Node3D = dnode("cop")

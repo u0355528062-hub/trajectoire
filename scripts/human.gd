@@ -420,9 +420,9 @@ func _solve_limb(upper: String, lower: String, end: String, target: Vector3, pol
 	_aim(lower, rest[end] - rest[lower], e - m)
 
 
-func _curl_fingers(side: String, amount: float, thumb := 0.4, index_ext := 0.0) -> void:
-	var key := Vector3(amount, thumb, index_ext)
-	if _fc.has(side) and (_fc[side] as Vector3).distance_squared_to(key) < 0.000004:
+func _curl_fingers(side: String, amount: float, thumb := 0.4, index_ext := 0.0, middle_ext := 0.0) -> void:
+	var key := Vector4(amount, thumb, index_ext, middle_ext)
+	if _fc.has(side) and (_fc[side] as Vector4).distance_squared_to(key) < 0.000004:
 		return
 	_fc[side] = key
 	var axis: Vector3 = _finger_axis[side]
@@ -431,6 +431,8 @@ func _curl_fingers(side: String, amount: float, thumb := 0.4, index_ext := 0.0) 
 		var k := thumb if fi == 0 else 1.0
 		if fi == 1:
 			k *= 1.0 - index_ext
+		elif fi == 2:
+			k *= 1.0 - middle_ext
 		var ids: Array = lists[fi]
 		for sg in ids.size():
 			skeleton.set_bone_pose_rotation(ids[sg], Quaternion(axis, amount * k * (0.9 if sg == 0 else 1.0)))
@@ -680,7 +682,7 @@ func _animate(delta: float, speed: float, run_t: float, grounded: bool, vy: floa
 			for i in 3:
 				var ik_q := skeleton.get_bone_pose_rotation(bone[ids[i]]).normalized()
 				skeleton.set_bone_pose_rotation(bone[ids[i]], fk_q[i].slerp(ik_q, wt))
-		_curl_fingers(side, lerpf(fk_curl, tg.get("curl", 0.9), wt), 0.4, tg.get("index", 0.0) * wt)
+		_curl_fingers(side, lerpf(fk_curl, tg.get("curl", 0.9), wt), lerpf(0.4, tg.get("thumb", 0.4), wt), tg.get("index", 0.0) * wt, tg.get("middle", 0.0) * wt)
 	if fall > 0.002 or _fall_on:
 		_fall_on = fall > 0.002
 		_apply_fall()

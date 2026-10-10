@@ -46,6 +46,7 @@ func _ready() -> void:
 	gear = CopGear.equip(human, masked)
 	_build_props()
 	_idle_cd = _rng.randf_range(2.0, 8.0)
+	temper = _rng.randf()
 	_talk_cd = _rng.randf_range(10.0, 40.0)
 	human.idle_sway = 0.6
 	line_slot = global_position
@@ -316,6 +317,11 @@ var arrestee: Node3D                # personne qu'on interpelle / escorte
 var van: PoliceVehicle
 var _flash: OmniLight3D
 var _kick_cd := 0.0
+var _melee_cd := 0.0             # frappe de dégagement depuis la ligne
+var _warn_t := 0.0               # avertissement en cours (main levée : « Reculez ! »)
+var _contact := {}               # qui colle la ligne, depuis combien de temps
+var temper := 0.5                # tempérament : 0 calme, 1 nerveux
+var _strike_kind := "baton"
 var _pending_state := ""
 var _pending_data := {}            # données de l'action interrompue par un déséquilibre
 
@@ -327,6 +333,8 @@ func _pre_tick(delta: float) -> void:
 	_idle_cd = maxf(_idle_cd - delta, 0.0)
 	_voice_cd = maxf(_voice_cd - delta, 0.0)
 	_kick_cd = maxf(_kick_cd - delta, 0.0)
+	_melee_cd = maxf(_melee_cd - delta, 0.0)
+	_warn_t = maxf(_warn_t - delta, 0.0)
 	_target_refresh = maxf(_target_refresh - delta, 0.0)
 
 
@@ -385,6 +393,84 @@ func _say_pol(cat: String, loud := true, cd := 3.0) -> void:
 
 
 # --- tenue de ligne / avance ------------------------------------------------
+## Quelqu'un colle la ligne (manifestant ou joueur) : la réponse est graduée. Selon le stade, l'hostilité ou
+## la peur de la personne, le temps qu'elle insiste et le tempérament du CRS : rien, avertissement, poussée au
+## bouclier, ou coup de matraque.
+func _line_melee() -> bool:
+	if _warn_t > 0.0:
+		set_act("cop_stop", {}, 6.0)
+		return true
+	if _melee_cd > 0.0 or loadout in ["grenadier", "lbd"] or crowd == null:
+		return false
+	_melee_cd = 0.25
+	var best: Node3D = null
+	var bd := 1.55
+	for a in crowd.neighbors(global_position, 1.6):
+		if not (a is Npc):
+			continue
+		var n := a as Npc
+		if n.state in ["arrested", "boarded", "hit"] or n.human.fall > 0.3:
+			continue
+		var to := n.global_position - global_position
+		to.y = 0.0
+		if to.length() < bd and line_dir.dot(to.normalized()) > 0.35:
+			bd = to.length()
+			best = n
+	if police and police.player:
+		var pl := police.player
+		var tp := pl.global_position - global_position
+		tp.y = 0.0
+		if pl.arrest_phase == "" and tp.length() < bd and line_dir.dot(tp.normalized()) > 0.35:
+			best = pl
+	# temps passé au contact de ce CRS (on oublie ceux qui sont partis)
+	for k in _contact.keys():
+		if k != best:
+			_contact.erase(k)
+	if best == null:
+		return false
+	_contact[best] = float(_contact.get(best, 0.0)) + 0.25
+	var lvl := _force_level(best, float(_contact[best]))
+	if lvl < 0.3:
+		return false                                   # on le laisse, on le surveille
+	_melee_cd = _rng.randf_range(1.2, 2.4)
+	face(best.global_position)
+	look(best.global_position + Vector3.UP * 1.5, 1.0)
+	if lvl < 0.55:
+		_warn_t = _rng.randf_range(1.0, 1.6)
+		set_act("cop_stop", {}, 6.0)
+		_say_pol("pol_warn", true, 4.0)
+		return true
+	target = best
+	_start_strike("push" if lvl < 0.8 else "baton")
+	return state == "strike"
+
+
+## 0 : rien à faire ; 0.3 avertir ; 0.55 repousser ; 0.8 frapper
+func _force_level(who: Node3D, contact_t: float) -> float:
+	var st := police.stage if police else 2
+	var lvl: float = [0.0, 0.1, 0.25, 0.42, 0.58][clampi(st, 0, 4)]
+	if who is Npc:
+		var n := who as Npc
+		lvl += clampf(n.hostile * 1.5 + n.anger * 0.35, 0.0, 0.6)
+		if n.fear > 0.6 or n.act in ["cover", "head"]:
+			lvl -= 0.35
+	elif who is Player:
+		var pl := who as Player
+		lvl += pl.wanted * 0.5
+		match pl.gesture():
+			"hands":
+				lvl -= 0.6
+			"finger":
+				lvl += 0.35
+			"fist":
+				lvl += 0.12
+	lvl += minf(contact_t, 6.0) * 0.07            # il insiste : la patience s'use
+	lvl += (temper - 0.5) * 0.3
+	if who is Player and (who as Player).gesture() == "hands":
+		lvl = minf(lvl, 0.7)                     # mains levées : on repousse, on ne frappe pas
+	return lvl
+
+
 func _think_line(delta: float) -> void:
 	var to := line_slot - global_position
 	to.y = 0.0
@@ -397,6 +483,8 @@ func _think_line(delta: float) -> void:
 		return
 	stop_move()
 	face(global_position + line_dir * 8.0)
+	if alert > 0.5 and _line_melee():
+		return
 	if alert > 0.5:
 		var push: float = 1.0 if (police and police.mode == "push") else 0.0
 		set_act("cop_guard", {"lift": 0.8, "push": push * (0.5 + 0.5 * sin(Time.get_ticks_msec() / 1000.0 * 1.5 + idx))}, 4.0)
@@ -479,10 +567,11 @@ func _think_charge(delta: float) -> void:
 		return
 	stop_move()
 	face(tp)
-	_start_strike()
+	_start_strike("baton")
 
 
-func _start_strike() -> void:
+## `kind` : "baton" (coup de matraque) ou "push" (on repousse au bouclier, sans frapper)
+func _start_strike(kind := "baton") -> void:
 	if _kick_cd > 0.0:
 		set_act("cop_ready", {}, 6.0)
 		return
@@ -490,7 +579,13 @@ func _start_strike() -> void:
 	state = "strike"
 	sub_t = 0.0
 	_strike_hit = false
+	_strike_kind = kind
 	_strike_side = 1.0 if _rng.randf() < 0.5 else -1.0
+	if kind == "push":
+		set_act("cop_guard", {"lift": 0.9, "push": 1.0}, 12.0)
+		if _rng.randf() < 0.6:
+			_say_pol("pol_warn", true, 3.0)
+		return
 	set_act("cop_strike", {"side": _strike_side}, 14.0)
 	AudioLib.play_at(self, "baton_swing", global_position + Vector3.UP * 1.3, -4.0, 6.0, _rng.randf_range(0.9, 1.1))
 	if _rng.randf() < 0.5:
@@ -518,6 +613,13 @@ func _apply_strike() -> void:
 	if to.length() > 2.0:
 		return
 	var dir := to.normalized()
+	if _strike_kind == "push":
+		if target is Player:
+			(target as Player).take_hit("shove", dir, 0.6)
+		elif target is Npc:
+			(target as Npc).on_police_hit("push", dir, self)
+		AudioLib.play_at(self, "baton_hit_shield", global_position + Vector3.UP * 1.1, -6.0, 6.0, 0.8)
+		return
 	if target is Player:
 		(target as Player).take_hit("baton", dir)
 	elif target.has_method("on_police_hit"):

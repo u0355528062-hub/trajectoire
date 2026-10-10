@@ -28,7 +28,8 @@ Ouvrir le dossier dans Godot 4.4+ et lancer (F5). Au premier lancement, laisser 
 | E | Poubelle : ouvrir / fermer (**maintenir** : la basculer et la déplacer) · relever une barrière · **grimper sur le capot** d'une voiture de police |
 | F | Coup de pied : vitres, abribus, poubelles, barrières, panneaux, lampadaires, voitures de police, grenades |
 | G | Appeler la foule : « Venez ! » — certains te suivent pour casser l'abribus ou s'en prendre à une voiture |
-| B / N / X | Poing levé / applaudir / mains en l'air (la foule suit) |
+| B / N / X | Poing levé / applaudir / mains en l'air (la foule suit ; mains en l'air = les CRS se calment) |
+| T | Doigt d'honneur : les plus hardis t'imitent ; les CRS qui le voient te repèrent, et quand ça chauffe une équipe vient te chercher |
 | R | Recharger obus, fumigènes et pétards (test) |
 | H | Masquer l'aide |
 | Échap | **Menu pause** : reprendre, recommencer, options (son, image, jeu, accessibilité), commandes |
@@ -55,6 +56,15 @@ voiture attaquée ou incendiée, projectiles sur les policiers…) et avec ce qu
 - **Barricade** : dès ÉCHAUFFOURÉES, des manifestants hardis vont chercher les barrières qui traînent et les posent
   en travers de la chaussée, entre la foule et la police. Gazé ou frappé en route, le porteur lâche sa barrière.
   La ligne s'arrête devant la barricade le temps qu'un CRS la renverse, puis reprend son avancée.
+- **Contact avec la ligne** : un CRS ne frappe pas d'office. Il gradue : rien, avertissement (« Reculez ! »),
+  poussée au bouclier, puis matraque si on insiste, si on est hostile ou si ça a dégénéré. Mains en l'air : on te
+  repousse, on ne te frappe pas. Chaque CRS a son tempérament.
+- **Police prudente** : obus, projectiles, feux et foule hostile font monter le danger ressenti. Sous le feu, la ligne
+  n'avance plus (elle recule de quelques mètres si c'est trop chaud), ne charge plus, gaze et vise au LBD les tireurs.
+  Elle n'interpelle que des gens isolés, jamais au cœur d'un groupe hostile.
+- **Une foule qui vit sa vie** : sans toi, les manifestants allument des feux, lancent sur la ligne (les plus en
+  colère d'abord), s'en prennent aux voitures de police mal gardées, provoquent les CRS (doigts d'honneur, poings
+  levés), montent des barricades, se battent au corps à corps.
 - **Sons** : sirène deux-tons à l'arrivée des renforts (sirène rapide à partir d'AFFRONTEMENT), radio de bord
   qui grésille près des véhicules, portes arrière du fourgon, grondement d'une voiture qui flambe,
   « Libérez-le ! » repris par la foule quand quelqu'un est agrippé.

@@ -206,6 +206,13 @@ func _pose(name: String, t: float, p: Dictionary) -> Array:
 			return [_h(pos2, Vector3(0, 1, 0), (eye - pos2), 0.62, 0.0, Vector3(1, -0.8, 0)), null]
 		"call":
 			return [_h(hd + Vector3(0.09, -0.03, 0.05), Vector3(0, 0.55, -0.8), Vector3(-1, 0, 0), 0.55, 0.0, Vector3(0.3, -1, 0.6)), null]
+		"finger":
+			# doigt d'honneur : bras tendu, dos de la main vers la cible, majeur dressé
+			var jb := maxf(sin(t * 7.0 + float(idx)), 0.0) * 0.04
+			var hf := _h(sr + Vector3(0.02, 0.14 + jb * 0.5, 0.62 + jb) * k, Vector3(0, 1, 0.2), Vector3(0, -0.15, -1), 1.0, 0.0, Vector3(1, -0.4, -0.2))
+			hf["middle"] = 1.0
+			hf["thumb"] = 1.0
+			return [hf, null]
 		"fist":
 			var pk: float = p.get("k", 0.0)
 			var off := Vector3(0.03, 0.08, 0.13).lerp(Vector3(0.06, 0.5, 0.08), pk) * k
@@ -476,6 +483,8 @@ func _blend_h(a: Dictionary, b: Dictionary, u: float) -> Dictionary:
 		"p": Fx.vslerp(a["p"], b["p"], u).normalized(),
 		"curl": lerpf(a.get("curl", 0.6), b.get("curl", 0.6), u),
 		"index": lerpf(a.get("index", 0.0), b.get("index", 0.0), u),
+		"middle": lerpf(a.get("middle", 0.0), b.get("middle", 0.0), u),
+		"thumb": lerpf(a.get("thumb", 0.4), b.get("thumb", 0.4), u),
 		"w": lerpf(a.get("w", 1.0), b.get("w", 1.0), u),
 	}
 	if a.has("pole") or b.has("pole"):
@@ -509,7 +518,7 @@ func _hands() -> Array:
 		if cur[i] == null:
 			continue
 		var d: Dictionary = cur[i]
-		var o := {"pos": _bw(d["pos"]), "f": _bd(d["f"]), "p": _bd(d["p"]), "curl": d.get("curl", 0.6), "index": d.get("index", 0.0), "w": d.get("w", 1.0)}
+		var o := {"pos": _bw(d["pos"]), "f": _bd(d["f"]), "p": _bd(d["p"]), "curl": d.get("curl", 0.6), "index": d.get("index", 0.0), "middle": d.get("middle", 0.0), "thumb": d.get("thumb", 0.4), "w": d.get("w", 1.0)}
 		if d.has("pole"):
 			var pl: Vector3 = d["pole"]
 			# le pôle est donné pour la main concernée en repère corps ; Human l'attend en monde

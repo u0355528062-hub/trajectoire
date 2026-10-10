@@ -485,6 +485,8 @@ void fragment() {
 	hv.add_child(_key_row(["5", "6"], "Pétards petit / moyen (allumer puis lancer)"))
 	hv.add_child(_key_row(["E"], "Poubelle : ouvrir · maintenir : déplacer"))
 	hv.add_child(_key_row(["G"], "Appeler la foule à casser l'abribus"))
+	hv.add_child(_key_row(["B", "N", "X"], "Poing levé / applaudir / mains en l'air"))
+	hv.add_child(_key_row(["T"], "Doigt d'honneur aux CRS (provocation)"))
 	hv.add_child(_key_row(["R"], "Recharger (test)"))
 	hv.add_child(_key_row(["H"], "Masquer l'aide"))
 

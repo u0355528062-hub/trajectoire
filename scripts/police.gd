@@ -41,6 +41,11 @@ var _calm_t := 0.0
 var _car_alert_t := -99.0
 var _veh_cd := 6.0
 var _barr_cd := 0.0
+var _insult_t := -99.0
+var danger := 0.0                 # menace ressentie 0..1 : obus, projectiles, feux, foule hostile ; retombe avec le temps
+var _scan_t := 0.0
+var _fallback_x := NAN           # position de repli sous le feu (une seule fois par alerte)
+var _insults := 0
 
 
 func setup(c: Crowd, p: Player, t: Tension) -> void:
@@ -283,6 +288,96 @@ func on_event(type: String, d: Dictionary) -> void:
 			_react_car_vandal(d)
 		"car_burn":
 			_react_car_burn(d)
+		"player_gesture":
+			if d.get("kind", "") == "finger":
+				_react_insult(d)
+
+
+# =================================================================== évaluation du danger
+## Une menace vient de se produire (obus, pétard, projectile, voiture en feu...)
+func feel(amount: float) -> void:
+	danger = minf(danger + amount, 1.0)
+
+
+## Ambiance autour de la ligne : manifestants agressifs à portée, feux tout près
+func _scan_threat() -> void:
+	if crowd == null:
+		return
+	var hostiles := 0
+	for n in crowd.npcs:
+		if n.state in ["throwcop", "mortar", "brawl", "carattack"] and n.global_position.distance_to(line_c) < 22.0:
+			hostiles += 1
+	var fires := 0
+	for f in crowd.fire_srcs:
+		if is_instance_valid(f) and (f as Node3D).global_position.distance_to(line_c) < 12.0:
+			fires += 1
+	danger = maxf(danger, clampf(float(hostiles) * 0.07 + float(fires) * 0.12, 0.0, 0.6))
+
+
+## Danger d'aller chercher quelqu'un en `p` : menace générale, foule dense ou hostile autour, feu tout près
+func danger_at(p: Vector3) -> float:
+	var d := danger
+	if crowd == null:
+		return d
+	var n := 0
+	for a in crowd.neighbors(p, 6.0):
+		if not (a is Npc):
+			continue
+		var npc := a as Npc
+		if npc.state in ["arrested", "boarded"]:
+			continue
+		n += 1
+		if npc.state in ["throwcop", "mortar", "brawl", "rescue"] or npc.hostile > 0.3 or npc.anger > 0.7:
+			d += 0.07
+	d += maxf(float(n - 4), 0.0) * 0.05             # on ne plonge pas dans une foule compacte
+	for f in crowd.fire_srcs:
+		if is_instance_valid(f) and (f as Node3D).global_position.distance_to(p) < 5.0:
+			d += 0.25
+	return d
+
+
+## Peut-on y aller sans se faire déborder ?
+func safe_to_engage(p: Vector3) -> bool:
+	return danger_at(p) < 0.6
+
+
+## Doigt d'honneur du joueur : si des CRS le voient, il devient une cible. La réponse dépend du stade
+## (un avertissement au calme, une équipe qui sort de la ligne pour l'interpeller quand ça chauffe).
+func _react_insult(d: Dictionary) -> void:
+	if player == null or _t - _insult_t < 3.0:
+		return
+	var p: Vector3 = d.get("pos", player.global_position)
+	var seen: Cop = null
+	var bd := 28.0
+	for c in cops:
+		if not is_instance_valid(c) or c.busy():
+			continue
+		var to := p - c.global_position
+		to.y = 0.0
+		var dist := to.length()
+		if dist < bd and c.line_dir.dot(to / maxf(dist, 0.01)) > 0.2:
+			bd = dist
+			seen = c
+	if seen == null:
+		return
+	_insult_t = _t
+	_insults += 1
+	player.wanted = minf(player.wanted + 0.1 + 0.04 * float(mini(_insults, 5)), 1.0)
+	tension.add(0.006, "provocation")
+	seen.look(p + Vector3.UP * 1.6, 1.0)
+	seen._say_pol("pol_warn", true, 3.0)
+	if stage < 2 or not safe_to_engage(p):
+		return
+	var k := 0.25 + 0.15 * float(stage) + 0.05 * float(_insults)
+	if _rng.randf() < k:
+		if stage >= 3 and player.wanted > 0.6:
+			_assign_arrest(player, 2)
+		else:
+			var tm := _free_cops(["shield", "arrester"], ["line", "patrol", "team"])
+			tm.sort_custom(func(a: Cop, b: Cop): return a.global_position.distance_to(p) < b.global_position.distance_to(p))
+			for c in tm.slice(0, 2):
+				if c.global_position.distance_to(p) < 30.0:
+					c.charge(player, 5.0)
 
 
 ## Une voiture de police est attaquée : les policiers les plus proches foncent sur les agresseurs
@@ -311,6 +406,10 @@ func _react_car_vandal(d: Dictionary) -> void:
 			tgt = _nearest_civilian(car.global_position, 12.0)
 	if tgt == null:
 		return
+	if not safe_to_engage(tgt.global_position):
+		# trop de monde autour de la voiture : on la laisse, on gaze
+		_gas_cd = minf(_gas_cd, 2.0)
+		return
 	var cand := _free_cops(["shield", "arrester", "spray"], ["team", "line", "patrol"])
 	cand.sort_custom(func(a: Cop, b: Cop): return a.global_position.distance_to(car.global_position) < b.global_position.distance_to(car.global_position))
 	var k := 0
@@ -324,6 +423,7 @@ func _react_car_vandal(d: Dictionary) -> void:
 
 ## Voiture en feu : réaction dure (gaz, charge) et le joueur est recherché s'il y est pour quelque chose
 func _react_car_burn(d: Dictionary) -> void:
+	feel(0.25)
 	_gas_cd = minf(_gas_cd, 2.5)
 	_charge_cd = minf(_charge_cd, 4.0)
 	_say_mega(3)
@@ -352,12 +452,22 @@ func _react_petard(d: Dictionary) -> void:
 		c.look(p + Vector3.UP, 1.0)
 		if dist < (6.0 if big else 2.5) and not c.busy():
 			c.stagger(0.9 if big else 0.45, (c.global_position - p).normalized())
+	if closest < reach:
+		feel(0.12 if big else 0.04)
 	if closest < reach and d.get("player", false) and player != null:
 		player.wanted = minf(player.wanted + (0.3 if big else 0.1), 1.0)
 
 
 ## Un obus éclate près des policiers : certains reculent, d'autres foncent, d'autres se couvrent
 func _react_burst(p: Vector3) -> void:
+	# la menace se mesure d'abord ; on ne riposte (un seul CRS) que si ça reste tenable
+	var near := INF
+	for c2 in cops:
+		if is_instance_valid(c2):
+			near = minf(near, c2.global_position.distance_to(p))
+	if near < 26.0:
+		feel(0.35 if near < 10.0 else 0.18)
+	var charged := false
 	for c in cops:
 		if not is_instance_valid(c) or c.state in ["down", "arrest", "escort"]:
 			continue
@@ -372,8 +482,13 @@ func _react_burst(p: Vector3) -> void:
 			c.knock_down(2.5)
 		elif r < 0.55:
 			c.retreat_to(c.global_position + away * _rng.randf_range(8.0, 14.0), true)
-		elif r < 0.8 and player != null and stage >= 1:
-			c.charge(player if _rng.randf() < 0.5 else _nearest_civilian(c.global_position, 40.0), 6.0)
+		elif r < 0.8 and player != null and stage >= 1 and danger < 0.5 and not charged:
+			var who: Node3D = player if _rng.randf() < 0.5 else _nearest_civilian(c.global_position, 40.0)
+			if who != null and safe_to_engage(who.global_position):
+				c.charge(who, 6.0)
+				charged = true
+			else:
+				c.stagger(0.8)
 		else:
 			c.stagger(1.0)
 	if stage < 4:
@@ -383,9 +498,15 @@ func _react_burst(p: Vector3) -> void:
 func on_cop_hit(cop: Cop, kind: String, by: Node3D = null) -> void:
 	if tension:
 		tension.add(0.02, "policier touché")
-	# riposte : on interpelle le lanceur (le joueur s'il est le plus proche)
+	feel(0.06)
+	# riposte : on interpelle le lanceur s'il est isolé ; noyé dans une foule hostile, on le vise au LBD
 	if by != null and is_instance_valid(by):
-		_assign_arrest(by, 2)
+		if safe_to_engage(by.global_position):
+			_assign_arrest(by, 2)
+		else:
+			var sh := _free_cops(["lbd"])
+			if not sh.is_empty() and by.global_position.distance_to(sh[0].global_position) > 6.0:
+				sh[0].fire_lbd(by, 1)
 	elif player != null and player.global_position.distance_to(cop.global_position) < 22.0 and kind == "stone":
 		player.wanted = minf(player.wanted + 0.35, 1.0)
 
@@ -478,6 +599,11 @@ func _physics_process(delta: float) -> void:
 	vehicles = vehicles.filter(func(v): return is_instance_valid(v))
 	if tension:
 		tension.police_active = stage >= 1
+	danger = move_toward(danger, 0.0, delta * 0.035)
+	_scan_t -= delta
+	if _scan_t <= 0.0:
+		_scan_t = 0.5
+		_scan_threat()
 	_update_line(delta)
 	_follow_vehicles(delta)
 	# de retour au calme, la ligne se replie vers le cordon d'origine
@@ -495,7 +621,7 @@ func _physics_process(delta: float) -> void:
 			_som = (_som + 1) % 6
 			_say_mega(_som if stage < 3 else 3 + (_som % 3))
 	if stage >= 2:
-		_gas_cd -= delta
+		_gas_cd -= delta * (1.0 + danger)          # sous les tirs on répond au gaz, à distance
 		if _gas_cd <= 0.0:
 			_gas_cd = _rng.randf_range(18.0, 32.0) / (1.0 + 0.35 * float(stage - 2))
 			_do_gas()
@@ -504,7 +630,7 @@ func _physics_process(delta: float) -> void:
 		if _charge_cd <= 0.0:
 			_charge_cd = _rng.randf_range(26.0, 48.0) / (1.0 + 0.3 * float(stage - 3))
 			_do_charge()
-		_lbd_cd -= delta
+		_lbd_cd -= delta * (1.0 + danger * 0.8)
 		if _lbd_cd <= 0.0:
 			_lbd_cd = _rng.randf_range(7.0, 15.0) / (1.0 + 0.4 * float(stage - 3))
 			_do_lbd()
@@ -522,7 +648,8 @@ func _physics_process(delta: float) -> void:
 		_player_seen_t += delta
 		if _player_seen_t > 6.0:
 			_player_seen_t = 0.0
-			_assign_arrest(player, 2)
+			if safe_to_engage(player.global_position):
+				_assign_arrest(player, 2)
 	if player != null:
 		player.wanted = maxf(player.wanted - delta * 0.012, 0.0)
 
@@ -548,8 +675,19 @@ func _update_line(delta: float) -> void:
 				bx_max = maxf(bx_max, b.global_position.x)
 			_adv_goal = maxf(_adv_goal, bx_max + 1.8)
 			_clear_barricade(blocking, delta)
+	# sous le feu (obus, projectiles en rafale) : on n'avance plus ; très exposé, on recule hors de portée
+	var under_fire := mode in ["advance", "push"] and danger > 0.7
+	if under_fire:
+		# très exposé : on se replie une fois de quelques mètres, hors de portée, puis on tient
+		if danger > 0.88 and is_nan(_fallback_x):
+			_fallback_x = minf(line_c.x + 6.0, STREET_X)
+		_adv_goal = _fallback_x if not is_nan(_fallback_x) else line_c.x
+		_adv_cd = maxf(_adv_cd, 3.0)
+		_move_line(delta, 1.3)
+	elif danger < 0.5:
+		_fallback_x = NAN
 	# avance par bonds : on avance de quelques mètres, on s'arrête, on regarde, on repart
-	match mode:
+	match "" if under_fire else mode:
 		"advance":
 			_adv_cd -= delta
 			if _adv_cd <= 0.0 and absf(line_c.x - _adv_goal) < 0.3:
@@ -596,7 +734,7 @@ func _follow_vehicles(delta: float) -> void:
 ## Un CRS de la ligne fonce sur chaque élément de barricade encore debout et le fait basculer
 func _clear_barricade(blocking: Array[Barrier], delta: float) -> void:
 	_barr_cd -= delta
-	if _barr_cd > 0.0:
+	if _barr_cd > 0.0 or danger > 0.65:
 		return
 	_barr_cd = 2.0
 	for b in blocking:
@@ -664,6 +802,10 @@ func _set_masks(on: bool) -> void:
 
 
 func _do_charge() -> void:
+	if danger > 0.65:
+		# trop dangereux pour sortir de la ligne : on tient et on gaze à distance
+		_gas_cd = minf(_gas_cd, 2.0)
+		return
 	var line := _free_cops(["shield"], ["line", "patrol"])
 	if line.size() < 3:
 		return
@@ -675,7 +817,7 @@ func _do_charge() -> void:
 		var t: Node3D = _nearest_civilian(c.global_position, 28.0)
 		if player != null and _rng.randf() < 0.25 and player.global_position.distance_to(c.global_position) < 24.0 and player.wanted > 0.2:
 			t = player
-		if t == null:
+		if t == null or not safe_to_engage(t.global_position):
 			continue
 		c.charge(t, _rng.randf_range(5.0, 8.0))
 		used.append(t)
@@ -692,26 +834,37 @@ func _do_lbd() -> void:
 	if player != null and player.arrest_phase == "" and player.wanted > 0.45 and s.global_position.distance_to(player.global_position) < 42.0 and s.global_position.distance_to(player.global_position) > 6.0:
 		t = player
 	else:
-		var front := _front_civilians(40.0)
-		var cand: Array[Npc] = []
-		for n in front:
-			if n.global_position.distance_to(s.global_position) > 8.0 and (n.hostile > 0.2 or n.bold > 0.7):
-				cand.append(n)
-		if cand.is_empty():
-			return
-		t = cand[_rng.randi() % mini(cand.size(), 6)]
+		# priorité à la menace en cours : tireur de mortier, lanceur de projectiles
+		var bd := 40.0
+		for n in crowd.npcs:
+			if n.state in ["mortar", "throwcop"]:
+				var dd := n.global_position.distance_to(s.global_position)
+				if dd > 8.0 and dd < bd:
+					bd = dd
+					t = n
+		if t == null:
+			var front := _front_civilians(40.0)
+			var cand: Array[Npc] = []
+			for n in front:
+				if n.global_position.distance_to(s.global_position) > 8.0 and (n.hostile > 0.2 or n.bold > 0.7):
+					cand.append(n)
+			if cand.is_empty():
+				return
+			t = cand[_rng.randi() % mini(cand.size(), 6)]
 	s.fire_lbd(t, _rng.randi_range(1, 2))
 
 
 func _do_arrest(calm := false) -> void:
 	var t: Node3D = null
-	if player != null and player.arrest_phase == "" and player.invuln_t <= 0.0 and player.wanted > 0.5 and player.global_position.distance_to(line_c) < 40.0:
+	if player != null and player.arrest_phase == "" and player.invuln_t <= 0.0 and player.wanted > 0.5 and player.global_position.distance_to(line_c) < 40.0 \
+			and safe_to_engage(player.global_position):
 		t = player
 	else:
+		# interpellation ciblée : quelqu'un d'isolé, pas au cœur d'un groupe hostile
 		var front := _front_civilians(36.0)
 		var cand: Array[Npc] = []
 		for n in front:
-			if n.hostile > 0.25 or (not calm and n.bold > 0.8):
+			if (n.hostile > 0.25 or (not calm and n.bold > 0.8)) and safe_to_engage(n.global_position):
 				cand.append(n)
 		if cand.is_empty():
 			return
