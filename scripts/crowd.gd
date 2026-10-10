@@ -420,7 +420,12 @@ func _physics_process(delta: float) -> void:
 		var d := n.global_position.distance_to(cp)
 		var every := 1 if d < 22.0 else (2 if d < 45.0 else 3)
 		var has_prop: bool = (n is Npc and (n as Npc).prop != "") or (n is Cop)
-		n.human.lod = 0 if d < 40.0 else (1 if (d < 70.0 or has_prop) else 2)
+		var lod := 0 if d < 40.0 else (1 if (d < 70.0 or has_prop) else 2)
+		# hors champ : on ne voit que son ombre, on l'anime moins souvent et sans les détails du visage
+		if cam != null and d > 5.0 and not cam.is_position_in_frustum(n.global_position + Vector3.UP):
+			every = maxi(every * 2, 4)
+			lod = maxi(lod, 1)
+		n.human.lod = lod
 		n.tick(delta, every)
 	if _banner_l != null and _banner_r != null and _banner_l.pole_node and _banner_r.pole_node:
 		var a := _banner_r.pole_node.global_transform * Vector3(0, 1.4, 0)
