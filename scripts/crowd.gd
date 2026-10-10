@@ -133,7 +133,7 @@ func _ready() -> void:
 # =================================================================== cortège : parcours
 func _build_route() -> void:
 	var ctrl := [Vector3(-30, 0, -7.2), Vector3(-10, 0, -7.4), Vector3(10, 0, -7.4), Vector3(30, 0, -7.2),
-		Vector3(36, 0, 0.5), Vector3(30, 0, 9.5), Vector3(10, 0, 10.0), Vector3(-10, 0, 10.0), Vector3(-30, 0, 9.5), Vector3(-36, 0, 0.5)]
+		Vector3(36, 0, -0.5), Vector3(30, 0, 5.5), Vector3(10, 0, 6.0), Vector3(-10, 0, 6.0), Vector3(-30, 0, 5.5), Vector3(-36, 0, -0.5)]
 	var n := ctrl.size()
 	_route.clear()
 	for i in n:
