@@ -22,6 +22,7 @@ var react_cd := 0.0
 var _idle_t := 0.0
 var _idle_pose := "idle"
 var _glance_cd := 0.0
+var _replan_t := 0.0             # dernier recalcul de chemin vers sa place dans le cortège
 var _look_cd := 0.0
 var _home_sub := ""
 var _home_t := 0.0
@@ -529,8 +530,10 @@ func _home_march(delta: float) -> void:
 		pass                                    # sit-in : on ne bouge plus
 	elif d > 3.5:
 		# face à la police on s'y rend d'un pas décidé ; on ne recalcule le chemin que si la cible a bougé
-		if not has_goal or goal.distance_to(p) > 1.5 or path.size() <= 1 and d > 6.0:
+		_replan_t += delta
+		if not has_goal or goal.distance_to(p) > 1.5 or (path.size() <= 1 and d > 6.0 and _replan_t > 1.0):
 			go(p, d > 30.0 or not so_on, 0.4)
+			_replan_t = 0.0
 	elif d > 0.2 or cs > 0.05:
 		follow(p, clampf(cs + d * 0.9, 0.0, RUN * 0.8))
 	if not seated:

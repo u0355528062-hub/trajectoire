@@ -444,6 +444,12 @@ func _think_exit(delta: float) -> void:
 		set_state("hold")
 
 
+## Poursuite d'une cible mobile : le chemin (A* + lissage, coûteux) n'est recalculé que si la destination a bougé
+func _chase(dest: Vector3, run: bool, r: float, slack := 0.7) -> void:
+	if not has_goal or goal.distance_to(dest) > slack:
+		go(dest, run, r)
+
+
 # --- charge / matraque --------------------------------------------------------
 func charge(t: Node3D, dur := 7.0) -> void:
 	set_state("charge", {"dur": dur})
@@ -467,7 +473,7 @@ func _think_charge(delta: float) -> void:
 	var d := to.length()
 	look(tp + Vector3.UP * 1.3, 1.0)
 	if d > 1.7:
-		go(tp - to.normalized() * 1.0, true, 0.2)
+		_chase(tp - to.normalized() * 1.0, true, 0.2)
 		set_act("cop_ready", {}, 5.0)
 		face(tp)
 		return
@@ -542,7 +548,7 @@ func _think_gas(delta: float) -> void:
 	face(tp)
 	if global_position.distance_to(tp) < 9.0:
 		# trop près : on se replie d'abord
-		go(global_position - (tp - global_position).normalized() * 6.0, false, 0.4)
+		_chase(global_position - (tp - global_position).normalized() * 6.0, false, 0.4, 2.0)
 		return
 	stop_move()
 	set_act("cop_gl", {"dir": aim}, 5.0)
@@ -666,7 +672,7 @@ func _think_spray(delta: float) -> void:
 	to.y = 0.0
 	face(tp)
 	if to.length() > 1.9:
-		go(tp - to.normalized() * 1.4, true, 0.25)
+		_chase(tp - to.normalized() * 1.4, true, 0.25)
 		set_act("cop_ready", {}, 5.0)
 		return
 	stop_move()
@@ -728,7 +734,7 @@ func _think_arrest(delta: float) -> void:
 				_end_action()
 				return
 			if d > 1.25:
-				go(tp - to.normalized() * 0.8, true, 0.2)
+				_chase(tp - to.normalized() * 0.8, true, 0.2, 0.5)
 				set_act("cop_ready", {}, 5.0)
 				face(tp)
 				if state_t > 14.0:
