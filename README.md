@@ -109,6 +109,21 @@ voiture attaquée ou incendiée, projectiles sur les policiers…) et avec ce qu
 - **Appel (G)** près de l'abribus : les plus téméraires accourent, donnent des coups de pied dans les
   vitres ou lancent des pierres en criant « Ouais ! Allez ! ».
 
+## Le boulevard haussmannien
+
+La place est désormais un **boulevard parisien** : deux rangées continues d'immeubles en pierre de taille
+(rez-de-chaussée à refends, balcons filants en fer forgé aux 2e et 5e étages, persiennes, corniche à denticules,
+toits en zinc mansardés avec lucarnes et souches de cheminée, fenêtres éclairées le soir). Plus d'immeubles
+lointains en arrière-plan : la rue se referme sur elle-même.
+
+**Deux immeubles sur trois** ont des commerces en rez-de-chaussée (banque, boulangerie, pharmacie, supérette,
+boutique de mode, café) avec une **grande vitrine feuilletée, difficile à briser** : il faut s'y reprendre à
+plusieurs coups de pied (F) ou plusieurs pavés. Une fois la vitrine tombée, **on peut entrer**. Quand ça chauffe
+(ÉCHAUFFOURÉES et au-delà), des casseurs s'en prennent d'eux-mêmes aux vitrines, la banque en priorité ;
+la brèche attire d'autres manifestants qui **s'engouffrent dans la boutique, renversent les rayonnages, les
+comptoirs, les distributeurs**, la marchandise vole, et certains ressortent les bras chargés. La foule
+acclame, la tension monte, et les CRS repèrent les casseurs à la sortie.
+
 ## Voitures de police
 
 La voiture de patrouille et les fourgons sont **vandalisables** : coups de pied et projectiles laissent des
@@ -139,7 +154,8 @@ sans erreur ni anomalie (PNJ bloqués, positions aberrantes).
   `fr-gilles-low` (CC0) et `fr-siwis-medium` (CC BY 4.0, SIWIS database), mixées (cris, chœurs, réverbération).
 - Pancartes : `tools/build_props.py`, polices **Permanent Marker** et **Rock Salt** (Apache 2.0, Google Fonts,
   licence dans `tools/fonts/`).
-- Abribus, mortier, textures, flammes, fumées : générés par les scripts de `tools/`.
+- Abribus, mortier, textures, flammes, fumées : générés par les scripts de `tools/` (pierre de taille, zinc et
+  carrelage des immeubles : `tools/build_paris_textures.py`).
 
 Régénérer (Python 3 + numpy + Pillow) :
 `MH_DATA=<makehuman>/makehuman/data/ python3 tools/build_character.py`,

@@ -318,7 +318,7 @@ func _scan_threat() -> void:
 		return
 	var hostiles := 0
 	for n in crowd.npcs:
-		if n.state in ["throwcop", "mortar", "brawl", "carattack"] and n.global_position.distance_to(line_c) < 22.0:
+		if n.state in ["throwcop", "mortar", "brawl", "carattack", "loot"] and n.in_shop == null and n.global_position.distance_to(line_c) < 22.0:
 			hostiles += 1
 	var fires := 0
 	for f in crowd.fire_srcs:
@@ -964,7 +964,7 @@ func _do_lbd() -> void:
 			var front := _front_civilians(40.0)
 			var cand: Array[Npc] = []
 			for n in front:
-				if n.global_position.distance_to(s.global_position) > 8.0 and (n.hostile > 0.2 or n.bold > 0.7):
+				if n.in_shop == null and n.global_position.distance_to(s.global_position) > 8.0 and (n.hostile > 0.2 or n.bold > 0.7):
 					cand.append(n)
 			if cand.is_empty():
 				return
@@ -982,7 +982,7 @@ func _do_arrest(calm := false) -> void:
 		var front := _front_civilians(36.0)
 		var cand: Array[Npc] = []
 		for n in front:
-			if (n.hostile > 0.25 or (not calm and n.bold > 0.8)) and safe_to_engage(n.global_position):
+			if n.in_shop == null and (n.hostile > 0.25 or (not calm and n.bold > 0.8)) and safe_to_engage(n.global_position):
 				cand.append(n)
 		if cand.is_empty():
 			return

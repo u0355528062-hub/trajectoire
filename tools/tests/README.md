@@ -24,6 +24,7 @@ godot --headless --path . --fixed-fps 30 -s tools/tests/<script>.gd
 | `anim1.gd` | Nouvelles actions des manifestants : danse, tambour, chaîne humaine, doigt d'honneur, réconfort, renvoi de grenade |
 | `tag1.gd` | Tags à la bombe : slogans écrits sur la chaussée, les panneaux et les fourgons ; nombre limité |
 | `chase1.gd` | Poursuite du joueur par les CRS (sprint, ténacité, coups en mouvement) |
+| `loot1.gd` | Boutiques : casseurs sur une vitrine (banque d'abord), pilleurs qui entrent, renversent les meubles et ressortent ; personne coincé dans une façade |
 | `surge1.gd` | Vague de foule à l'appel : l'abribus secoué jusqu'à l'effondrement |
 | `sound1.gd` | Sons des véhicules : sirène deux-tons puis rapide (stade 3+), radio de bord, grondement d'une voiture en feu jusqu'à l'extinction, « Libérez-le ! » |
 | `capture_police.gd` | Captures d'écran aux stades 3-4 (gaz, charge, LBD, escorte d'un interpellé). Demande un rendu, voir ci-dessous |

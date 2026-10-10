@@ -19,7 +19,6 @@ var lit := true
 
 var pane: GlassPane
 var items: Array = []             # ShopItem
-var looters := 0
 var _light: OmniLight3D
 var _ceiling: MeshInstance3D
 static var _font: Font
@@ -27,6 +26,7 @@ static var _font: Font
 
 func _ready() -> void:
 	add_to_group("shops")
+	add_to_group("breakable")        # le joueur voit l'invite « F » devant la vitrine
 	_build_shell()
 	_build_window()
 	_build_sign()
@@ -201,37 +201,58 @@ func _furnish() -> void:
 			_item(Vector3(-hw + 0.5, 0, -1.6), Vector3(0.7, 1.7, 0.5), Color(0.25, 0.27, 0.32), [Color(0.2, 0.85, 0.3)], true)      # distributeur
 			_item(Vector3(hw - 0.6, 0, -2.4), Vector3(0.9, 0.75, 0.6), Color(0.35, 0.22, 0.12), [Color(0.95, 0.95, 0.9)])           # bureau
 			_item(Vector3(hw - 0.5, 0, -1.2), Vector3(0.5, 0.9, 0.5), Color(0.1, 0.1, 0.12), [Color(0.1, 0.1, 0.12)])                # fauteuil
+			_item(Vector3(-hw + 0.5, 0, -d + 2.6), Vector3(0.7, 1.6, 0.5), Color(0.25, 0.27, 0.32), [Color(0.2, 0.85, 0.3)], true)  # second distributeur
+			_item(Vector3(0, 0, -2.0), Vector3(0.5, 1.2, 0.35), Color(0.12, 0.2, 0.45), [Color(0.95, 0.95, 0.9)])                    # présentoir à brochures
 		"boulangerie":
 			_item(Vector3(0, 0, -2.2), Vector3(width - 1.2, 1.05, 0.8), Color(0.92, 0.88, 0.8), [Color(0.78, 0.52, 0.22), Color(0.66, 0.4, 0.15)])
 			_item(Vector3(0, 0, -d + 0.4), Vector3(width - 0.6, 2.2, 0.45), Color(0.45, 0.3, 0.16), [Color(0.82, 0.58, 0.26), Color(0.7, 0.45, 0.2)])
+			_item(Vector3(hw - 0.45, 0, -1.2), Vector3(0.5, 1.0, 0.5), Color(0.3, 0.2, 0.12), [Color(0.95, 0.85, 0.2)])                # caisse
+			_item(Vector3(-hw + 0.5, 0, -1.3), Vector3(0.6, 0.75, 0.6), Color(0.5, 0.35, 0.2), [Color(0.82, 0.58, 0.26)])            # étal
+			_item(Vector3(-hw + 0.4, 0, -d + 1.5), Vector3(0.45, 0.9, 0.45), Color(0.85, 0.85, 0.82), [Color(0.95, 0.95, 0.95)])     # vitrine à gâteaux
 		"pharmacie":
 			_item(Vector3(0, 0, -2.4), Vector3(width - 1.4, 1.0, 0.7), Color(0.95, 0.96, 0.96), [Color(0.95, 0.95, 0.95), Color(0.2, 0.7, 0.4)])
 			_item(Vector3(-hw + 0.35, 0, -d * 0.6), Vector3(0.45, 2.0, d * 0.5), Color(0.9, 0.92, 0.92), bright)
 			_item(Vector3(hw - 0.35, 0, -d * 0.6), Vector3(0.45, 2.0, d * 0.5), Color(0.9, 0.92, 0.92), bright)
+			_item(Vector3(0, 0, -d + 0.4), Vector3(width - 1.6, 2.1, 0.4), Color(0.88, 0.9, 0.9), bright)                               # rayonnage du fond
+			_item(Vector3(-hw * 0.3, 0, -1.2), Vector3(0.5, 1.2, 0.5), Color(0.2, 0.6, 0.35), [Color(0.95, 0.95, 0.95), Color(0.85, 0.2, 0.15)])   # présentoir
+			_item(Vector3(hw * 0.35, 0, -1.3), Vector3(0.4, 1.4, 0.4), Color(0.92, 0.92, 0.9), bright)                                   # tourniquet
 		"superette":
 			for i in 2:
 				_item(Vector3(-hw * 0.4 + float(i) * hw * 0.8, 0, -d * 0.55), Vector3(0.6, 1.6, d * 0.5), Color(0.75, 0.75, 0.78), bright)
 			_item(Vector3(hw - 0.5, 0, -1.5), Vector3(0.8, 1.0, 0.6), Color(0.3, 0.3, 0.32), [Color(0.95, 0.85, 0.2)])               # caisse
 			_item(Vector3(0, 0, -d + 0.45), Vector3(width - 0.6, 2.0, 0.6), Color(0.85, 0.9, 0.95), [Color(0.9, 0.9, 1.0), Color(0.3, 0.5, 0.9)], true)   # frigo
+			_item(Vector3(-hw + 0.45, 0, -1.2), Vector3(0.6, 0.9, 0.6), Color(0.55, 0.4, 0.25), [Color(0.9, 0.5, 0.1), Color(0.3, 0.7, 0.2)])     # cagettes
+			_item(Vector3(0, 0, -1.0), Vector3(0.7, 1.1, 0.4), Color(0.8, 0.15, 0.1), [Color(0.95, 0.85, 0.2), Color(0.2, 0.3, 0.8)])            # présentoir promo
 		"boutique":
 			for i in 2:
 				_item(Vector3(-hw * 0.45 + float(i) * hw * 0.9, 0, -d * 0.45), Vector3(1.2, 1.5, 0.4), Color(0.75, 0.72, 0.7), bright)  # portants
 			_item(Vector3(0, 0, -d + 0.5), Vector3(width - 0.8, 2.1, 0.5), Color(0.92, 0.9, 0.86), bright)
 			_item(Vector3(hw - 0.6, 0, -1.4), Vector3(0.4, 1.75, 0.35), Color(0.95, 0.94, 0.92), [Color(0.95, 0.95, 0.95)])          # mannequin
+			_item(Vector3(-hw + 0.6, 0, -1.3), Vector3(0.4, 1.75, 0.35), Color(0.95, 0.94, 0.92), [Color(0.2, 0.2, 0.25)])            # mannequin
+			_item(Vector3(0, 0, -1.6), Vector3(0.9, 0.85, 0.6), Color(0.3, 0.22, 0.16), bright)                                      # table de pliage
 		_:
 			_item(Vector3(0, 0, -d + 0.6), Vector3(width - 0.8, 1.1, 0.7), Color(0.4, 0.26, 0.14), [Color(0.95, 0.95, 0.95), Color(0.5, 0.3, 0.1)])  # comptoir
 			for i in 2:
 				_item(Vector3(-hw * 0.45 + float(i) * hw * 0.9, 0, -2.0), Vector3(0.7, 0.75, 0.7), Color(0.3, 0.2, 0.12), [Color(0.9, 0.9, 0.9)])   # tables
+				_item(Vector3(-hw * 0.45 + float(i) * hw * 0.9 + 0.55, 0, -2.0), Vector3(0.4, 0.9, 0.4), Color(0.18, 0.12, 0.08), [])            # chaises
+			_item(Vector3(-hw + 0.4, 0, -d + 1.6), Vector3(0.45, 1.9, 0.45), Color(0.25, 0.15, 0.1), [Color(0.3, 0.6, 0.25), Color(0.6, 0.15, 0.15)])  # étagère à bouteilles
 
 
 # ------------------------------------------------------------------ interactions
+## Coup de pied dans la vitrine (les meubles, eux, sont dans le groupe « kickable »)
 func kick(point: Vector3, dir: Vector3, power := 1.0) -> bool:
-	if pane and not pane.is_broken and pane.kick(point, dir, power):
-		return true
-	for it in items:
-		if is_instance_valid(it) and (it as ShopItem).kick(point, dir, power):
-			return true
-	return false
+	return pane != null and not pane.is_broken and pane.kick(point, dir, power)
+
+
+## Encore quelque chose à casser ?
+func has_loot() -> bool:
+	return is_open() and not intact_items().is_empty()
+
+
+## Contient ce point (intérieur de la boutique, monde) ?
+func holds(p: Vector3) -> bool:
+	var l := to_local(p)
+	return absf(l.x) < width * 0.5 and l.z < 0.15 and l.z > -depth
 
 
 ## Un meuble vient d'être cassé : la lumière vacille, la foule s'emballe

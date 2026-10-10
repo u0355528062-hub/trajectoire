@@ -118,8 +118,6 @@ func _ready() -> void:
 	_build_cornice()
 	_build_roof()
 	_commit()
-	if shops > 0:
-		add_to_group("breakable")
 
 
 func _st(key: String) -> SurfaceTool:

@@ -68,6 +68,8 @@ var _rings := {}
 var fire_srcs: Array = []          # poubelles et feux au sol (cache par image)
 var police: Police
 var standoff: Standoff
+const MAX_LOOTERS := 7
+var _loot_cd := 20.0
 var aid_pairs := {}                # blessé -> secouriste en route
 var _aid_t := 0.0
 var _initial_count := 0
@@ -416,6 +418,7 @@ func _physics_process(delta: float) -> void:
 	_update_taunts(delta)
 	_update_comfort(delta)
 	_update_tags(delta)
+	_update_looting(delta)
 	standoff.update(delta)
 	_update_gas_awareness(delta)
 	_update_aid(delta)
@@ -910,9 +913,18 @@ func resolve(n: Actor, p: Vector3) -> Vector3:
 		p = _push_circle(p, src.global_position, r)
 	if player:
 		p = _push_circle(p, player.global_position, 0.48)
+	# les façades : personne ne traverse les murs (sauf les pilleurs dans une boutique ouverte)
+	var zlo := ParisStreet.SOUTH_Z + 0.35
+	var zhi := ParisStreet.NORTH_Z - 0.35
+	if n is Npc and (n as Npc).in_shop != null:
+		var sh := (n as Npc).in_shop
+		if sh.global_position.z > 0.0:
+			zhi += sh.depth
+		else:
+			zlo -= sh.depth
+	p.z = clampf(p.z, zlo, zhi)
 	if n is Cop:
 		p.x = clampf(p.x, -125.0, 125.0)
-		p.z = clampf(p.z, AREA_MIN.y - 12.0, AREA_MAX.y + 12.0)
 		return p
 	var xm := area_max_x() + (4.0 if police == null else 1.0)
 	if n is Npc and (n as Npc).state == "arrested":
@@ -920,7 +932,6 @@ func resolve(n: Actor, p: Vector3) -> Vector3:
 	elif p.x > xm + 1.0:
 		xm = p.x - 0.1             # escorte interrompue de l'autre côté : il revient sans téléportation
 	p.x = clampf(p.x, AREA_MIN.x - 4.0, xm)
-	p.z = clampf(p.z, AREA_MIN.y - 4.0, AREA_MAX.y + 4.0)
 	return p
 
 
@@ -1258,6 +1269,14 @@ func on_event(type: String, d: Dictionary) -> void:
 			_ev_call(d)
 		"player_gesture":
 			_ev_player_gesture(d)
+		"shop_open":
+			_ev_shop_open(d)
+		"shop_smash":
+			excitement = minf(excitement + 0.02, 1.0)
+			if _rng.randf() < 0.4:
+				_crowd_sound("cheer_small", d["pos"], -6.0, 4.0)
+			if police and police.tension:
+				police.tension.add(0.01, "boutique saccagée")
 		"bus_collapse":
 			surge = false
 			excitement = minf(excitement + 0.3, 1.0)
@@ -2136,6 +2155,86 @@ func _update_car_attacks(delta: float) -> void:
 			return
 
 
+## Boutiques : quand la tension monte, des casseurs s'attaquent aux vitrines (la banque d'abord) ; une
+## vitrine ouverte attire les pilleurs, qui entrent et saccagent tout.
+func _update_looting(delta: float) -> void:
+	_loot_cd -= delta
+	if _loot_cd > 0.0:
+		return
+	_loot_cd = _rng.randf_range(6.0, 12.0)
+	var shops := get_tree().get_nodes_in_group("shops")
+	if shops.is_empty():
+		return
+	var looters := 0
+	for n in npcs:
+		if n.state == "loot":
+			looters += 1
+	if looters >= MAX_LOOTERS:
+		return
+	var hot := (police != null and police.stage >= 2) or excitement > 0.7
+	var c := cortege_center()
+	var best: Shop = null
+	var bs := -1e9
+	for o in shops:
+		var s := o as Shop
+		if not s.is_inside_tree() or s.global_position.x > area_max_x() - 2.0:
+			continue
+		var d := s.global_position.distance_to(c)
+		if d > 34.0:
+			continue
+		var score := -d
+		if s.is_open():
+			if not s.has_loot():
+				continue
+			score += 25.0                        # vitrine déjà ouverte : ça attire
+		elif not hot:
+			continue                             # on ne s'attaque aux vitrines que quand ça chauffe
+		elif s.kind == "banque":
+			score += 12.0
+		if score > bs:
+			bs = score
+			best = s
+	if best == null:
+		return
+	var want := 2 if best.is_open() else (1 if _rng.randf() < 0.6 else 2)
+	_recruit_looters(best, mini(want, MAX_LOOTERS - looters))
+
+
+func _recruit_looters(s: Shop, count: int) -> void:
+	var cands: Array[Npc] = []
+	for n in npcs:
+		if n.state != "home" or n.busy() or n.prop != "" or n.role in ["march", "medic", "press"] or n.fear > 0.45:
+			continue
+		if n.bold < (0.45 if s.is_open() else 0.6):
+			continue
+		if n.global_position.distance_to(s.global_position) > 30.0:
+			continue
+		cands.append(n)
+	cands.sort_custom(func(a, b): return a.global_position.distance_squared_to(s.global_position) < b.global_position.distance_squared_to(s.global_position))
+	for n in cands.slice(0, count):
+		NpcLoot.start(n, s)
+
+
+func _ev_shop_open(d: Dictionary) -> void:
+	var p: Vector3 = d["pos"]
+	excitement = minf(excitement + 0.2, 1.0)
+	later(0.3, func(): _crowd_sound("cheer_big", p + Vector3.UP * 1.5, 0.0, 5.0))
+	if police and police.tension:
+		police.tension.add(0.06, "vitrine brisée")
+	if police:
+		police.feel(0.08)
+	if player and player.global_position.distance_to(p) < 30.0:
+		player.message.emit("La vitrine a cédé : la boutique est ouverte !")
+	# la brèche attire du monde : quelques-uns s'engouffrent tout de suite
+	var looters := 0
+	for n in npcs:
+		if n.state == "loot":
+			looters += 1
+	var s: Shop = d.get("shop")
+	if s != null and is_instance_valid(s):
+		_recruit_looters(s, mini(_rng.randi_range(2, 4), MAX_LOOTERS - looters))
+
+
 ## Tags : de temps en temps, un manifestant sort une bombe de peinture
 func _update_tags(delta: float) -> void:
 	_tag_cd -= delta
@@ -2335,7 +2434,7 @@ func _vandal_target(n: Npc) -> Node3D:
 	var best: Node3D = null
 	var bd := 14.0
 	for o in get_tree().get_nodes_in_group("kickable"):
-		if o is TrashBin or o is Burnable or o is PoliceVehicle or not (o is Node3D):
+		if o is TrashBin or o is Burnable or o is PoliceVehicle or o is ShopItem or not (o is Node3D):
 			continue
 		if o is StreetProp and (o as StreetProp).toppled:
 			continue

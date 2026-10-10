@@ -25,6 +25,8 @@ var _glance_cd := 0.0
 var _drum_bin: TrashBin = null
 var tag_can: Node3D = null            # bombe de peinture en main (tag en cours)
 var tag_label: Label3D = null
+var in_shop: Shop = null              # dans une boutique saccagée (la borne de la rue ne s'applique pas)
+var loot_box: Node3D = null           # butin porté à deux mains
 var _replan_t := 0.0             # dernier recalcul de chemin vers sa place dans le cortège
 var _look_cd := 0.0
 var _home_sub := ""
@@ -95,6 +97,11 @@ func _pre_tick(delta: float) -> void:
 		human.crouch = 0.0
 	if tag_can != null and state != "tag":
 		NpcTag.cleanup(self)
+	if state != "loot":
+		if loot_box != null:
+			NpcLoot.drop_box(self)
+		if in_shop != null and (not is_instance_valid(in_shop) or not in_shop.holds(global_position)):
+			in_shop = null
 	fear = maxf(fear - delta * (0.035 + 0.05 * fear), 0.0)
 	anger = maxf(anger - delta * 0.012, 0.0)
 	fatigue = clampf(fatigue + delta * (0.0035 if human.sit < 0.5 else -0.02), 0.0, 1.0)
@@ -296,6 +303,12 @@ func _place_props() -> void:
 			cam_held.global_transform = Transform3D(Basis.looking_at(-cd, Vector3.UP), (pr["pos"] as Vector3) + Vector3.UP * 0.0)
 	if stone_vis.visible:
 		stone_vis.global_position = (pr["pos"] as Vector3) + (pr["p"] as Vector3) * 0.035 + (pr["f"] as Vector3) * 0.02
+	if loot_box != null:
+		if act == "carry":
+			loot_box.global_position = ((pr["pos"] as Vector3) + (pl["pos"] as Vector3)) * 0.5 + Vector3.UP * 0.04
+		else:
+			loot_box.global_position = (pr["pos"] as Vector3) + (pr["p"] as Vector3) * 0.08
+		loot_box.global_basis = global_basis
 	if item and is_instance_valid(item) and item.get_parent() == self:
 		if act == "carry" or act == "toss2" or act == "dep2":
 			item.global_position = ((pr["pos"] as Vector3) + (pl["pos"] as Vector3)) * 0.5 + Vector3.UP * 0.02
@@ -346,7 +359,7 @@ func _prop_cheer_pose() -> Array:
 
 
 func busy() -> bool:
-	return state in ["rally", "feed", "mortar", "panic", "dodge", "gassed", "hit", "sprayed", "arrested", "boarded", "rescue", "throwcop", "carattack", "vandal", "aid", "brawl", "barricade", "throwback", "tag"]
+	return state in ["rally", "feed", "mortar", "panic", "dodge", "gassed", "hit", "sprayed", "arrested", "boarded", "rescue", "throwcop", "carattack", "vandal", "aid", "brawl", "barricade", "throwback", "tag", "loot"]
 
 
 ## Réaction courte : pose, durée, point regardé, options {voice, loud, hop, face, run_to}
@@ -448,6 +461,8 @@ func _think(delta: float) -> void:
 			_think_throwback(delta)
 		"tag":
 			NpcTag.think(self, delta)
+		"loot":
+			NpcLoot.think(self, delta)
 		"brawl":
 			_think_brawl(delta)
 		"goto_look":
@@ -1556,6 +1571,17 @@ func _on_kick_impact(point: Vector3) -> void:
 		if bc != null and is_instance_valid(bc) and point.distance_to(bc.global_position + Vector3.UP * 0.9) < 1.7:
 			bc.on_hit("kick", fwd, 0.7, self)
 			data["hits"] = int(data.get("hits", 0)) + 1
+	# saccage d'une boutique : la vitrine, puis les meubles
+	if state == "loot":
+		var shop: Shop = dnode("shop") as Shop
+		if shop != null:
+			hostile = minf(hostile + 0.12, 0.6)          # les CRS repèrent les casseurs
+			if not shop.is_open():
+				shop.kick(point + fwd * 0.12, fwd, 0.8)
+			else:
+				var it: ShopItem = dnode("item") as ShopItem
+				if it != null and it.kick(point + fwd * 0.12, fwd, 0.8):
+					data["hits"] = int(data.get("hits", 0)) + 1
 	# les meubles de rue sur le passage (barrière, cône, panneau...) encaissent aussi
 	if state == "vandal":
 		for n in get_tree().get_nodes_in_group("kickable"):
