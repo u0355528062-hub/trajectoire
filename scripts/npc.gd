@@ -218,7 +218,10 @@ func _place_props() -> void:
 	var fwd := forward()
 	if sign_node:
 		var face_dir := _bd(Vector3(-1, 0, 0)) if act == "sign_rest" else fwd
-		sign_node.global_transform = Transform3D(Props.basis_up(thumb, face_dir), grip)
+		# hors des poses de pancarte (mains sur la tête, gaz, fuite...), le manche reste à peu près
+		# droit au lieu de pointer à l'horizontale comme une lance
+		var up := thumb if act in ["sign", "sign_rest"] else (thumb + Vector3.UP * 1.6).normalized()
+		sign_node.global_transform = Transform3D(Props.basis_up(up, face_dir), grip)
 	if pole_node:
 		var gh: Dictionary = pr if banner_side > 0.0 else pl
 		var g2: Vector3 = (gh["pos"] as Vector3) + (gh["p"] as Vector3) * 0.03
