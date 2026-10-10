@@ -85,7 +85,7 @@ func _on_body(body: Node) -> void:
 		_hit = true
 		var dir := linear_velocity.normalized()
 		var power := clampf(mass * sp * 0.12, 0.3, 1.2)
-		(body as Cop).on_hit(kind, dir, power, thrower)
+		(body as Cop).on_hit(kind, dir, power, thrower if is_instance_valid(thrower) else null)
 		AudioLib.play_at(self, "can_clink" if kind == "can" else ("bag_drop" if kind == "bag" else "toss"), global_position, -2.0, 8.0)
 	elif sp > 2.0:
 		var snd := "can_clink" if kind == "can" else ("bag_drop" if kind == "bag" else "toss")

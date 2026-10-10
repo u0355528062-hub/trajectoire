@@ -102,7 +102,7 @@ func _on_body(body: Node) -> void:
 	if body is Npc and speed > 3.0 and _age < 3.0:
 		(body as Npc).on_stone_hit(_prev_vel)
 	elif body is Cop and speed > 3.0 and _age < 4.0:
-		(body as Cop).on_hit("stone", _prev_vel.normalized(), clampf(speed / 14.0, 0.4, 1.3), thrower)
+		(body as Cop).on_hit("stone", _prev_vel.normalized(), clampf(speed / 14.0, 0.4, 1.3), thrower if is_instance_valid(thrower) else null)
 	var now := Time.get_ticks_msec() / 1000.0
 	if speed > 2.0 and now - _last_sound > 0.12:
 		_last_sound = now

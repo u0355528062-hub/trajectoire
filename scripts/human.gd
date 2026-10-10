@@ -50,6 +50,19 @@ var hunch := 0.0         # dos voûté, tête en avant (toux, coup reçu)
 var side_lean := 0.0     # buste penché sur le côté (+ = vers la droite du personnage)
 var eye_open := 1.0      # 1 normal, < 1 yeux plissés, 0 fermés
 var breath_amp := 0.0    # essoufflement (0 calme -> 1 haletant)
+# noms d'os précalculés (évite de reconstruire les chaînes à chaque image pour chaque personnage)
+const SPINE_IDS := ["spine05", "spine04", "spine03", "spine02", "spine01"]
+const NECK_IDS := ["neck01", "neck02", "neck03"]
+const SIDES := ["L", "R"]
+const N_FOOT := {"L": "foot_L", "R": "foot_R"}
+const N_UPLEG := {"L": "upperleg01_L", "R": "upperleg01_R"}
+const N_LOLEG := {"L": "lowerleg01_L", "R": "lowerleg01_R"}
+const N_TOE := {"L": "toe1-1_L", "R": "toe1-1_R"}
+const N_EYE := {"L": "eye_L", "R": "eye_R"}
+const N_UPARM := {"L": "upperarm01_L", "R": "upperarm01_R"}
+const N_LOARM := {"L": "lowerarm01_L", "R": "lowerarm01_R"}
+const N_WRIST := {"L": "wrist_L", "R": "wrist_R"}
+const N_CLAV := {"L": "clavicle_L", "R": "clavicle_R"}
 var lod := 0             # 0 complet, 1 sans yeux ni mâchoire, 2 sans bras IK
 var _fall_on := false
 var _fc := {}            # cache de la courbure des doigts
@@ -520,7 +533,7 @@ func _animate(delta: float, speed: float, run_t: float, grounded: bool, vy: floa
 	_lean = lerpf(_lean, (0.03 + 0.24 * run_t) * w + 0.05 * clampf(-vy * 0.15, 0.0, 1.0) * air, minf(1.0, delta * 6.0))
 	skeleton.set_bone_pose_rotation(_i["root"], Quaternion(Vector3.UP, yaw) * Quaternion(Vector3.BACK, roll))
 	var breath := sin(t_idle * (1.6 + 4.0 * breath_amp)) * 0.5 + 0.5
-	var spine_ids := ["spine05", "spine04", "spine03", "spine02", "spine01"]
+	var spine_ids := SPINE_IDS
 	for i in 5:
 		var share := 0.2
 		var rx := _lean * share + kick * 0.05 + (breath - 0.5) * (0.004 + 0.022 * breath_amp) - 0.06 * k_cham * (1.0 - k_rec) - 0.06 * k_str * (1.0 - k_rec) + (0.55 * crouch + lean_extra + 0.7 * hunch + 0.18 * sit_e) * share
@@ -543,7 +556,7 @@ func _animate(delta: float, speed: float, run_t: float, grounded: bool, vy: floa
 	var shake_a := sin(t_idle * 7.5) * 0.3 * shake
 	var crouch_comp := -0.4 * crouch - lean_extra * 0.5 - 0.5 * hunch  # garde le regard vers l'avant quand on se penche
 	var nq := Quaternion(Vector3.UP, _ly * 0.16) * Quaternion(Vector3.RIGHT, _lp * 0.18 - _lean * 0.12 + crouch_comp * 0.2 + 0.25 * hunch) * Quaternion(Vector3.BACK, -side_lean * 0.12)
-	for nm in ["neck01", "neck02", "neck03"]:
+	for nm in NECK_IDS:
 		skeleton.set_bone_pose_rotation(_i[nm], nq)
 	skeleton.set_bone_pose_rotation(_i["head"], Quaternion(Vector3.UP, _ly * 0.4 + shake_a) * Quaternion(Vector3.RIGHT, _lp * 0.46 - _lean * 0.1 + nod_a + crouch_comp * 0.3) * Quaternion(Vector3.BACK, -side_lean * 0.2))
 	if lod == 0:
@@ -551,8 +564,8 @@ func _animate(delta: float, speed: float, run_t: float, grounded: bool, vy: floa
 			skeleton.set_bone_pose_rotation(_i["jaw"], Quaternion(Vector3.RIGHT, 0.3 * clampf(jaw, 0.0, 1.0)))
 		# yeux : suivent un peu la cible ; clignements
 		for sd: String in ["L", "R"]:
-			if bone.has("eye_" + sd):
-				_local("eye_" + sd, Quaternion(Vector3.UP, clampf(ty - _ly, -0.3, 0.3) * 0.8) * Quaternion(Vector3.RIGHT, clampf(tp - _lp, -0.2, 0.2) * 0.8))
+			if bone.has(N_EYE[sd]):
+				_local(N_EYE[sd], Quaternion(Vector3.UP, clampf(ty - _ly, -0.3, 0.3) * 0.8) * Quaternion(Vector3.RIGHT, clampf(tp - _lp, -0.2, 0.2) * 0.8))
 		_next_blink -= delta
 		if _next_blink <= 0.0:
 			_blink = 1.0
@@ -566,10 +579,10 @@ func _animate(delta: float, speed: float, run_t: float, grounded: bool, vy: floa
 				_local("orbicularis04_" + sd, Quaternion(Vector3.RIGHT, -0.18 * lid))
 
 	# --- jambes (IK) : appui plat, balancier en arc
-	for side: String in ["L", "R"]:
+	for side: String in SIDES:
 		var is_l := side == "L"
 		var ph := fposmod(phase + (0.0 if is_l else 0.5), 1.0)
-		var foot_rest: Vector3 = rest["foot_" + side]
+		var foot_rest: Vector3 = rest[N_FOOT[side]]
 		var z := 0.0
 		var lift := 0.0
 		var pitch_f := 0.0
@@ -608,7 +621,7 @@ func _animate(delta: float, speed: float, run_t: float, grounded: bool, vy: floa
 				fpitch = lerpf(lerpf(-1.2, 0.5, k2), 0.0, k3)
 		# en l'air : jambes repliées
 		target += Vector3(0, 0.22 * air, (0.12 if is_l else -0.06) * air)
-		var hip_n := "upperleg01_" + side
+		var hip_n: String = N_UPLEG[side]
 		var pole := Vector3(0.12 if is_l else -0.12, 0.0, 1.0)
 		var sgx := 1.0 if is_l else -1.0
 		if sit_e > 0.001:     # assis, genoux relevés, pieds à plat devant
@@ -626,9 +639,9 @@ func _animate(delta: float, speed: float, run_t: float, grounded: bool, vy: floa
 		if moving and grounded and w > 0.5 and ph < float(_prev_ph[side]) - 0.5:
 			footstep.emit(speed)
 		_prev_ph[side] = ph
-		_solve_limb(hip_n, "lowerleg01_" + side, "foot_" + side, target, pole)
-		_global("foot_" + side, Quaternion(Vector3.RIGHT, fpitch - 0.25 * air))
-		var toe := "toe1-1_" + side
+		_solve_limb(hip_n, N_LOLEG[side], N_FOOT[side], target, pole)
+		_global(N_FOOT[side], Quaternion(Vector3.RIGHT, fpitch - 0.25 * air))
+		var toe: String = N_TOE[side]
 		if bone.has(toe):
 			_local(toe, Quaternion.IDENTITY)
 
@@ -642,10 +655,10 @@ func _animate(delta: float, speed: float, run_t: float, grounded: bool, vy: floa
 		var side := "R" if idx == 0 else "L"
 		var is_l := side == "L"
 		var sgn := 1.0 if is_l else -1.0
-		var up := "upperarm01_" + side
-		var lo := "lowerarm01_" + side
-		var wr := "wrist_" + side
-		var cl := "clavicle_" + side
+		var up: String = N_UPARM[side]
+		var lo: String = N_LOARM[side]
+		var wr: String = N_WRIST[side]
+		var cl: String = N_CLAV[side]
 		var ph := fposmod(phase + (0.5 if is_l else 0.0), 1.0)
 		var sw := -sin(TAU * ph) * swing
 		sw += (0.75 if not is_l else -0.55) * kfx * (1.0 - 0.3 * k_str)

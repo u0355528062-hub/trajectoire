@@ -194,7 +194,7 @@ func explode(at := Vector3.INF) -> void:
 	_scorch(scene, pos)
 	# --- effets physiques et événements
 	_shockwave(pos, big)
-	var ev := {"pos": pos, "size": size, "player": by_player, "who": thrower}
+	var ev := {"pos": pos, "size": size, "player": by_player, "who": thrower if is_instance_valid(thrower) else null}
 	get_tree().call_group("crowd", "on_event", "petard", ev)
 	get_tree().call_group("crowd", "on_event", "petard_boom", ev)
 	queue_free()
