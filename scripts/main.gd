@@ -8,7 +8,6 @@ func _ready() -> void:
 	Settings.load_all()
 	Settings.ensure_buses()
 	_build_environment()
-	add_child(Skyline.new())
 	add_child(Ambient.new())
 	_build_ground()
 	var bus := BusStop.new()
@@ -25,6 +24,10 @@ func _ready() -> void:
 	crowd.setup(player, bus)
 	add_child(crowd)
 	Furniture.populate(self, crowd)
+	var street := ParisStreet.new()
+	street.name = "ParisStreet"
+	street.crowd = crowd
+	add_child(street)
 	var police := Police.new()
 	police.name = "Police"
 	police.setup(crowd, player, tension)

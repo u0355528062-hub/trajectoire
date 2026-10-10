@@ -21,6 +21,8 @@ var hits := 0
 var is_broken := false
 var spec := 0.7            # reflets (les vitres de voiture en ont peu : elles doivent rester discrètes)
 var use_rim := true
+var max_shards := 500        # grandes vitrines : moins d'éclats (et plus gros) pour rester fluide
+var shard_step := 1.0
 var overlays: Array = []   # décors (givre, saleté) supprimés à l'éclatement
 var _mesh: MeshInstance3D
 var _body: StaticBody3D
@@ -256,12 +258,12 @@ func _axis_points(a: float, b: float, c: float) -> Array[float]:
 	var x := c
 	while x < b - 0.04:
 		var d := absf(x - c)
-		x += (0.085 + 0.27 * smoothstep(0.0, 1.0, d / 1.0)) * _rng.randf_range(0.75, 1.3)
+		x += (0.085 + 0.27 * smoothstep(0.0, 1.0, d / 1.0)) * _rng.randf_range(0.75, 1.3) * shard_step
 		pts.append(minf(x, b))
 	x = c
 	while x > a + 0.04:
 		var d2 := absf(x - c)
-		x -= (0.085 + 0.27 * smoothstep(0.0, 1.0, d2 / 1.0)) * _rng.randf_range(0.75, 1.3)
+		x -= (0.085 + 0.27 * smoothstep(0.0, 1.0, d2 / 1.0)) * _rng.randf_range(0.75, 1.3) * shard_step
 		pts.append(maxf(x, a))
 	pts.sort()
 	var out: Array[float] = []
@@ -361,7 +363,6 @@ func _shatter(imp: Vector2, kick_dir: Vector3) -> void:
 	var phys := PhysicsMaterial.new()
 	phys.friction = 0.45
 	phys.bounce = 0.18
-	var max_shards := 500
 	var made := 0
 	for i in xs.size() - 1:
 		for j in ys.size() - 1:

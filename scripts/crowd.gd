@@ -6,8 +6,8 @@ extends Node3D
 ## les obstacles, et distribue les réactions aux événements (tirs, bouquets, vitres, feu, appel).
 
 const MAX_VOICES := 7
-const AREA_MIN := Vector2(-38.0, -24.0)
-const AREA_MAX := Vector2(38.0, 17.0)
+const AREA_MIN := Vector2(-38.0, -25.2)      # jusqu'au pied des façades (boulevard bordé d'immeubles)
+const AREA_MAX := Vector2(38.0, 18.2)
 const VARIANTS := ["male_a", "male_b", "male_c", "male_d", "male_e", "female_a", "female_b", "female_c", "female_d"]
 const CHANTS := ["chant_lacherien", "chant_ensemble", "chant_rue", "chant_onestla"]
 const POLICE_CHANTS := ["chant_police", "chant_justice", "chant_partout", "chant_libere", "chant_resiste"]
