@@ -1944,6 +1944,12 @@ func _think_sprayed(delta: float) -> void:
 # --- interpellation
 func on_grabbed(cop: Node3D) -> void:
 	_drop_item()
+	if flare != null:
+		# agrippé : le fumigène allumé tombe par terre
+		var f := flare
+		flare = null
+		_flare_cd = _rng.randf_range(25.0, 55.0)
+		_drop_flare.call_deferred(f)
 	state = "arrested"
 	state_t = 0.0
 	sub = "struggle"
