@@ -25,6 +25,8 @@ func _process(_d: float) -> bool:
 			if n.bold > 0.55:
 				n.anger = maxf(n.anger, 0.8)
 				n.fear = minf(n.fear, 0.2)
+	if crowd == null:
+		return false
 	var b := 0
 	for n in crowd.npcs:
 		if n.state == "brawl":

@@ -14,6 +14,7 @@ var kind := "car"                 # car | truck
 var state := "parked"             # driving | braking | parked
 var lights_on := false
 var siren_on := false
+var urgent := false               # renfort pressé : sirène « hi-lo » rapide au lieu du deux-tons
 var speed := 0.0
 var max_speed := 11.0
 var half := Vector2(0.95, 2.25)   # demi-dimensions au sol (x, z)
@@ -31,6 +32,8 @@ var _bar_b: StandardMaterial3D
 var _bar_lights: Array[OmniLight3D] = []
 var _siren: AudioStreamPlayer3D
 var _engine: AudioStreamPlayer3D
+var _radio: AudioStreamPlayer3D
+var _squelch_t := 4.0
 var _t := 0.0
 var _pitch := 0.0
 var _hw := 1.0
@@ -388,7 +391,7 @@ func _build_collision() -> void:
 
 func _build_sounds() -> void:
 	_siren = AudioStreamPlayer3D.new()
-	_siren.stream = AudioLib.stream("pol_siren_wail", true)
+	_siren.stream = AudioLib.stream("pol_siren_loop", true)
 	_siren.unit_size = 30.0
 	_siren.max_distance = 600.0
 	_siren.volume_db = -4.0
@@ -399,6 +402,14 @@ func _build_sounds() -> void:
 	_engine.max_distance = 150.0
 	_engine.volume_db = -60.0
 	add_child(_engine)
+	# grésillement de la radio de bord, audible seulement de près
+	_radio = AudioStreamPlayer3D.new()
+	_radio.stream = AudioLib.stream("radio_static_loop", true)
+	_radio.unit_size = 1.6
+	_radio.max_distance = 22.0
+	_radio.volume_db = -20.0
+	_radio.position = Vector3(0, 1.3, -1.2)
+	add_child(_radio)
 
 
 # ------------------------------------------------------------------ pilotage
@@ -406,9 +417,14 @@ func set_lights(on: bool, with_siren := false) -> void:
 	lights_on = on
 	siren_on = with_siren and on
 	if siren_on and not _siren.playing:
-		_siren.play(randf() * 3.0)
+		_siren.stream = AudioLib.stream("pol_siren_wail" if urgent else "pol_siren_loop", true)
+		_siren.play(randf() * maxf(_siren.stream.get_length() - 0.1, 0.0))   # départ décalé, dans la boucle
 	elif not siren_on and _siren.playing:
 		_siren.stop()
+	if on and not _radio.playing:
+		_radio.play(randf() * maxf(_radio.stream.get_length() - 0.1, 0.0))
+	elif not on and _radio.playing:
+		_radio.stop()
 	if not on:
 		for l in _bar_lights:
 			l.light_energy = 0.0
@@ -460,6 +476,11 @@ func open_doors(names: Array, on := true) -> void:
 			target = (ang * (-sx)) if on else 0.0
 			var tw2 := create_tween()
 			tw2.tween_property(d, "rotation:y", target, 0.45).set_trans(Tween.TRANS_QUAD)
+	var cargo := false
+	for n in names:
+		cargo = cargo or String(n).begins_with("B")
+	if cargo:
+		AudioLib.play_at(self, "door_slide", global_transform * Vector3(0, 1.2, 3.2), -1.0, 9.0, randf_range(0.92, 1.05))
 	AudioLib.play_at(self, "door_open" if on else "door_close", global_position + Vector3.UP, -2.0, 10.0)
 
 
@@ -483,6 +504,12 @@ func _physics_process(delta: float) -> void:
 	elif state == "parked":
 		vol = -22.0 if lights_on else -60.0
 	_engine.volume_db = lerpf(_engine.volume_db, vol, minf(1.0, delta * 3.0))
+	# appels radio de temps en temps quand le véhicule est en faction
+	if lights_on and state == "parked":
+		_squelch_t -= delta
+		if _squelch_t <= 0.0:
+			_squelch_t = randf_range(7.0, 16.0)
+			AudioLib.play_at(self, "radio_squelch", global_transform * _radio.position, -8.0, 3.0, randf_range(0.95, 1.05))
 	_engine.pitch_scale = 0.7 + speed * 0.05
 	if state == "parked" and not lights_on and _engine.playing and _engine.volume_db < -55.0:
 		_engine.stop()

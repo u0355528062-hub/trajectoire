@@ -141,6 +141,7 @@ func _send_vehicle(kind: String, crew: Array, stage_tag: int) -> void:
 	add_child(v)
 	v.build(kind)
 	vehicles.append(v)
+	v.urgent = stage_tag >= 3
 	v.set_lights(true, true)
 	var px := maxf(line_c.x + 9.0 + 3.5 * float(_park_n), STREET_X + 3.0) if kind == "truck" else maxf(line_c.x + 7.0 + 2.0 * float(_park_n), STREET_X)
 	px = minf(px, 100.0)
@@ -258,7 +259,7 @@ func _alert_all(a: float) -> void:
 func _set_all_lights(on: bool) -> void:
 	for v in vehicles:
 		if is_instance_valid(v):
-			v.set_lights(on, false)
+			v.set_lights(on, on and v.siren_on)   # un renfort encore en route garde sa sirène
 
 
 func _say_mega(i: int) -> void:

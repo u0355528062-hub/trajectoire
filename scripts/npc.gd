@@ -2007,7 +2007,7 @@ func _think_arrested(delta: float) -> void:
 		"escort":
 			human.kneel = move_toward(human.kneel, 0.0, delta * 1.6)
 			human.hunch = lerpf(human.hunch, 0.25, 0.1)
-			follow(_escort_p, 1.35)
+			follow(_escort_p, 1.9)
 			set_act("cuffed", {}, 5.0)
 			if _escort_t > 1.5:
 				sub = "stand"

@@ -32,6 +32,7 @@ var _pops := 0
 var _last_evt := -99.0
 var _mat_list: Array = []            # [MeshInstance3D, Material d'origine]
 var _smoke_end: GPUParticles3D
+var _roar: AudioStreamPlayer3D        # grondement du brasier quand la voiture flambe franchement
 
 static var _dent_tex_a: Texture2D
 static var _dent_tex_n: Texture2D
@@ -276,6 +277,14 @@ func ignite() -> void:
 		fx.ignite_burst()
 		_fires.append(fx)
 		first = false
+	_roar = AudioStreamPlayer3D.new()
+	_roar.stream = AudioLib.stream("fire_big_loop", true)
+	_roar.volume_db = -60.0
+	_roar.unit_size = 10.0
+	_roar.max_distance = 140.0
+	_roar.position = Vector3(0, 1.2, 0)
+	car.add_child(_roar)
+	_roar.play(randf() * 4.0)
 	var p := car.global_position + Vector3.UP * 1.0
 	get_tree().call_group("crowd", "on_event", "car_burn", {"pos": p, "car": car, "player": by_player})
 	get_tree().call_group("crowd", "on_event", "fire_start", {"pos": p, "floor": false, "car": true, "bin": car})
@@ -290,6 +299,10 @@ func _update_burn(delta: float) -> void:
 		target = maxf(1.4 - (_burn_t - 150.0) / 40.0, 0.0)
 	heat = move_toward(heat, target, delta * 0.12)
 	charred = clampf(_burn_t / 55.0, 0.0, 1.0)
+	if _roar:
+		# le grondement ne prend le dessus sur le crépitement que quand le feu est bien installé
+		var g := clampf((heat - 0.45) / 0.8, 0.0, 1.0)
+		_roar.volume_db = lerpf(_roar.volume_db, -40.0 + 38.0 * g if g > 0.0 else -60.0, minf(1.0, delta * 2.0))
 	_apply_char()
 	var t := Time.get_ticks_msec() / 1000.0
 	for i in _fires.size():
@@ -401,6 +414,11 @@ func _heat_burst(pos: Vector3) -> void:
 func _die_down() -> void:
 	burning = false
 	car.remove_from_group("fire_sources")
+	if _roar:
+		var tw := create_tween()
+		tw.tween_property(_roar, "volume_db", -60.0, 6.0)
+		tw.tween_callback(_roar.queue_free)
+		_roar = null
 	for fx in _fires:
 		fx.stop(true)
 		fx.update(0.0, 0.0, true, 0.6)

@@ -892,8 +892,12 @@ func resolve(n: Actor, p: Vector3) -> Vector3:
 		p.x = clampf(p.x, -125.0, 125.0)
 		p.z = clampf(p.z, AREA_MIN.y - 12.0, AREA_MAX.y + 12.0)
 		return p
-	var xm := area_max_x()
-	p.x = clampf(p.x, AREA_MIN.x - 4.0, xm + (4.0 if police == null else 1.0))
+	var xm := area_max_x() + (4.0 if police == null else 1.0)
+	if n is Npc and (n as Npc).state == "arrested":
+		xm = 125.0                 # l'interpellé est emmené derrière la ligne, jusqu'au fourgon
+	elif p.x > xm + 1.0:
+		xm = p.x - 0.1             # escorte interrompue de l'autre côté : il revient sans téléportation
+	p.x = clampf(p.x, AREA_MIN.x - 4.0, xm)
 	p.z = clampf(p.z, AREA_MIN.y - 4.0, AREA_MAX.y + 4.0)
 	return p
 
@@ -1374,6 +1378,9 @@ func _ev_grab(d: Dictionary) -> void:
 			n.react("fist" if n.bold > 0.5 else "head", 2.5, p + Vector3.UP * 1.3, {"voice": "free", "voice_p": 0.7 if voiced < 3 else 0.15, "prm": {"k": 1.0}})
 			voiced += 1
 	_crowd_sound("crowd_anger", p + Vector3.UP * 1.5, -3.0, 6.0)
+	# assez de monde autour : le « Libérez-le ! » est repris en chœur
+	if voiced >= 2:
+		later(1.4, func(): _crowd_sound("crowd_free", p + Vector3.UP * 1.5, -4.0, 12.0))
 
 
 ## Un événement marque les esprits : peur et colère montent autour de `p` (plus fort près du centre)
