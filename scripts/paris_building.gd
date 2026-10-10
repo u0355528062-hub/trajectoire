@@ -22,8 +22,8 @@ var crowd: Crowd
 var lod_far := false        # bâtiment lointain : moins de détails (pas de balustres, pas de denticules)
 
 var shop_nodes: Array = []  # Shop
-## Places pour les habitants (balcons, fenêtres ouvertes) : [{"xf": Transform3D monde (pieds, -Z local = vers la rue
-## est +Z de xf.basis... voir resident_spot()), "kind": "balcony" | "window", "floor": int}]
+## Places pour les habitants (balcons, fenêtres) en repère local : [{"local": Transform3D, "kind", "floor"}] ;
+## voir spots_world(). Contrat stable : les immeubles sont dans le groupe « paris_buildings ».
 var resident_spots: Array = []
 var _rng := RandomNumberGenerator.new()
 var _acc := {}              # matériau -> SurfaceTool
@@ -368,11 +368,27 @@ func _build_floors() -> void:
 		for c in bays:
 			_window(c, y0 + sill, f)
 		# balcons : filant au 2e (étage noble) et au 5e, balconnets ailleurs
+		for c in bays:
+			_spot(Vector3(c, y0 + sill - 0.05 + 0.08, 0.4) if (f == 1 or f == 4) else Vector3(c, y0 + 0.02, -0.75), "balcony" if (f == 1 or f == 4) else "window", f)
 		if f == 1 or f == 4:
 			_balcony(0.15, width - 0.15, y0 + sill - 0.05, 0.85)
 		elif f > 0:
 			for c in bays:
 				_railing(c - WIN_W * 0.5 - 0.05, c + WIN_W * 0.5 + 0.05, y0 + sill - 0.02, 0.06, 0.95)
+
+
+## Place d'habitant : pieds en `p` (repère local), regard vers la rue (+Z local). Le Transform3D stocké a son
+## axe -Z (l'« avant » Godot) tourné vers la rue.
+func _spot(p: Vector3, kind: String, f: int) -> void:
+	resident_spots.append({"local": Transform3D(Basis(Vector3.UP, PI), p), "kind": kind, "floor": f})
+
+
+## Places d'habitants en repère monde : [{"xf": Transform3D, "kind": "balcony" | "window", "floor": int}]
+func spots_world() -> Array:
+	var out: Array = []
+	for s in resident_spots:
+		out.append({"xf": global_transform * (s["local"] as Transform3D), "kind": s["kind"], "floor": s["floor"]})
+	return out
 
 
 func _window(cx: float, y: float, f: int) -> void:
