@@ -18,6 +18,7 @@ godot --headless --path . --fixed-fps 30 -s tools/tests/<script>.gd
 | `fuzz_pnj.gd` | Appels aléatoires des réactions des PNJ (panique, gaz, coups, arrestation, soins, corps à corps…) pendant 7 minutes simulées |
 | `fuzz_joueur.gd` | Touches et clics aléatoires du joueur (outils, coups de pied, appels, gestes), téléportations vers les lieux d'action |
 | `perf3.gd` | Coût moyen des scripts par image (calme / tendu / émeute) |
+| `barricade1.gd` | Barricade : barrières portées en travers de la rue, abandonnées si le porteur est gazé, ligne de police arrêtée puis barricade renversée |
 | `sound1.gd` | Sons des véhicules : sirène deux-tons puis rapide (stade 3+), radio de bord, grondement d'une voiture en feu jusqu'à l'extinction, « Libérez-le ! » |
 | `capture_police.gd` | Captures d'écran aux stades 3-4 (gaz, charge, LBD, escorte d'un interpellé). Demande un rendu, voir ci-dessous |
 

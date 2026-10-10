@@ -317,6 +317,7 @@ var van: PoliceVehicle
 var _flash: OmniLight3D
 var _kick_cd := 0.0
 var _pending_state := ""
+var _pending_data := {}            # données de l'action interrompue par un déséquilibre
 
 
 func _pre_tick(delta: float) -> void:
@@ -452,7 +453,8 @@ func charge(t: Node3D, dur := 7.0) -> void:
 
 
 func _live_target() -> bool:
-	return target != null and is_instance_valid(target) and not (target is Npc and (target as Npc).state in ["arrested", "boarded"])
+	return target != null and is_instance_valid(target) and not (target is Npc and (target as Npc).state in ["arrested", "boarded"]) \
+			and not (target is Barrier and (target as Barrier).is_down())
 
 
 func _think_charge(delta: float) -> void:
@@ -852,6 +854,7 @@ func stagger(dur: float, from_dir := Vector3.ZERO) -> void:
 	if state in ["down", "stagger"]:
 		return
 	_pending_state = state if state != "strike" else "charge"
+	_pending_data = data
 	state = "stagger"
 	state_t = 0.0
 	sub_t = 0.0
@@ -865,8 +868,10 @@ func _think_stagger(delta: float) -> void:
 	set_act("cop_hit", {}, 10.0)
 	if stun_t <= 0.0:
 		state = "hold" if _pending_state in ["", "stagger"] else _pending_state
+		data = _pending_data if state == _pending_state else {}
 		if state in ["charge", "arrest", "lbd", "gas", "spray"] and not _live_target() and arrestee == null:
 			state = "hold"
+			data = {}
 
 
 func on_gas(density: float, from: Vector3) -> void:

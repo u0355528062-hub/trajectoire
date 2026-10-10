@@ -40,6 +40,7 @@ var _player_seen_t := 0.0
 var _calm_t := 0.0
 var _car_alert_t := -99.0
 var _veh_cd := 6.0
+var _barr_cd := 0.0
 
 
 func setup(c: Crowd, p: Player, t: Tension) -> void:
@@ -538,6 +539,15 @@ func _run_queue() -> void:
 
 
 func _update_line(delta: float) -> void:
+	# barricade en travers de la rue : la ligne s'arrête devant et des CRS la renversent
+	if mode in ["advance", "push"] and crowd:
+		var blocking := crowd.barricade_ahead(line_c.x, 4.0)
+		if not blocking.is_empty():
+			var bx_max := -INF
+			for b in blocking:
+				bx_max = maxf(bx_max, b.global_position.x)
+			_adv_goal = maxf(_adv_goal, bx_max + 1.8)
+			_clear_barricade(blocking, delta)
 	# avance par bonds : on avance de quelques mètres, on s'arrête, on regarde, on repart
 	match mode:
 		"advance":
@@ -581,6 +591,32 @@ func _follow_vehicles(delta: float) -> void:
 		if v.global_position.x > want_x + 9.0:
 			v.relocate(Vector3(want_x, 0.0, v.global_position.z))
 			break
+
+
+## Un CRS de la ligne fonce sur chaque élément de barricade encore debout et le fait basculer
+func _clear_barricade(blocking: Array[Barrier], delta: float) -> void:
+	_barr_cd -= delta
+	if _barr_cd > 0.0:
+		return
+	_barr_cd = 2.0
+	for b in blocking:
+		var taken := false
+		for c in cops:
+			if is_instance_valid(c) and c.target == b and c.state in ["charge", "strike"]:
+				taken = true
+				break
+		if taken:
+			continue
+		var best: Cop = null
+		var bd := 12.0
+		for c in _free_cops(["shield"], ["line", "patrol"]):
+			var d := c.global_position.distance_to(b.global_position)
+			if d < bd:
+				bd = d
+				best = c
+		if best != null:
+			best.charge(b, 6.0)
+			return
 
 
 func _advance_limit() -> float:

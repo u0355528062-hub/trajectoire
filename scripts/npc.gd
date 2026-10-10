@@ -333,7 +333,7 @@ func _prop_cheer_pose() -> Array:
 
 
 func busy() -> bool:
-	return state in ["rally", "feed", "mortar", "panic", "dodge", "gassed", "hit", "sprayed", "arrested", "boarded", "rescue", "throwcop", "carattack", "vandal", "aid", "brawl"]
+	return state in ["rally", "feed", "mortar", "panic", "dodge", "gassed", "hit", "sprayed", "arrested", "boarded", "rescue", "throwcop", "carattack", "vandal", "aid", "brawl", "barricade"]
 
 
 ## Réaction courte : pose, durée, point regardé, options {voice, loud, hop, face, run_to}
@@ -429,6 +429,8 @@ func _think(delta: float) -> void:
 			_think_vandal(delta)
 		"aid":
 			NpcCare.think(self, delta)
+		"barricade":
+			NpcBarricade.think(self, delta)
 		"brawl":
 			_think_brawl(delta)
 		"goto_look":

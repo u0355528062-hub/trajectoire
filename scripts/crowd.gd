@@ -77,6 +77,12 @@ var _clouds: Array = []              # nuages de gaz (mis à jour à chaque imag
 var _brawl_cd := 20.0
 var _throw_cd := 6.0
 var _vandal_cd := 25.0
+# barricade : barrières posées en travers de la chaussée entre la foule et la police
+const BARRICADE_Z := [-9.4, -7.4, -5.4]
+var barricade_x := NAN
+var _barricade: Array = [null, null, null]     # Barrier posée à chaque place
+var _barricade_by: Array = [null, null, null]  # Npc qui y porte une barrière
+var _barricade_cd := 25.0
 var _rescuers := 0
 var _arson_cd := 140.0
 var _later: Array = []
@@ -399,6 +405,7 @@ func _physics_process(delta: float) -> void:
 	_update_hostility(delta)
 	_update_brawls(delta)
 	_update_vandalism(delta)
+	_update_barricade(delta)
 	standoff.update(delta)
 	_update_gas_awareness(delta)
 	_update_aid(delta)
@@ -1998,6 +2005,97 @@ func _update_vandalism(delta: float) -> void:
 			return
 
 
+## Quand la police avance pour de bon, des manifestants montent une barricade avec les barrières qui traînent
+func _update_barricade(delta: float) -> void:
+	# places libérées : barrière renversée, déplacée, ou porteur qui a renoncé
+	var any := false
+	for i in BARRICADE_Z.size():
+		var b: Variant = _barricade[i]
+		if b != null and (not is_instance_valid(b) or (b as Barrier).is_down() or not (b as Barrier).barricade):
+			_barricade[i] = null
+		var h: Variant = _barricade_by[i]
+		if h != null and (not is_instance_valid(h) or (h as Npc).state != "barricade" or int((h as Npc).data.get("i", -1)) != i):
+			_barricade_by[i] = null
+		any = any or _barricade[i] != null or _barricade_by[i] != null
+	if police == null:
+		return
+	# la ligne est passée (ou tout est à terre) : la prochaine barricade se montera ailleurs
+	if not is_nan(barricade_x) and (not any or police.line_c.x < barricade_x + 1.0):
+		barricade_x = NAN
+	_barricade_cd -= delta
+	if _barricade_cd > 0.0 or police.stage < 2:
+		return
+	_barricade_cd = _rng.randf_range(8.0, 20.0) / (0.5 + excitement)
+	var builders := 0
+	for h in _barricade_by:
+		if h != null:
+			builders += 1
+	if builders >= 2:
+		return
+	var slot_i := -1
+	for i in BARRICADE_Z.size():
+		if _barricade[i] == null and _barricade_by[i] == null:
+			slot_i = i
+			break
+	if slot_i < 0:
+		return
+	var bx := barricade_x
+	if is_nan(bx):
+		bx = clampf(police.line_c.x - 8.5, AREA_MIN.x + 14.0, 50.0)
+	if bx > area_max_x() - 2.0:
+		return
+	# barrière disponible (pas celles du barrage de police, derrière la ligne)
+	var free: Array[Barrier] = []
+	for o in get_tree().get_nodes_in_group("barriers"):
+		var bb := o as Barrier
+		if bb == null or bb.is_busy() or bb.barricade or bb.global_position.x > area_max_x() - 1.5:
+			continue
+		free.append(bb)
+	if free.is_empty():
+		return
+	# bâtisseur : un manifestant hardi, mains libres, pas en plein cortège
+	var best: Npc = null
+	var best_b: Barrier = null
+	var bd := 32.0
+	for n in npcs:
+		if n.state != "home" or n.busy() or n.bold < 0.6 or n.fear > 0.5 or n.prop != "" or n.role in ["march", "medic", "press"]:
+			continue
+		for bb in free:
+			var d := n.global_position.distance_to(bb.global_position)
+			if d < bd:
+				bd = d
+				best = n
+				best_b = bb
+	if best == null:
+		return
+	barricade_x = bx
+	_barricade_by[slot_i] = best
+	NpcBarricade.start(best, best_b, Vector3(bx, 0.0, BARRICADE_Z[slot_i]), PI * 0.5 + _rng.randf_range(-0.07, 0.07), slot_i)
+
+
+func on_barricade_set(b: Barrier, i: int, by: Npc) -> void:
+	if i >= 0 and i < _barricade.size():
+		_barricade[i] = b
+		if _barricade_by[i] == by:
+			_barricade_by[i] = null
+	_crowd_sound("cheer_small", b.global_position + Vector3.UP * 1.5, -6.0, 6.0)
+	if police and police.tension:
+		police.tension.add(0.01, "barricade")
+
+
+## Éléments de barricade encore debout juste devant la ligne de police (à moins de `ahead` mètres)
+func barricade_ahead(line_x: float, ahead: float) -> Array[Barrier]:
+	var out: Array[Barrier] = []
+	for b in _barricade:
+		if b == null or not is_instance_valid(b):
+			continue
+		var bb := b as Barrier
+		var dx := line_x - bb.global_position.x
+		if bb.barricade and not bb.is_down() and dx > -0.5 and dx < ahead:
+			out.append(bb)
+	return out
+
+
 func _vandal_target(n: Npc) -> Node3D:
 	var best: Node3D = null
 	var bd := 14.0
@@ -2006,7 +2104,7 @@ func _vandal_target(n: Npc) -> Node3D:
 			continue
 		if o is StreetProp and (o as StreetProp).toppled:
 			continue
-		if o is Barrier and (o as Barrier).is_down():
+		if o is Barrier and ((o as Barrier).is_down() or (o as Barrier).barricade or (o as Barrier).is_busy()):
 			continue
 		var dd := (o as Node3D).global_position.distance_to(n.global_position)
 		if dd < bd:

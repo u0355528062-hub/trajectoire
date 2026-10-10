@@ -52,6 +52,9 @@ voiture attaquée ou incendiée, projectiles sur les policiers…) et avec ce qu
   accourir pour te libérer (la jauge de lutte bondit). Menotté = partie terminée.
 - Les policiers ripostent à ce qu'on leur jette (pierres, canettes, sacs, crayons, pétards, mortier…).
 - Quand tout se calme pour de bon, la ligne se replie vers son cordon d'origine sous les cris de joie.
+- **Barricade** : dès ÉCHAUFFOURÉES, des manifestants hardis vont chercher les barrières qui traînent et les posent
+  en travers de la chaussée, entre la foule et la police. Gazé ou frappé en route, le porteur lâche sa barrière.
+  La ligne s'arrête devant la barricade le temps qu'un CRS la renverse, puis reprend son avancée.
 - **Sons** : sirène deux-tons à l'arrivée des renforts (sirène rapide à partir d'AFFRONTEMENT), radio de bord
   qui grésille près des véhicules, portes arrière du fourgon, grondement d'une voiture qui flambe,
   « Libérez-le ! » repris par la foule quand quelqu'un est agrippé.

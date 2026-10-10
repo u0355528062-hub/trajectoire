@@ -89,6 +89,7 @@ Le gaz brouille l'image : sors du nuage, un **médic** (gilet jaune à croix rou
   Une vitre cassée + un fumigène ou une torche posée près du moteur, et elle prend feu.
 - **Pétards** (5 et 6) : le petit fait peur, le gros fait mal aux oreilles.
 - **Barrières, cônes, panneaux, boîtes à journaux, lampadaires** : tout se frappe et se renverse.
+- **Barricade** : quand ça chauffe, des manifestants portent les barrières en travers de la rue ; la police doit les renverser pour avancer.
 - Observe la foule : certains boivent, s'étirent, s'assoient, d'autres filment, un reporter cherche le bon
   angle, les plus calmes tentent d'apaiser les plus énervés.
 

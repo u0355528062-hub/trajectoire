@@ -17,6 +17,10 @@ var _last_hit := 0.0
 var _last_fall := 0.0
 var _settle_t := 0.0
 var _state_t := 0.0
+var carrier: Node3D = null            # manifestant qui la porte vers la barricade
+var barricade := false                # posée en travers de la rue par la foule
+var _drag: AudioStreamPlayer3D
+var _carry_prev := Vector3.ZERO
 
 static var _mesh: ArrayMesh
 static var _mat: StandardMaterial3D
@@ -122,6 +126,15 @@ func _unregister_nav() -> void:
 
 func _physics_process(delta: float) -> void:
 	_state_t += delta
+	if carrier != null:
+		# le porteur a été gazé, frappé, interpellé... : il la lâche
+		if not is_instance_valid(carrier) or carrier.get("state") != "barricade":
+			drop_carry()
+		else:
+			var sp := (global_position - _carry_prev).length() / maxf(delta, 0.001)
+			_carry_prev = global_position
+			_drag.volume_db = lerpf(_drag.volume_db, -12.0 if sp > 0.3 else -60.0, minf(1.0, delta * 6.0))
+		return
 	# debout ou à terre ? (axe vertical du modèle par rapport à la verticale)
 	var up_dot := global_basis.y.dot(Vector3.UP)
 	var settled := linear_velocity.length() < 0.35 and angular_velocity.length() < 0.6
@@ -200,3 +213,96 @@ func right_up(yaw: float, duration := 0.9) -> void:
 		if crowd:
 			crowd.nav_dirty()
 		AudioLib.play_at(self, "barrier_up", global_position + Vector3.UP * 0.3, -4.0, 8.0, 1.0))
+
+
+func is_busy() -> bool:
+	return _righting or carrier != null
+
+
+# ------------------------------------------------------------------ barricade
+## Un manifestant la soulève pour la porter (elle ne gêne plus personne pendant le trajet)
+func begin_carry(by: Node3D) -> bool:
+	if is_busy():
+		return false
+	carrier = by
+	barricade = false
+	_down = false
+	_unregister_nav()
+	if crowd:
+		crowd.nav_dirty()
+	freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
+	freeze = true
+	collision_layer = 0
+	collision_mask = 0
+	_carry_prev = global_position
+	if _drag == null:
+		_drag = AudioStreamPlayer3D.new()
+		_drag.stream = AudioLib.stream("barrier_drag_loop", true)
+		_drag.unit_size = 5.0
+		_drag.max_distance = 40.0
+		add_child(_drag)
+	_drag.volume_db = -60.0
+	_drag.play(randf() * 1.4)
+	AudioLib.play_at(self, "barrier_up", global_position + Vector3.UP * 0.4, -6.0, 8.0, 1.1)
+	return true
+
+
+func carry_to(xf: Transform3D) -> void:
+	if carrier != null:
+		global_transform = xf
+
+
+func _end_carry() -> void:
+	carrier = null
+	collision_layer = 32
+	collision_mask = 1 | 32 | 64
+	if _drag:
+		_drag.stop()
+
+
+## Lâchée en route : elle tombe là où elle est
+func drop_carry() -> void:
+	if carrier == null:
+		return
+	var fwd := -global_basis.z
+	_end_carry()
+	freeze = false
+	_settle_t = 0.0
+	apply_impulse(Vector3(fwd.x, 0, fwd.z) * MASS * 1.2, Vector3.UP * 0.9)
+
+
+## Posée debout en `pos`, orientée `yaw` : un élément de barricade
+func set_down_at(pos: Vector3, yaw: float) -> void:
+	if carrier == null:
+		return
+	_end_carry()
+	barricade = true
+	_righting = true
+	freeze_mode = RigidBody3D.FREEZE_MODE_STATIC
+	freeze = true
+	var q0 := global_transform.basis.get_rotation_quaternion()
+	var p0 := global_position
+	var q1 := Quaternion(Vector3.UP, yaw)
+	var tw := create_tween()
+	tw.tween_method(func(u: float):
+		var e := u * u * (3.0 - 2.0 * u)
+		global_transform = Transform3D(Basis(q0.slerp(q1, e)), p0.lerp(pos, e)), 0.0, 1.0, 0.5)
+	tw.tween_callback(func():
+		_righting = false
+		_down = false
+		freeze = false
+		linear_velocity = Vector3.ZERO
+		angular_velocity = Vector3.ZERO
+		_settle_t = 0.0
+		_register_nav()
+		if crowd:
+			crowd.nav_dirty()
+		AudioLib.play_at(self, "barrier_hit", global_position + Vector3.UP * 0.3, -2.0, 9.0, 0.9))
+
+
+## Coup de matraque ou de bouclier d'un CRS qui dégage la barricade : elle bascule côté manifestants
+func on_police_hit(_kind: String, dir: Vector3, _cop: Node3D) -> void:
+	if _down or is_busy():
+		return
+	barricade = false
+	kick(global_position + Vector3.UP * 0.8, dir, 2.2)
