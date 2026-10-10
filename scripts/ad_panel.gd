@@ -7,6 +7,7 @@ var glass: GlassPane
 
 
 func _ready() -> void:
+	add_to_group("ad_panels")
 	var gra := Furniture.mat("graphite", Color(0.1, 0.1, 0.12), 0.5, 0.4)
 	var alu := Furniture.mat("alu", Color(0.72, 0.74, 0.77), 0.35, 0.85)
 	# cadre

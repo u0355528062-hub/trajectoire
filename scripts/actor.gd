@@ -224,6 +224,20 @@ func _pose(name: String, t: float, p: Dictionary) -> Array:
 			var a2 := maxf(-sin(bt * 0.5), 0.0)
 			return [_h(sr + Vector3(0.05, 0.05 + 0.45 * a1, 0.15) * k, Vector3(0, 1, 0.15), Vector3(-0.6, 0, 0.8), 1.0, 0.0, Vector3(1, -0.4, -0.2)),
 				_h(sl + Vector3(-0.05, 0.05 + 0.45 * a2, 0.15) * k, Vector3(0, 1, 0.15), Vector3(0.6, 0, 0.8), 1.0, 0.0, Vector3(-1, -0.4, -0.2))]
+		"spray":
+			# bombe de peinture tendue vers la surface (cible dans le repère du corps), index sur la buse
+			var tgs: Vector3 = p.get("target", Vector3(0.1, 1.2, 0.6))
+			var dsp := tgs - sr
+			var hs := sr + dsp.normalized() * minf(dsp.length(), 0.52 * k)
+			return [_h(hs, Vector3(0, 1, 0.1), (tgs - hs).normalized() * -1.0 + Vector3(0.3, 0, 0), 0.85, 0.25, Vector3(1, -1, -0.3)),
+				_h(sl + Vector3(-0.04, -0.4, 0.12) * k, Vector3(0.1, -0.8, 0.5), Vector3(1, 0, 0), 0.45)]
+		"highfive":
+			# tape dans la main : main droite ouverte levée vers le point de rencontre (repère du corps)
+			var tgf: Vector3 = p.get("target", Vector3(0.1, 1.6, 0.45))
+			var dh := tgf - sr
+			var hh := sr + dh.normalized() * minf(dh.length(), 0.56 * k)
+			var smack := clampf(t / 0.35, 0.0, 1.0)
+			return [_h(sr.lerp(hh, smack), Vector3(0, 1, 0.2), (tgf - sr).normalized(), 0.05, 0.0, Vector3(1, -0.6, -0.3)), null]
 		"link":
 			# chaîne humaine : bras écartés bas, mains tendues vers les voisins
 			return [_h(sr + Vector3(0.4, -0.42, 0.12) * k, Vector3(1, -0.5, 0.2), Vector3(0, 0, -1), 0.65, 0.0, Vector3(1, -1, -0.5)),

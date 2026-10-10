@@ -86,6 +86,8 @@ var _barricade_cd := 25.0
 var _carat_cd := 30.0
 var _taunt_cd := 6.0
 var _comfort_cd := 3.0
+var _tag_cd := 20.0
+var _tags: Array[Label3D] = []
 var _rescuers := 0
 var _arson_cd := 140.0
 var _later: Array = []
@@ -412,6 +414,7 @@ func _physics_process(delta: float) -> void:
 	_update_car_attacks(delta)
 	_update_taunts(delta)
 	_update_comfort(delta)
+	_update_tags(delta)
 	standoff.update(delta)
 	_update_gas_awareness(delta)
 	_update_aid(delta)
@@ -1224,6 +1227,7 @@ func on_event(type: String, d: Dictionary) -> void:
 			_ev_car_vandal(d)
 		"car_glass":
 			excitement = minf(excitement + 0.05, 1.0)
+			celebrate(d["pos"], 1)
 			_crowd_sound("cheer_small", d["pos"], -4.0, 5.0)
 			for n in _near(d["pos"], 20.0):
 				if n.state == "home" and n.react_cd <= 0.0 and _rng.randf() < 0.35:
@@ -1484,6 +1488,7 @@ func _ev_police_retreat(d: Dictionary) -> void:
 			var pc := n._prop_cheer_pose()
 			n.react(pc[0], 2.8, p + Vector3.UP * 1.5, {"voice": ("bravo" if _rng.randf() < 0.5 else "ouais") if speak else "", "voice_p": 1.0, "hop": n.prop == "", "prm": pc[1]}))
 	excitement = minf(excitement + 0.1, 1.0)
+	celebrate(p, 3)
 	_crowd_sound("cheer_big", p + Vector3.UP * 2.0, -3.0, 8.0)
 	later(1.2, func(): _crowd_sound("applause", p + Vector3.UP * 2.0, -5.0, 8.0))
 
@@ -2099,6 +2104,64 @@ func _update_car_attacks(delta: float) -> void:
 		if best != null:
 			best.attack_car(v)
 			return
+
+
+## Tags : de temps en temps, un manifestant sort une bombe de peinture
+func _update_tags(delta: float) -> void:
+	_tag_cd -= delta
+	if _tag_cd > 0.0:
+		return
+	_tag_cd = _rng.randf_range(18.0, 40.0) / (0.6 + excitement)
+	var st := police.stage if police else 0
+	if st >= 4:
+		return
+	for n in npcs:
+		if n.state == "tag":
+			return
+	var cands: Array[Npc] = []
+	for n in npcs:
+		if n.state == "home" and not n.busy() and n.bold > 0.5 and n.fear < 0.4 and n.prop == "" and n.role not in ["march", "medic", "press"]:
+			cands.append(n)
+	if cands.is_empty():
+		return
+	var who: Npc = cands[_rng.randi() % cands.size()]
+	NpcTag.start(who, NpcTag.pick_spot(who))
+
+
+## Petite victoire : des voisins se tapent dans la main (jusqu'à `pairs` paires autour de `p`)
+func celebrate(p: Vector3, pairs: int) -> void:
+	var done := 0
+	var used := {}
+	for n in _near(p, 25.0):
+		if done >= pairs:
+			return
+		if used.has(n) or n.busy() or n.state != "home" or n.prop != "" or n.human.sit > 0.3:
+			continue
+		for o in neighbors(n.global_position, 1.6):
+			if o == n or not (o is Npc) or used.has(o):
+				continue
+			var m := o as Npc
+			if m.busy() or m.state != "home" or m.prop != "" or m.human.sit > 0.3:
+				continue
+			var meet := (n.head_pos() + m.head_pos()) * 0.5 + Vector3.UP * 0.25
+			var dl := _rng.randf_range(0.1, 1.2)
+			later(dl, func():
+				if is_instance_valid(n) and is_instance_valid(m) and not n.busy() and not m.busy():
+					n.react("highfive", 1.4, m.head_pos(), {"prm": {"target": n._wb(meet)}, "voice": "ouais", "voice_p": 0.4})
+					m.react("highfive", 1.4, n.head_pos(), {"prm": {"target": m._wb(meet)}})
+					AudioLib.play_at(n, "clap_%d" % _rng.randi_range(0, 2), meet, -4.0, 6.0))
+			used[n] = true
+			used[m] = true
+			done += 1
+			break
+
+
+func add_tag(lab: Label3D) -> void:
+	_tags.append(lab)
+	while _tags.size() > NpcTag.MAX_TAGS:
+		var old: Label3D = _tags.pop_front()
+		if is_instance_valid(old):
+			old.queue_free()
 
 
 ## Quelqu'un est terrorisé : un voisin calme vient lui poser la main sur l'épaule, ça l'apaise un peu

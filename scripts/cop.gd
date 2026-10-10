@@ -87,6 +87,8 @@ func _build_props() -> void:
 
 
 func set_masked(on: bool) -> void:
+	if on and not masked and state in ["hold", "advance"]:
+		_mask_t = 1.3                        # le geste d'enfiler le masque
 	masked = on
 	if gear.has("mask"):
 		(gear["mask"] as Node3D).visible = on
@@ -275,6 +277,18 @@ func _pose(name: String, t: float, p: Dictionary) -> Array:
 			l_hand = _h(sl + Vector3(0.0, -0.47, 0.2) * k, Vector3(0.2, -0.4, 0.9), Vector3(1, 0, 0), 0.6, 0.0, Vector3(-1, -1, -0.3))
 			var hd2 := _wb(human.head_world())
 			r_hand = _h(hd2 + Vector3(0.02, -0.12 + sin(t * 3.0) * 0.015, -0.12), Vector3(-0.8, 0.2, -0.4), Vector3(0, 0.2, 1), 0.3, 0.0, Vector3(1, 0, -0.6))
+		"cop_mask":
+			# enfile son masque à gaz : les deux mains tirent les sangles derrière la tête
+			shield_mode = "ground"
+			var hd3 := _wb(human.head_world())
+			var pull := 0.5 + 0.5 * sin(t * 6.0)
+			r_hand = _h(hd3 + Vector3(-0.1, 0.02, 0.05 - 0.12 * pull), Vector3(0.3, 0.5, -0.5), Vector3(1, 0, 0), 0.8, 0.0, Vector3(1, 0, -0.5))
+			l_hand = _h(hd3 + Vector3(0.1, 0.02, 0.05 - 0.12 * pull), Vector3(-0.3, 0.5, -0.5), Vector3(-1, 0, 0), 0.8, 0.0, Vector3(-1, 0, -0.5))
+		"cop_watch":
+			# regarde sa montre : poignet gauche levé devant la poitrine
+			shield_mode = "ground"
+			l_hand = _h(sl + Vector3(0.2, -0.22, 0.32) * k, Vector3(1, 0.1, 0.2), Vector3(0, 1, 0), 0.5, 0.0, Vector3(-1, -1, -0.3))
+			r_hand = _grip(sr + Vector3(-0.1, -0.5, 0.06) * k, Vector3(0, -1, 0.15), Vector3(-1, 0, 0), false, 0.8)
 		"cop_help":
 			# tend les deux mains vers un collègue à terre pour le relever
 			shield_mode = "ground"
@@ -378,6 +392,7 @@ var _point_node: Node3D = null
 var _signal_t := 0.0             # geste de commandement (chef)
 var _signal_kind := "halt"
 var helping: Cop = null          # collègue à terre qu'on relève
+var _mask_t := 0.0               # en train d'enfiler le masque
 var _pending_state := ""
 var _pending_data := {}            # données de l'action interrompue par un déséquilibre
 
@@ -394,6 +409,7 @@ func _pre_tick(delta: float) -> void:
 	_cover_t = maxf(_cover_t - delta, 0.0)
 	_point_t = maxf(_point_t - delta, 0.0)
 	_signal_t = maxf(_signal_t - delta, 0.0)
+	_mask_t = maxf(_mask_t - delta, 0.0)
 	_target_refresh = maxf(_target_refresh - delta, 0.0)
 
 
@@ -550,6 +566,9 @@ func _think_line(delta: float) -> void:
 		human.crouch = move_toward(human.crouch, 0.55, delta * 4.0)
 		set_act("cop_kneel", {}, 6.0)
 		return
+	if _mask_t > 0.0:
+		set_act("cop_mask", {}, 6.0)
+		return
 	if alert > 0.5 and _line_melee():
 		return
 	if _point_t > 0.0 and _point_node != null and is_instance_valid(_point_node):
@@ -570,7 +589,7 @@ func _think_line(delta: float) -> void:
 		look(global_position + line_dir * 10.0 + Vector3(0, 1.5, 0), 0.7)
 		return
 	if _idle_cd <= 0.0 and _idle_kind == "":
-		_idle_kind = ["radio", "helmet", "rest", "rest", "look", "talk", "gloves", "neck"][_rng.randi() % 8]
+		_idle_kind = ["radio", "helmet", "rest", "rest", "look", "talk", "gloves", "neck", "watch"][_rng.randi() % 9]
 		_idle_t = _rng.randf_range(2.5, 5.0)
 	if _idle_kind != "":
 		_idle_t -= delta
@@ -589,6 +608,9 @@ func _think_line(delta: float) -> void:
 				set_act("cop_gloves", {}, 3.0)
 			"neck":
 				set_act("cop_neck", {}, 3.0)
+			"watch":
+				set_act("cop_watch", {}, 3.0)
+				look(_bw(Vector3(0.15, 1.15, 0.35)), 0.8)
 			"look":
 				var side := Vector3(-line_dir.z, 0, line_dir.x) * (6.0 if _idle_t > 1.5 else -6.0)
 				look(global_position + line_dir * 8.0 + side + Vector3(0, 1.5, 0), 1.0)

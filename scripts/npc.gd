@@ -23,6 +23,8 @@ var _idle_t := 0.0
 var _idle_pose := "idle"
 var _glance_cd := 0.0
 var _drum_bin: TrashBin = null
+var tag_can: Node3D = null            # bombe de peinture en main (tag en cours)
+var tag_label: Label3D = null
 var _replan_t := 0.0             # dernier recalcul de chemin vers sa place dans le cortège
 var _look_cd := 0.0
 var _home_sub := ""
@@ -89,6 +91,8 @@ func _pre_tick(delta: float) -> void:
 	if stomp and state != "home":
 		stomp = false
 		human.crouch = 0.0
+	if tag_can != null and state != "tag":
+		NpcTag.cleanup(self)
 	fear = maxf(fear - delta * 0.035, 0.0)
 	anger = maxf(anger - delta * 0.012, 0.0)
 	fatigue = clampf(fatigue + delta * (0.0035 if human.sit < 0.5 else -0.02), 0.0, 1.0)
@@ -338,7 +342,7 @@ func _prop_cheer_pose() -> Array:
 
 
 func busy() -> bool:
-	return state in ["rally", "feed", "mortar", "panic", "dodge", "gassed", "hit", "sprayed", "arrested", "boarded", "rescue", "throwcop", "carattack", "vandal", "aid", "brawl", "barricade", "throwback"]
+	return state in ["rally", "feed", "mortar", "panic", "dodge", "gassed", "hit", "sprayed", "arrested", "boarded", "rescue", "throwcop", "carattack", "vandal", "aid", "brawl", "barricade", "throwback", "tag"]
 
 
 ## Réaction courte : pose, durée, point regardé, options {voice, loud, hop, face, run_to}
@@ -438,6 +442,8 @@ func _think(delta: float) -> void:
 			NpcBarricade.think(self, delta)
 		"throwback":
 			_think_throwback(delta)
+		"tag":
+			NpcTag.think(self, delta)
 		"brawl":
 			_think_brawl(delta)
 		"goto_look":
