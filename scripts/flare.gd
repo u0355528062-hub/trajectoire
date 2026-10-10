@@ -118,7 +118,7 @@ func _build_fx() -> void:
 	spm.spread = 60.0
 	spm.gravity = Vector3(0, -2.0, 0)
 	_tip.add_child(_sparks)
-	_smoke = Fx.smoke(Color(0.85, 0.1, 0.12, 0.6), 70, 6.5, 0.32, false, 1.0, 9.0)
+	_smoke = Fx.smoke(Color(0.85, 0.1, 0.12, 0.6), 50, 5.5, 0.32, false, 1.0, 8.0)
 	var smm := _smoke.process_material as ParticleProcessMaterial
 	smm.initial_velocity_min = 0.8
 	smm.initial_velocity_max = 1.6

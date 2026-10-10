@@ -14,7 +14,13 @@ const DEFAULTS := {
 	# image
 	"quality": 2, "shadows": true, "ssao": true, "ssil": false, "ssr": true, "glow": true, "volfog": true,
 	"msaa": 1, "render_scale": 1.0, "vsync": true, "fullscreen": false, "brightness": 1.0, "fps_cap": 0,
+	"smoke_q": 1,
 }
+
+
+## Densité des fumées selon le réglage (Basse / Moyenne / Haute) : moins de particules, chacune un peu plus opaque
+static func smoke_k() -> float:
+	return [0.35, 0.55, 1.0][clampi(int(d.get("smoke_q", 1)), 0, 2)]
 
 const QUALITY_NAMES := ["Bas", "Moyen", "Élevé", "Ultra"]
 const PRESETS := [

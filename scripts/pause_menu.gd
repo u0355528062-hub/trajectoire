@@ -327,6 +327,7 @@ func _tab_image() -> Control:
 	c.add_child(_seg("quality", "Qualité", "Préréglage ; les options ci-dessous peuvent être ajustées une à une.", Settings.QUALITY_NAMES))
 	c.add_child(_sl("render_scale", "Échelle de rendu", "Baisse pour gagner en fluidité (reconstruction FSR).", 0.5, 1.0, 0.05, "%d %%", 100.0))
 	c.add_child(_seg("msaa", "Anti-crénelage", "", ["Aucun", "2x", "4x"]))
+	c.add_child(_seg("smoke_q", "Fumées (gaz, feux, fumigènes)", "Le plus gros coût quand il y a beaucoup de fumée. S'applique aux nouvelles fumées.", ["Basse", "Moyenne", "Haute"]))
 	c.add_child(_sw("shadows", "Ombres", "Le soleil couchant projette de longues ombres."))
 	c.add_child(_sw("ssao", "Occlusion ambiante", "Ombrage doux dans les recoins."))
 	c.add_child(_sw("ssil", "Éclairage indirect", "Lumière rebondie (plus coûteux)."))

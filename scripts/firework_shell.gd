@@ -155,7 +155,7 @@ func _burst() -> void:
 	var white_hot := Color(1, 1, 0.9, 1)
 
 	var stars := GPUParticles3D.new()
-	stars.amount = 520
+	stars.amount = 260
 	stars.lifetime = life
 	stars.one_shot = true
 	stars.explosiveness = 1.0
@@ -167,8 +167,9 @@ func _burst() -> void:
 	pm.emission_sphere_radius = 0.3
 	pm.direction = Vector3(0, 1, 0)
 	pm.spread = 180.0
-	pm.initial_velocity_min = 21.0 if not ring else 24.0
-	pm.initial_velocity_max = 24.0
+	# bouquet de ~15 m de rayon (au lieu de ~45) : spectaculaire sans couvrir toute la place
+	pm.initial_velocity_min = 12.0 if not ring else 13.5
+	pm.initial_velocity_max = 13.5
 	pm.damping_min = 5.5 if not willow else 7.0
 	pm.damping_max = 6.5 if not willow else 8.0
 	pm.gravity = Vector3(0, -3.0 if not willow else -7.0, 0)
@@ -191,16 +192,16 @@ func _burst() -> void:
 		pm.flatness = 0.9
 	# traînées secondaires derrière chaque étoile
 	pm.sub_emitter_mode = ParticleProcessMaterial.SUB_EMITTER_CONSTANT
-	pm.sub_emitter_frequency = 14.0
+	pm.sub_emitter_frequency = 10.0
 	stars.process_material = pm
 	var q := QuadMesh.new()
-	q.size = Vector2(0.9, 0.9)
+	q.size = Vector2(0.6, 0.6)
 	q.material = spark_material(Color.WHITE, 2.2)
 	stars.draw_pass_1 = q
 
 	var trail := GPUParticles3D.new()
 	trail.name = "Trail"
-	trail.amount = 6000
+	trail.amount = 2200
 	trail.lifetime = 0.8 if not willow else 1.4
 	trail.local_coords = false
 	trail.emitting = false
@@ -218,7 +219,7 @@ func _burst() -> void:
 			_ramp([Color(1, 0.8, 0.4, 1), Color(1, 0.5, 0.1, 0.8), Color(0.5, 0.1, 0, 0)])
 	trail.process_material = tm
 	var tq := QuadMesh.new()
-	tq.size = Vector2(0.5, 0.5)
+	tq.size = Vector2(0.35, 0.35)
 	tq.material = spark_material(Color.WHITE, 1.6)
 	trail.draw_pass_1 = tq
 	root.add_child(trail)
@@ -234,8 +235,8 @@ func _burst() -> void:
 	flash.explosiveness = 1.0
 	var fm := ParticleProcessMaterial.new()
 	fm.gravity = Vector3.ZERO
-	fm.scale_min = 7.0
-	fm.scale_max = 7.0
+	fm.scale_min = 4.0
+	fm.scale_max = 4.0
 	fm.scale_curve = _curve([0.3, 1.0, 0.0])
 	fm.color_ramp = _ramp([c.lightened(0.5), Color(c.r, c.g, c.b, 0.3), Color(c.r, c.g, c.b, 0)])
 	flash.process_material = fm
@@ -249,8 +250,8 @@ func _burst() -> void:
 	# lumière du bouquet : éclaire le sol et le joueur
 	var light := OmniLight3D.new()
 	light.light_color = c.lightened(0.25)
-	light.light_energy = 14.0
-	light.omni_range = 220.0
+	light.light_energy = 9.0
+	light.omni_range = 90.0
 	light.omni_attenuation = 1.4
 	root.add_child(light)
 	var tw := root.create_tween()

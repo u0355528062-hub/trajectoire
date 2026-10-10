@@ -18,9 +18,9 @@ var _scan := 0.0
 
 func _ready() -> void:
 	add_to_group("gas_clouds")
-	_smoke = Fx.smoke(Color(0.93, 0.94, 0.9, 0.55), 56, 13.0, 3.6, false, 0.5, 3.0)
+	_smoke = Fx.smoke(Color(0.93, 0.94, 0.9, 0.55), 40, 13.0, 3.6, false, 0.5, 2.4)
 	add_child(_smoke)
-	_low = Fx.smoke(Color(0.88, 0.9, 0.86, 0.42), 36, 10.0, 2.4, false, 0.12, 2.6)
+	_low = Fx.smoke(Color(0.88, 0.9, 0.86, 0.42), 24, 10.0, 2.4, false, 0.12, 2.2)
 	add_child(_low)
 	_hiss = AudioStreamPlayer3D.new()
 	_hiss.stream = AudioLib.stream("gas_hiss_loop", true)

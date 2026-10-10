@@ -354,6 +354,23 @@ func safe_to_engage(p: Vector3) -> bool:
 	return danger_at(p) < 0.6
 
 
+## Le joueur s'en prend à leur matériel (barrière du cordon, véhicule) sous leurs yeux
+func on_provocation(p: Vector3, amount: float) -> void:
+	if player == null or nearest_cop(p, 22.0) == null:
+		return
+	player.wanted = minf(player.wanted + amount, 1.0)
+	tension.add(0.01, "provocation")
+	var c := nearest_cop(p, 22.0)
+	c.look(p + Vector3.UP * 1.5, 1.0)
+	c._say_pol("pol_warn", true, 3.0)
+	if player.wanted > 0.45 and safe_to_engage(p) and _rng.randf() < 0.7:
+		if stage >= 2:
+			c.charge(player, 6.0)
+		else:
+			_assign_arrest(player, 2)
+			player.message.emit("Les CRS viennent t'interpeller !")
+
+
 ## Doigt d'honneur du joueur : si des CRS le voient, il devient une cible. La réponse dépend du stade
 ## (un avertissement au calme, une équipe qui sort de la ligne pour l'interpeller quand ça chauffe).
 func _react_insult(d: Dictionary) -> void:
@@ -381,7 +398,13 @@ func _react_insult(d: Dictionary) -> void:
 	tension.add(0.006, "provocation")
 	seen.look(p + Vector3.UP * 1.6, 1.0)
 	seen._say_pol("pol_warn", true, 3.0)
-	if stage < 2 or not safe_to_engage(p):
+	if not safe_to_engage(p):
+		return
+	if stage < 2:
+		# au calme : un premier geste vaut un avertissement ; on insiste, seul devant eux, et on est interpellé
+		if _insults >= 2 or player.wanted > 0.45:
+			_assign_arrest(player, 2)
+			player.message.emit("Deux CRS viennent te contrôler !")
 		return
 	var k := 0.25 + 0.15 * float(stage) + 0.05 * float(_insults)
 	if _rng.randf() < k:

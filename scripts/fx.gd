@@ -55,7 +55,8 @@ static func smoke_material(shaded: bool) -> StandardMaterial3D:
 	var key := "smoke" + str(shaded)
 	if not _mats.has(key):
 		var m := StandardMaterial3D.new()
-		m.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL if shaded else BaseMaterial3D.SHADING_MODE_UNSHADED
+		# éclairée au sommet : quasi le même rendu qu'au pixel pour une fumée, pour une fraction du coût
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_PER_VERTEX if shaded else BaseMaterial3D.SHADING_MODE_UNSHADED
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 		m.billboard_keep_scale = true
@@ -125,7 +126,10 @@ static func fire(size: float, amount: int, extent: Vector3, rise := 1.0) -> GPUP
 ## Fumée : `col` couleur (alpha = densité max), `life` durée (s), `size` taille initiale.
 static func smoke(col: Color, amount: int, life: float, size: float, shaded := true, rise := 1.0, grow := 3.0) -> GPUParticles3D:
 	var p := GPUParticles3D.new()
-	p.amount = amount
+	# la fumée coûte surtout en surface transparente dessinée : moins de particules, un peu plus denses chacune
+	var k := Settings.smoke_k()
+	p.amount = maxi(3, int(round(float(amount) * k)))
+	col.a = minf(col.a / sqrt(maxf(k, 0.1)), 0.95)
 	p.lifetime = life
 	p.local_coords = false
 	p.randomness = 0.3

@@ -620,10 +620,10 @@ func _gesture_hands() -> Array:
 func _status_speed() -> float:
 	var k := 1.0
 	if injured_t > 0.0:
-		k *= 0.72
+		k *= 0.86
 	k *= 1.0 - 0.35 * gas_level
 	if pepper_level > 0.2:
-		k *= 0.6
+		k *= 0.75
 	return k
 
 
@@ -678,7 +678,7 @@ func take_hit(kind: String, dir: Vector3, power := 1.0) -> void:
 	match kind:
 		"baton":
 			velocity += d * 3.5 * power
-			injured_t = maxf(injured_t, 6.0)
+			injured_t = maxf(injured_t, 3.5)
 			_hit_chain += 1.0
 			AudioLib.play_at(self, "baton_hit_%d" % _rng.randi_range(0, 1), global_position + Vector3.UP, 0.0, 6.0)
 			_voice_say("pain")
@@ -878,6 +878,8 @@ func _on_kick_impact(point: Vector3) -> void:
 	for n in get_tree().get_nodes_in_group("kickable"):
 		if n.has_method("kick") and n.kick(point + fwd * 0.12, fwd):
 			hit = true
+			if n is Barrier or n is PoliceVehicle:
+				get_tree().call_group("police", "on_provocation", global_position, 0.3 if n is PoliceVehicle else 0.2)
 	if hit:
 		_shake = 0.7
 

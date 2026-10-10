@@ -381,6 +381,7 @@ var arrestee: Node3D                # personne qu'on interpelle / escorte
 var van: PoliceVehicle
 var _flash: OmniLight3D
 var _kick_cd := 0.0
+const SPRINT := 4.9                  # course de poursuite (le joueur court à 5,2 m/s : il peut s'échapper s'il n'est pas blessé)
 var _melee_cd := 0.0             # frappe de dégagement depuis la ligne
 var _warn_t := 0.0               # avertissement en cours (main levée : « Reculez ! »)
 var _contact := {}               # qui colle la ligne, depuis combien de temps
@@ -643,6 +644,8 @@ func _think_exit(delta: float) -> void:
 func _chase(dest: Vector3, run: bool, r: float, slack := 0.7) -> void:
 	if not has_goal or goal.distance_to(dest) > slack:
 		go(dest, run, r)
+	if run:
+		speed_want = SPRINT * _walk_k            # en poursuite on sprinte, malgré l'équipement
 
 
 # --- charge / matraque --------------------------------------------------------
@@ -659,7 +662,15 @@ func _live_target() -> bool:
 
 
 func _think_charge(delta: float) -> void:
-	if not _live_target() or state_t > float(data.get("dur", 7.0)):
+	var dur := float(data.get("dur", 7.0))
+	if target is Player and _live_target():
+		# un joueur qui s'enfuit : on le poursuit tant qu'il reste à portée (et que ça reste tenable)
+		var dp := target.global_position.distance_to(global_position)
+		if dp < 20.0 and state_t < 18.0 and (police == null or police.safe_to_engage(target.global_position)):
+			dur = maxf(dur, state_t + 0.5)
+		if (target as Player).arrest_phase != "":
+			dur = 0.0
+	if not _live_target() or state_t > dur:
 		_end_action()
 		return
 	var tp := target.global_position
@@ -672,8 +683,12 @@ func _think_charge(delta: float) -> void:
 		set_act("cop_ready", {}, 5.0)
 		face(tp)
 		return
-	stop_move()
 	face(tp)
+	if target is Player and (target as Player).velocity.length() > 2.0:
+		# il court : on reste sur ses talons et on frappe en mouvement
+		_chase(tp - to.normalized() * 0.8, true, 0.2)
+	else:
+		stop_move()
 	_start_strike("baton")
 
 
@@ -702,6 +717,10 @@ func _start_strike(kind := "baton") -> void:
 func _think_strike(_delta: float) -> void:
 	if _live_target():
 		face(target.global_position)
+		var tos := target.global_position - global_position
+		tos.y = 0.0
+		if _pending_state == "charge" and tos.length() > 1.1:
+			_chase(target.global_position - tos.normalized() * 0.8, true, 0.2)      # le coup part en avançant
 	if not _strike_hit and sub_t >= 0.34:
 		_strike_hit = true
 		_apply_strike()
@@ -717,7 +736,7 @@ func _apply_strike() -> void:
 	var tp := target.global_position
 	var to := tp - global_position
 	to.y = 0.0
-	if to.length() > 2.0:
+	if to.length() > 2.2:
 		return
 	var dir := to.normalized()
 	if _strike_kind == "push":
