@@ -2027,6 +2027,7 @@ func free_up() -> void:
 
 
 func _think_arrested(delta: float) -> void:
+	sub_t += delta
 	_escort_t += delta
 	match sub:
 		"struggle":
@@ -2068,6 +2069,7 @@ func rescue(cop: Node3D) -> void:
 
 
 func _think_rescue(delta: float) -> void:
+	sub_t += delta
 	var cop: Node3D = dnode("cop")
 	if cop == null or not is_instance_valid(cop) or state_t > 12.0:
 		go_home()
@@ -2075,7 +2077,9 @@ func _think_rescue(delta: float) -> void:
 	var d := cop.global_position - global_position
 	d.y = 0.0
 	if d.length() > 1.3:
-		go(cop.global_position - d.normalized() * 0.9, true, 0.3)
+		var dest := cop.global_position - d.normalized() * 0.9
+		if not has_goal or goal.distance_to(dest) > 0.6:
+			go(dest, true, 0.3)
 		set_act("fist", {"k": 0.6}, 5.0)
 		return
 	stop_move()
@@ -2128,6 +2132,7 @@ func throw_at(target: Node3D, kind := "") -> void:
 
 
 func _think_throwcop(delta: float) -> void:
+	sub_t += delta
 	var tg: Node3D = dnode("t")
 	if tg == null or not is_instance_valid(tg) or state_t > 3.0:
 		go_home()

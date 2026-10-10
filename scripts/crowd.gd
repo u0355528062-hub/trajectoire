@@ -1241,6 +1241,17 @@ func on_event(type: String, d: Dictionary) -> void:
 			_ev_call(d)
 		"player_gesture":
 			_ev_player_gesture(d)
+		"police_bang":
+			# les boucliers claquent : les timides reculent d'un pas, les hardis répondent
+			for n in _near(d["pos"], 30.0):
+				n.look(d["pos"] + Vector3.UP * 1.4, 1.0)
+				if n.bold < 0.45:
+					n.scare(0.12)
+				else:
+					n.enrage(0.08)
+					if n.state == "home" and n.react_cd <= 0.0 and _rng.randf() < 0.3:
+						var pc := n._prop_cheer_pose()
+						n.react(pc[0], 2.0, d["pos"] + Vector3.UP * 1.5, {"voice": "defy", "voice_p": 0.4, "prm": pc[1]})
 		"police_gas":
 			mood_blast(d["pos"], 30.0, 0.1, 0.12)
 			_ev_police_gas(d)

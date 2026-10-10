@@ -10,6 +10,7 @@ var stats := {}
 var prev_strike := {}
 var prev_warn := {}
 var prev_npc := {}
+var prev_act := {}
 var charges_calm := 0
 var charges_fire := 0
 
@@ -49,6 +50,9 @@ func _process(_d: float) -> bool:
 		if w and not prev_warn.get(c, false):
 			bump("crs_avertissement")
 		prev_warn[c] = w
+		if c.act != prev_act.get(c, "") and c.act in ["cop_bang", "cop_kneel", "cop_point", "cop_signal", "cop_help", "cop_gloves", "cop_neck"]:
+			bump(c.act)
+		prev_act[c] = c.act
 		if c.state == "charge" and c.state_t < 0.04:
 			if pol.danger > 0.65:
 				charges_fire += 1

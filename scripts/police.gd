@@ -44,6 +44,11 @@ var _barr_cd := 0.0
 var _insult_t := -99.0
 var danger := 0.0                 # menace ressentie 0..1 : obus, projectiles, feux, foule hostile ; retombe avec le temps
 var _scan_t := 0.0
+var _bang_until := -99.0          # battement des boucliers en cours jusqu'à
+var _bang_start := 0.0
+var _bang_cd := 25.0
+var _bang_beat := -1
+var _help_cd := 1.0
 var _fallback_x := NAN           # position de repli sous le feu (une seule fois par alerte)
 var _insults := 0
 
@@ -581,6 +586,11 @@ func _assign_arrest(t: Node3D, n_cops: int) -> void:
 			return
 	var cand := _free_cops(["arrester", "shield", "spray"], ["team", "line", "patrol"])
 	cand.sort_custom(func(a: Cop, b: Cop): return a.global_position.distance_to(t.global_position) < b.global_position.distance_to(t.global_position))
+	# un collègue resté en ligne désigne la cible à l'équipe
+	for c0 in cops:
+		if is_instance_valid(c0) and c0.state == "hold" and not cand.slice(0, n_cops).has(c0) and c0.global_position.distance_to(t.global_position) < 30.0:
+			c0.designate(t)
+			break
 	var k := 0
 	for c in cand:
 		if k >= n_cops:
@@ -605,6 +615,8 @@ func _physics_process(delta: float) -> void:
 		_scan_t = 0.5
 		_scan_threat()
 	_update_line(delta)
+	_update_bang(delta)
+	_update_help(delta)
 	_follow_vehicles(delta)
 	# de retour au calme, la ligne se replie vers le cordon d'origine
 	if stage <= 1 and mode == "hold" and line_c.x < STREET_X - 0.5 and tension != null and tension.value < 0.12:
@@ -681,6 +693,7 @@ func _update_line(delta: float) -> void:
 		# très exposé : on se replie une fois de quelques mètres, hors de portée, puis on tient
 		if danger > 0.88 and is_nan(_fallback_x):
 			_fallback_x = minf(line_c.x + 6.0, STREET_X)
+			_boss_signal("halt")
 		_adv_goal = _fallback_x if not is_nan(_fallback_x) else line_c.x
 		_adv_cd = maxf(_adv_cd, 3.0)
 		_move_line(delta, 1.3)
@@ -693,12 +706,14 @@ func _update_line(delta: float) -> void:
 			if _adv_cd <= 0.0 and absf(line_c.x - _adv_goal) < 0.3:
 				_adv_cd = _rng.randf_range(7.0, 13.0)
 				_adv_goal = maxf(line_c.x - _rng.randf_range(3.0, 5.5), _advance_limit())
+				_boss_signal("fwd")
 			_move_line(delta, 0.9)
 		"push":
 			_adv_cd -= delta
 			if _adv_cd <= 0.0 and absf(line_c.x - _adv_goal) < 0.3:
 				_adv_cd = _rng.randf_range(3.5, 7.0)
 				_adv_goal = maxf(line_c.x - _rng.randf_range(2.5, 4.5), _advance_limit())
+				_boss_signal("fwd")
 			_move_line(delta, 1.25)
 		"retreat":
 			_adv_goal = minf(line_c.x + 6.0, STREET_X)
@@ -712,6 +727,76 @@ func _update_line(delta: float) -> void:
 	if _alert_t <= 0.0:
 		_alert_t = 0.5
 		_layout()
+
+
+func _boss_signal(kind: String) -> void:
+	if boss != null and is_instance_valid(boss) and not boss.busy():
+		boss.give_signal(kind)
+
+
+# =================================================================== battement des boucliers
+## Face-à-face tendu : de temps en temps, la ligne frappe les boucliers en rythme pour intimider
+func _update_bang(delta: float) -> void:
+	if banging():
+		var beat := int(floor((_t - _bang_start) / BANG_PERIOD + 0.75))
+		if beat != _bang_beat:
+			_bang_beat = beat
+			# un claquement par groupe de CRS (le son vient de toute la ligne)
+			var n := 0
+			for c in cops:
+				if is_instance_valid(c) and c.act == "cop_bang" and n < 3 and (c.idx + beat) % 3 == 0:
+					n += 1
+					AudioLib.play_at(c, "baton_hit_shield", c.global_position + Vector3.UP * 1.2, 2.0, 12.0, _rng.randf_range(0.92, 1.06))
+		return
+	if stage < 2 or stage > 3 or danger > 0.5 or crowd == null or not crowd.standoff.active or mode not in ["hold", "advance", "push"]:
+		return
+	_bang_cd -= delta
+	if _bang_cd > 0.0:
+		return
+	_bang_cd = _rng.randf_range(35.0, 70.0)
+	_bang_start = _t
+	_bang_beat = -1
+	_bang_until = _t + _rng.randf_range(4.0, 7.0)
+	get_tree().call_group("crowd", "on_event", "police_bang", {"pos": line_c})
+
+
+const BANG_PERIOD := 0.62
+
+func banging() -> bool:
+	return _t < _bang_until
+
+
+## Phase commune du battement (0..1) : tous les bras se lèvent et frappent ensemble
+func bang_phase() -> float:
+	return fmod((_t - _bang_start) / BANG_PERIOD, 1.0)
+
+
+# =================================================================== entraide
+## Un collègue est à terre : le plus proche des CRS disponibles va le relever
+func _update_help(delta: float) -> void:
+	_help_cd -= delta
+	if _help_cd > 0.0:
+		return
+	_help_cd = 0.7
+	for d in cops:
+		if not is_instance_valid(d) or d.state != "down" or d.state_t < 1.2:
+			continue
+		var taken := false
+		for c in cops:
+			if is_instance_valid(c) and c.helping == d:
+				taken = true
+				break
+		if taken:
+			continue
+		var best: Cop = null
+		var bd := 14.0
+		for c in _free_cops(["shield", "arrester", "spray", "lbd", "grenadier"]):
+			var dd := c.global_position.distance_to(d.global_position)
+			if dd < bd:
+				bd = dd
+				best = c
+		if best != null:
+			best.help_up(d)
 
 
 ## Les véhicules suivent le dispositif quand il avance (ils restent à portée des équipes... et des manifestants)

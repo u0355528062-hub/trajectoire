@@ -232,6 +232,56 @@ func _pose(name: String, t: float, p: Dictionary) -> Array:
 				var mouth_b := _wb(mp.origin)
 				r_hand = _h(mouth_b + Vector3(0.09, -0.09, 0.14), Vector3(0, 0.3, 1), Vector3(-1, 0, 0), 0.9, 0.0, Vector3(1, -1, -0.3))
 				l_hand = _h(sl + Vector3(0.1, -0.5, 0.15) * k, Vector3(0, -1, 0.3), Vector3(1, 0, 0), 0.6)
+		"cop_bang":
+			# matraque frappée en rythme sur le bouclier (intimidation) ; `ph` : phase commune à toute la ligne
+			handle = sl + Vector3(0.12, -0.36, 0.3) * k
+			l_hand = _grip(handle, Vector3(1, 0, 0), Vector3(0, -0.2, 1), true, 1.0)
+			var ph: float = fmod(float(p.get("ph", t)), 1.0)
+			var up_b := sr + Vector3(-0.02, 0.1, 0.18) * k
+			var hit_b := handle + Vector3(-0.2, 0.22, 0.06) * k
+			var u_b := _ease(ph / 0.25) if ph < 0.25 else 1.0 - _ease((ph - 0.25) / 0.75)
+			r_hand = _grip(up_b.lerp(hit_b, u_b), Vector3(0.1, 0.8, 0.6).lerp(Vector3(-0.6, -0.2, 0.8), u_b), Vector3(-1, 0, 0), false)
+		"cop_point":
+			# désigne quelqu'un aux collègues : bras tendu, index pointé ; le bouclier reste en garde
+			handle = sl + Vector3(0.12, -0.4, 0.3) * k
+			l_hand = _grip(handle, Vector3(1, 0, 0), Vector3(0, -0.2, 1), true, 1.0)
+			var dp: Vector3 = (p.get("dir", Vector3(0, 0.05, 1)) as Vector3).normalized()
+			r_hand = _h(sr + dp * 0.58 * k, dp, Vector3(-0.3, -1, 0), 1.0, 1.0, Vector3(1, -1, -0.2))
+		"cop_signal":
+			# geste de commandement : main ouverte levée (« halte ») ou bras qui balaie vers l'avant (« en avant »)
+			shield_mode = "none" if loadout == "boss" else "palm"
+			l_hand = _grip(handle, Vector3(1, 0, 0), Vector3(0, -0.2, 1), true, 1.0) if loadout != "boss" else _h(sl + Vector3(0.05, -0.48, 0.1) * k, Vector3(0, -1, 0.2), Vector3(1, 0, 0), 0.6)
+			if p.get("kind", "halt") == "halt":
+				r_hand = _h(sr + Vector3(0.05, 0.5, 0.1) * k, Vector3(0, 1, 0.1), Vector3(0, 0, 1), 0.05, 0.0, Vector3(1, -0.3, -0.2))
+			else:
+				var sw := 0.5 + 0.5 * sin(t * 6.0)
+				var hp := (sr + Vector3(0.0, 0.42, 0.05) * k).lerp(sr + Vector3(-0.05, 0.1, 0.55) * k, sw)
+				r_hand = _h(hp, Vector3(0, 0.6, 1).lerp(Vector3(0, -0.2, 1), sw), Vector3(-1, 0, 0), 0.2, 0.0, Vector3(1, -0.5, -0.2))
+		"cop_kneel":
+			# accroupi derrière le bouclier levé, la tête rentrée
+			handle = sl + Vector3(0.14, -0.05, 0.3) * k
+			l_hand = _grip(handle, Vector3(1, 0, 0), Vector3(0, -0.2, 1), true, 1.0)
+			r_hand = _grip(sr + Vector3(-0.02, -0.25, 0.25) * k, Vector3(0, 0.3, 1), Vector3(-1, 0, 0), false)
+		"cop_gloves":
+			# ajuste ses gants, bouclier posé au sol
+			shield_mode = "ground"
+			var g := sin(t * 5.0) * 0.03
+			var c := sr.lerp(sl, 0.5) + Vector3(0, -0.36, 0.3) * k
+			r_hand = _h(c + Vector3(0.04 + g, 0, 0), Vector3(-0.6, 0.1, 0.8), Vector3(-0.3, 1, 0), 0.4, 0.0, Vector3(1, -1, -0.3))
+			l_hand = _h(c + Vector3(-0.06 - g, 0.02, 0.02), Vector3(0.7, 0.1, 0.7), Vector3(0.3, -1, 0), 0.8, 0.0, Vector3(-1, -1, -0.3))
+		"cop_neck":
+			# se masse la nuque, fatigué
+			shield_mode = "ground"
+			l_hand = _h(sl + Vector3(0.0, -0.47, 0.2) * k, Vector3(0.2, -0.4, 0.9), Vector3(1, 0, 0), 0.6, 0.0, Vector3(-1, -1, -0.3))
+			var hd2 := _wb(human.head_world())
+			r_hand = _h(hd2 + Vector3(0.02, -0.12 + sin(t * 3.0) * 0.015, -0.12), Vector3(-0.8, 0.2, -0.4), Vector3(0, 0.2, 1), 0.3, 0.0, Vector3(1, 0, -0.6))
+		"cop_help":
+			# tend les deux mains vers un collègue à terre pour le relever
+			shield_mode = "ground"
+			var tgh: Vector3 = p.get("target", Vector3(0, 0.6, 0.6))
+			var u_h: float = clampf(p.get("u", 0.0), 0.0, 1.0)
+			r_hand = _h(tgh + Vector3(-0.08, 0.5 * u_h, 0), Vector3(0, -0.5, 1), Vector3(-1, 0, 0), 0.95, 0.0, Vector3(1, -1, -0.3))
+			l_hand = _h(tgh + Vector3(0.08, 0.5 * u_h, 0), Vector3(0, -0.5, 1), Vector3(1, 0, 0), 0.95, 0.0, Vector3(-1, -1, -0.3))
 		"cop_fall_cover":
 			shield_mode = "palm"
 			handle = sl + Vector3(0.1, -0.1, 0.28) * k
@@ -272,7 +322,7 @@ func _place_props() -> void:
 			_shield_pos = _shield_pos.lerp(tgt, 0.6)
 			shield.global_transform = Transform3D(ax, _shield_pos)
 	# matraque dans la main droite
-	var wants_baton := act in ["cop_guard", "cop_ready", "cop_strike", "cop_rest", "cop_stop", "cop_spray", "cop_hold_arm", "cop_helmet"] or (act == "cop_radio" and false)
+	var wants_baton := act in ["cop_guard", "cop_ready", "cop_strike", "cop_rest", "cop_stop", "cop_spray", "cop_hold_arm", "cop_helmet", "cop_bang", "cop_kneel", "cop_neck"] or (act == "cop_radio" and false)
 	if baton:
 		baton.visible = wants_baton and loadout != "grenadier" and act != "cop_spray"
 		if baton.visible:
@@ -322,6 +372,12 @@ var _warn_t := 0.0               # avertissement en cours (main levée : « Recu
 var _contact := {}               # qui colle la ligne, depuis combien de temps
 var temper := 0.5                # tempérament : 0 calme, 1 nerveux
 var _strike_kind := "baton"
+var _cover_t := 0.0              # accroupi derrière le bouclier (projectiles)
+var _point_t := 0.0              # désigne quelqu'un aux collègues
+var _point_node: Node3D = null
+var _signal_t := 0.0             # geste de commandement (chef)
+var _signal_kind := "halt"
+var helping: Cop = null          # collègue à terre qu'on relève
 var _pending_state := ""
 var _pending_data := {}            # données de l'action interrompue par un déséquilibre
 
@@ -335,6 +391,9 @@ func _pre_tick(delta: float) -> void:
 	_kick_cd = maxf(_kick_cd - delta, 0.0)
 	_melee_cd = maxf(_melee_cd - delta, 0.0)
 	_warn_t = maxf(_warn_t - delta, 0.0)
+	_cover_t = maxf(_cover_t - delta, 0.0)
+	_point_t = maxf(_point_t - delta, 0.0)
+	_signal_t = maxf(_signal_t - delta, 0.0)
 	_target_refresh = maxf(_target_refresh - delta, 0.0)
 
 
@@ -349,14 +408,18 @@ func set_state(s: String, d := {}) -> void:
 
 
 func busy() -> bool:
-	return state in ["strike", "gas", "lbd", "spray", "arrest", "escort", "stagger", "down", "charge"]
+	return state in ["strike", "gas", "lbd", "spray", "arrest", "escort", "stagger", "down", "charge", "help"]
 
 
 func _think(delta: float) -> void:
+	if _cover_t <= 0.0 and human.crouch > 0.0:
+		human.crouch = move_toward(human.crouch, 0.0, delta * 2.5)
 	if stun_t > 0.0 and state != "down":
 		_think_stagger(delta)
 		return
 	match state:
+		"help":
+			_think_help(delta)
 		"hold", "advance":
 			_think_line(delta)
 		"exit":
@@ -483,7 +546,23 @@ func _think_line(delta: float) -> void:
 		return
 	stop_move()
 	face(global_position + line_dir * 8.0)
+	if _cover_t > 0.0:
+		human.crouch = move_toward(human.crouch, 0.55, delta * 4.0)
+		set_act("cop_kneel", {}, 6.0)
+		return
 	if alert > 0.5 and _line_melee():
+		return
+	if _point_t > 0.0 and _point_node != null and is_instance_valid(_point_node):
+		var dp := _wbd((_point_node.global_position + Vector3.UP * 1.2) - human.shoulder_world("R")).normalized()
+		set_act("cop_point", {"dir": dp}, 5.0)
+		look(_point_node.global_position + Vector3.UP * 1.5, 1.0)
+		return
+	if _signal_t > 0.0:
+		set_act("cop_signal", {"kind": _signal_kind}, 5.0)
+		return
+	if alert > 0.5 and police and police.banging() and loadout in ["shield", "arrester", "boss"] and role in ["line", "patrol"]:
+		set_act("cop_bang", {"ph": police.bang_phase()}, 8.0)
+		look(global_position + line_dir * 10.0 + Vector3(0, 1.5, 0), 0.7)
 		return
 	if alert > 0.5:
 		var push: float = 1.0 if (police and police.mode == "push") else 0.0
@@ -491,7 +570,7 @@ func _think_line(delta: float) -> void:
 		look(global_position + line_dir * 10.0 + Vector3(0, 1.5, 0), 0.7)
 		return
 	if _idle_cd <= 0.0 and _idle_kind == "":
-		_idle_kind = ["radio", "helmet", "rest", "rest", "look", "talk"][_rng.randi() % 6]
+		_idle_kind = ["radio", "helmet", "rest", "rest", "look", "talk", "gloves", "neck"][_rng.randi() % 8]
 		_idle_t = _rng.randf_range(2.5, 5.0)
 	if _idle_kind != "":
 		_idle_t -= delta
@@ -506,6 +585,10 @@ func _think_line(delta: float) -> void:
 						say(nm, false, -4.0)
 			"helmet":
 				set_act("cop_helmet", {}, 3.5)
+			"gloves":
+				set_act("cop_gloves", {}, 3.0)
+			"neck":
+				set_act("cop_neck", {}, 3.0)
 			"look":
 				var side := Vector3(-line_dir.z, 0, line_dir.x) * (6.0 if _idle_t > 1.5 else -6.0)
 				look(global_position + line_dir * 8.0 + side + Vector3(0, 1.5, 0), 1.0)
@@ -944,9 +1027,11 @@ func on_hit(kind: String, from_dir: Vector3, power := 1.0, by: Node3D = null) ->
 	if blocked:
 		AudioLib.play_at(self, "baton_hit_shield" if kind != "stone" else "shield_tap_%d" % _rng.randi_range(0, 2), global_position + Vector3.UP * 1.1, 0.0, 6.0)
 		human.kick_back(0.4 * power)
+		_neighbors_cover(kind)
 		if police and by != null:
 			police.on_cop_hit(self, kind, by)
 		return
+	_neighbors_cover(kind)
 	hp -= 0.12 * power
 	human.kick_back(1.0)
 	AudioLib.play_at(self, "punch" if kind != "stone" else "stone_thud", global_position + Vector3.UP * 1.5, -2.0, 6.0)
@@ -956,6 +1041,63 @@ func on_hit(kind: String, from_dir: Vector3, power := 1.0, by: Node3D = null) ->
 		police.on_cop_hit(self, kind, by)
 	if power >= 1.0 or _rng.randf() < 0.4:
 		stagger(0.9 * power, from_dir)
+
+
+## Un projectile arrive sur la ligne : les voisins se baissent derrière leur bouclier quelques instants
+func _neighbors_cover(kind: String) -> void:
+	if kind in ["kick", "shove", "punch", "baton"] or crowd == null:      # seulement les projectiles
+		return
+	for a in crowd.neighbors(global_position, 3.2):
+		if a is Cop and (a as Cop).state in ["hold", "advance"] and _rng.randf() < 0.7:
+			(a as Cop).take_cover(_rng.randf_range(1.0, 2.2))
+
+
+func take_cover(dur: float) -> void:
+	_cover_t = maxf(_cover_t, dur)
+
+
+## Montre quelqu'un aux collègues (avant une interpellation)
+func designate(t: Node3D) -> void:
+	_point_t = 1.6
+	_point_node = t
+	_say_pol("pol_order", true, 3.0)
+
+
+## Geste de commandement : "halt" (halte) ou "fwd" (en avant)
+func give_signal(kind: String) -> void:
+	_signal_t = 1.8
+	_signal_kind = kind
+
+
+## Va relever un collègue à terre
+func help_up(other: Cop) -> void:
+	set_state("help")
+	helping = other
+	sub = "go"
+
+
+func _think_help(delta: float) -> void:
+	if helping == null or not is_instance_valid(helping) or helping.state != "down" or state_t > 12.0:
+		helping = null
+		_end_action()
+		return
+	var hp2 := helping.global_position
+	var to := hp2 - global_position
+	to.y = 0.0
+	if sub == "go":
+		if to.length() > 0.9:
+			_chase(hp2 - to.normalized() * 0.7, true, 0.2)
+			set_act("cop_guard", {"lift": 0.3}, 4.0)
+			return
+		stop_move()
+		sub = "lift"
+		sub_t = 0.0
+	face(hp2)
+	set_act("cop_help", {"target": _wb(hp2 + Vector3.UP * 0.35), "u": clampf((sub_t - 0.6) / 0.9, 0.0, 1.0)}, 5.0)
+	if sub_t > 1.6:
+		helping.data["dur"] = 0.0           # il se relève (voir _think_down)
+		helping = null
+		_end_action()
 
 
 func stagger(dur: float, from_dir := Vector3.ZERO) -> void:
