@@ -155,7 +155,7 @@ static func mat(key: String) -> Material:
 				m.emission_enabled = true
 				m.emission_texture = load("res://assets/paris/win_atlas.png")
 				m.emission = Color(1.0, 0.82, 0.6)
-				m.emission_energy_multiplier = 1.2 if key == "glass_lit" else 0.45
+				m.emission_energy_multiplier = 1.2 if key == "glass_lit" else 0.16
 		"railing":
 			m.albedo_texture = load("res://assets/paris/railing_a.png")
 			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
@@ -1060,7 +1060,7 @@ func _fake_shop(cx: float, w: float, oh: float) -> void:
 	var sv := _rng.randi()
 	var fr := _frontage(cx, w, oh, kind, sv)
 	var cell := _rng.randi() % 16
-	quad("glass_dim" if _rng.randf() < 0.7 else "glass", Vector3(cx, 0.42 + (oh - 0.42) * 0.5, -0.3), w - 0.1, oh - 0.42, Rect2(float(cell % 8) / 8.0, float(cell / 8) / 2.0, 1.0 / 8.0, 0.5), Color(0.8, 0.75, 0.7))
+	quad("glass_dim" if _rng.randf() < 0.45 else "glass", Vector3(cx, 0.42 + (oh - 0.42) * 0.5, -0.3), w - 0.1, oh - 0.42, Rect2(float(cell % 8) / 8.0, 0.5, 1.0 / 8.0, 0.25), Color(0.42, 0.4, 0.38))
 	Shop.make_sign(self, kind, sv, fr, _xf * Vector3(cx, 0, 0))
 
 

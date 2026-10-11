@@ -29,6 +29,17 @@ func _ready() -> void:
 	street.crowd = crowd
 	add_child(street)
 	Streetscape.build(self, crowd)
+	# reflets du boulevard (vitres, carrosseries, sol mouillé) : une sonde calculée une fois, projection en boîte
+	var probe := ReflectionProbe.new()
+	probe.size = Vector3(230.0, 36.0, 46.0)
+	probe.position = Vector3(0.0, 14.0, -3.5)
+	probe.origin_offset = Vector3(0.0, -12.0, 0.0)
+	probe.box_projection = true
+	probe.update_mode = ReflectionProbe.UPDATE_ONCE
+	probe.intensity = 0.8
+	probe.max_distance = 260.0
+	probe.interior = false
+	add_child(probe)
 	var parking := Parking.new()          # voitures garées, parking, station de vélos (vandalisables)
 	parking.name = "Parking"
 	parking.crowd = crowd
@@ -104,7 +115,7 @@ func _build_environment() -> void:
 	env.set_glow_level(5, 0.6)
 
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.62, 0.50, 0.48)
+	env.fog_light_color = Color(0.56, 0.52, 0.52)
 	env.fog_light_energy = 1.0
 	env.fog_density = 0.0007
 	env.fog_sun_scatter = 0.1
@@ -112,7 +123,7 @@ func _build_environment() -> void:
 	env.fog_sky_affect = 0.0
 	env.volumetric_fog_enabled = true
 	env.volumetric_fog_density = 0.0022
-	env.volumetric_fog_albedo = Color(0.85, 0.82, 0.82)
+	env.volumetric_fog_albedo = Color(0.8, 0.8, 0.82)
 	env.volumetric_fog_emission = Color(0.02, 0.025, 0.05)
 	env.volumetric_fog_emission_energy = 0.5
 	env.volumetric_fog_anisotropy = 0.3

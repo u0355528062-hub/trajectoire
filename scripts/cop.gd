@@ -662,8 +662,10 @@ func _live_target() -> bool:
 
 
 func _think_charge(delta: float) -> void:
+	if target != null and not is_instance_valid(target):
+		target = null            # cible disparue (embarquée, retirée de la scène)
 	var dur := float(data.get("dur", 7.0))
-	if target is Player and _live_target():
+	if _live_target() and target is Player:
 		# un joueur qui s'enfuit : on le poursuit tant qu'il reste à portée (et que ça reste tenable)
 		var dp := target.global_position.distance_to(global_position)
 		if dp < 20.0 and state_t < 18.0 and (police == null or police.safe_to_engage(target.global_position)):
