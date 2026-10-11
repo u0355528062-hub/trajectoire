@@ -2,3 +2,4 @@
 *.import
 /shots/
 __pycache__/
+.claude/worktrees/

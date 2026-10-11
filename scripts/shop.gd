@@ -16,6 +16,8 @@ var crowd: Crowd
 var building: Node3D
 var sign_color := "shop_black"
 var lit := true
+var seed_v := 0
+var frontage := {}                # devanture (posée par l'immeuble) : style, couleur, position de l'enseigne, store
 
 var pane: GlassPane
 var items: Array = []             # ShopItem
@@ -40,7 +42,7 @@ func is_open() -> bool:
 func intact_items() -> Array:
 	var out: Array = []
 	for it in items:
-		if is_instance_valid(it) and not (it as ShopItem).smashed:
+		if is_instance_valid(it) and not (it as ShopItem).smashed and not (it as ShopItem).outside:
 			out.append(it)
 	return out
 
@@ -114,11 +116,11 @@ func _build_shell() -> void:
 	_box(self, wm, Vector3(0.1, height, d - 0.55), Vector3(width * 0.5 - 0.05, height * 0.5, -0.55 - (d - 0.55) * 0.5))
 	_box(self, col_mat(Color(0.78, 0.76, 0.72), 0.8), Vector3(width, 0.06, d), Vector3(0, height, -d * 0.5))
 	# plafonnier lumineux (et vraie lumière pour les boutiques proches)
-	_ceiling = _box(self, col_mat(Color(1.0, 0.92, 0.78), 0.5, 1.2), Vector3(width * 0.6, 0.03, 0.4), Vector3(0, height - 0.05, -d * 0.5))
+	_ceiling = _box(self, col_mat(Color(1.0, 0.92, 0.78), 0.5, 0.7), Vector3(width * 0.6, 0.03, 0.4), Vector3(0, height - 0.05, -d * 0.5))
 	if lit:
 		_light = OmniLight3D.new()
 		_light.light_color = Color(1.0, 0.9, 0.75)
-		_light.light_energy = 0.9
+		_light.light_energy = 0.55
 		_light.omni_range = maxf(width, d) * 0.95
 		_light.shadow_enabled = false
 		_light.position = Vector3(0, height - 0.4, -d * 0.5)
@@ -154,32 +156,163 @@ func _on_broken(_p: Vector3) -> void:
 
 
 func _build_sign() -> void:
-	if _font == null:
-		_font = load("res://assets/fonts/PermanentMarker-Regular.ttf")
+	if frontage.is_empty():
+		frontage = {"style": "boiserie", "color": Color(0.06, 0.22, 0.16), "sign_y": height + 0.3, "sign_z": 0.25, "sign_w": width + 0.3, "awning": false}
+	var fr := frontage.duplicate()
+	fr["xf"] = Transform3D()
+	Shop.make_sign(self, kind, seed_v, fr, Vector3.ZERO)
+
+
+# ------------------------------------------------------------------ enseignes et devantures (aussi pour les boutiques décoratives)
+const KINDS := ["banque", "boulangerie", "pharmacie", "superette", "boutique", "cafe", "tabac", "fleuriste", "librairie", "opticien", "primeur", "coiffeur"]
+const NAMES := {
+	"banque": ["Crédit Parisien", "Banque du Commerce", "Caisse Lutèce"],
+	"boulangerie": ["Boulangerie Martin", "Au Pain Doré", "Maison Lefèvre", "La Fournée", "Aux Délices de Lutèce"],
+	"pharmacie": ["Pharmacie du Boulevard", "Pharmacie Centrale", "Pharmacie de la Place"],
+	"superette": ["Marché Express", "Épicerie du Coin", "Proxi Marché", "Supérette 7/7"],
+	"boutique": ["Atelier Margaux", "Maison Clément", "Les Filles du Faubourg", "Mode & Co"],
+	"cafe": ["Café de la Mairie", "Le Zinc", "Le Bistrot des Amis", "Brasserie du Boulevard", "Le Petit Comptoir"],
+	"tabac": ["Le Balto", "Tabac de la Mairie", "Tabac Presse du Boulevard"],
+	"fleuriste": ["Fleurs de Lise", "L'Atelier Floral", "Au Jardin de Paris"],
+	"librairie": ["Librairie Les Mots Passants", "Le Livre Ouvert", "Librairie du Faubourg"],
+	"opticien": ["Optique Lumière", "Lunettes & Cie"],
+	"primeur": ["Primeur Chez Karim", "Fruits & Légumes"],
+	"coiffeur": ["Coiffure Élégance", "Salon Ciseaux d'Or"],
+}
+const SUBTITLES := {"boulangerie": "PAIN · VIENNOISERIE · PÂTISSERIE", "cafe": "BRASSERIE · VINS · CAFÉ", "tabac": "PRESSE · LOTO",
+	"fleuriste": "FLEURS · PLANTES", "librairie": "LIVRES · PAPETERIE", "primeur": "FRUITS · LÉGUMES"}
+
+
+static func pick_kind(rng: RandomNumberGenerator) -> String:
+	return KINDS[rng.randi() % KINDS.size()]
+
+
+static func frontage_style(k: String, r: RandomNumberGenerator) -> String:
+	match k:
+		"banque":
+			return "pierre"
+		"pharmacie", "opticien", "superette":
+			return "moderne"
+		"boulangerie", "cafe", "librairie", "fleuriste":
+			return "boiserie"
+		_:
+			return "boiserie" if r.randf() < 0.5 else "moderne"
+
+
+static func frontage_color(k: String, st: String, r: RandomNumberGenerator) -> Color:
+	match k:
+		"pharmacie":
+			return Color(0.12, 0.62, 0.32)
+		"tabac":
+			return Color(0.55, 0.06, 0.05)
+		"banque":
+			return Color(0.08, 0.15, 0.35)
+	if st == "moderne":
+		return [Color(0.9, 0.9, 0.88), Color(0.12, 0.35, 0.6), Color(0.85, 0.3, 0.1), Color(0.15, 0.15, 0.17), Color(0.6, 0.12, 0.35)][r.randi() % 5]
+	return [Color(0.06, 0.2, 0.15), Color(0.3, 0.05, 0.07), Color(0.06, 0.1, 0.22), Color(0.04, 0.04, 0.045), Color(0.82, 0.78, 0.66),
+		Color(0.42, 0.56, 0.62), Color(0.55, 0.42, 0.12), Color(0.36, 0.38, 0.4)][r.randi() % 8]
+
+
+static func shop_name(k: String, sv: int) -> String:
+	var lst: Array = NAMES.get(k, ["Boutique"])
+	return lst[absi(sv) % lst.size()]
+
+
+static func _lab(text: String, font: Font, size: int, px: float, col: Color, shaded := true) -> Label3D:
 	var lab := Label3D.new()
-	lab.text = SIGN_NAMES.get(kind, "BOUTIQUE")
-	lab.font_size = 72
-	lab.pixel_size = minf(0.0055, (width + 0.2) / maxf(float(lab.text.length()) * 46.0, 1.0))
-	lab.modulate = Color(0.95, 0.8, 0.42)
+	lab.text = text
+	lab.font = font
+	lab.font_size = size
+	lab.pixel_size = px
+	lab.modulate = col
 	lab.outline_size = 0
-	lab.shaded = true
+	lab.shaded = shaded
 	lab.double_sided = false
 	lab.alpha_cut = Label3D.ALPHA_CUT_OPAQUE_PREPASS
-	lab.position = Vector3(0, height + 0.5, 0.135)
-	add_child(lab)
-	if kind == "pharmacie":
-		# croix verte lumineuse en drapeau
-		var cr := Node3D.new()
-		cr.position = Vector3(width * 0.5 + 0.4, height + 0.9, 0.5)
-		add_child(cr)
-		var gm := col_mat(Color(0.1, 1.0, 0.3), 0.4, 3.0)
-		_box(cr, gm, Vector3(0.5, 0.16, 0.08), Vector3.ZERO)
-		_box(cr, gm, Vector3(0.16, 0.5, 0.08), Vector3.ZERO)
+	lab.visibility_range_end = 90.0
+	return lab
+
+
+## Enseigne d'une devanture : nom en lettres dorées (boiserie), lettres lumineuses (moderne) ou gravées (pierre),
+## lambrequin du store, croix de pharmacie, carotte de tabac. `pos` : centre de l'ouverture au sol (repère de `parent`).
+static func make_sign(parent: Node3D, k: String, sv: int, fr: Dictionary, pos: Vector3) -> void:
+	var xf: Transform3D = fr.get("xf", Transform3D())
+	var basis := xf.basis
+	var st: String = fr.get("style", "boiserie")
+	var name := shop_name(k, sv)
+	var w: float = fr.get("sign_w", 4.0)
+	var y: float = fr.get("sign_y", 4.0)
+	var z: float = fr.get("sign_z", 0.25)
+	var col: Color = fr.get("color", Color(0.1, 0.2, 0.15))
+	var text := name.to_upper() if st != "boiserie" else name
+	var font: Font = ParisBuilding.serif() if st != "moderne" else ParisBuilding.sans()
+	var gold := Color(0.95, 0.78, 0.38)
+	var tc: Color = gold
+	if st == "moderne":
+		tc = Color(1, 1, 1) if col.get_luminance() < 0.6 else Color(0.08, 0.08, 0.1)
+	elif st == "pierre":
+		tc = Color(0.62, 0.5, 0.22)
+	elif col.get_luminance() > 0.5:
+		tc = Color(0.12, 0.1, 0.08)
+	var px := minf(0.0062, (w - 0.3) / maxf(float(text.length()) * 52.0, 1.0))
+	var lab := _lab(text, font, 96, px, tc, st != "moderne")
+	lab.position = pos + basis * Vector3(0, y + (0.06 if SUBTITLES.has(k) else 0.0), z)
+	lab.basis = basis
+	parent.add_child(lab)
+	if SUBTITLES.has(k) and st == "boiserie":
+		var sub := _lab(SUBTITLES[k], ParisBuilding.sans(), 48, minf(0.0032, (w - 0.6) / maxf(float(String(SUBTITLES[k]).length()) * 26.0, 1.0)), tc.darkened(0.1))
+		sub.position = pos + basis * Vector3(0, y - 0.17, z)
+		sub.basis = basis
+		parent.add_child(sub)
+	if fr.get("awning", false):
+		var al := _lab(name.to_upper(), ParisBuilding.sans(), 64, minf(0.004, (w - 0.2) / maxf(float(name.length()) * 36.0, 1.0)), Color(0.96, 0.95, 0.9))
+		al.position = pos + basis * Vector3(0, fr.get("awning_y", 3.0), fr.get("awning_z", 1.6))
+		al.basis = basis
+		parent.add_child(al)
+	var r := RandomNumberGenerator.new()
+	r.seed = sv
+	var side := 1.0 if r.randf() < 0.5 else -1.0
+	match k:
+		"pharmacie":
+			# croix verte lumineuse en drapeau
+			var cr := Node3D.new()
+			cr.position = pos + basis * Vector3(side * (w * 0.5 + 0.2), y + 0.6, 0.55)
+			cr.basis = basis * Basis(Vector3.UP, PI * 0.5)
+			parent.add_child(cr)
+			var gm := col_mat(Color(0.1, 1.0, 0.3), 0.4, 3.0)
+			for sz in [Vector3(0.6, 0.2, 0.1), Vector3(0.2, 0.6, 0.1)]:
+				var mi := MeshInstance3D.new()
+				var bm := BoxMesh.new()
+				bm.size = sz
+				mi.mesh = bm
+				mi.material_override = gm
+				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				cr.add_child(mi)
+		"tabac":
+			# la « carotte » rouge des bureaux de tabac
+			var ca := MeshInstance3D.new()
+			var pm := PrismMesh.new()
+			pm.size = Vector3(0.36, 0.5, 0.14)
+			ca.mesh = pm
+			ca.material_override = col_mat(Color(0.85, 0.08, 0.06), 0.4, 1.2)
+			ca.position = pos + basis * Vector3(side * (w * 0.5 + 0.2), y + 0.75, 0.5)
+			ca.basis = basis * Basis(Vector3.UP, PI * 0.5)
+			var ca2 := MeshInstance3D.new()
+			ca2.mesh = pm
+			ca2.material_override = ca.material_override
+			ca2.rotation = Vector3(0, 0, PI)
+			ca2.position = Vector3(0, -0.5, 0)
+			ca.add_child(ca2)
+			parent.add_child(ca)
+			var tl := _lab("TABAC", ParisBuilding.sans(), 48, 0.0028, Color(1, 0.95, 0.85), false)
+			tl.position = Vector3(0, -0.25, 0.075)
+			ca.add_child(tl)
 
 
 # ------------------------------------------------------------------ mobilier selon le commerce
-func _item(pos: Vector3, size: Vector3, colr: Color, goods: Array, heavy := false) -> ShopItem:
+func _item(pos: Vector3, size: Vector3, colr: Color, goods: Array, heavy := false, outside := false) -> ShopItem:
 	var it := ShopItem.new()
+	it.outside = outside
 	it.position = pos
 	it.size = size
 	it.color = colr
@@ -230,12 +363,37 @@ func _furnish() -> void:
 			_item(Vector3(hw - 0.6, 0, -1.4), Vector3(0.4, 1.75, 0.35), Color(0.95, 0.94, 0.92), [Color(0.95, 0.95, 0.95)])          # mannequin
 			_item(Vector3(-hw + 0.6, 0, -1.3), Vector3(0.4, 1.75, 0.35), Color(0.95, 0.94, 0.92), [Color(0.2, 0.2, 0.25)])            # mannequin
 			_item(Vector3(0, 0, -1.6), Vector3(0.9, 0.85, 0.6), Color(0.3, 0.22, 0.16), bright)                                      # table de pliage
+		"tabac", "librairie":
+			_item(Vector3(0, 0, -d + 0.45), Vector3(width - 0.6, 2.1, 0.4), Color(0.35, 0.24, 0.15), bright)                          # rayonnages
+			_item(Vector3(hw - 0.55, 0, -1.6), Vector3(0.7, 1.05, 0.6), Color(0.3, 0.2, 0.12), [Color(0.9, 0.85, 0.2)])             # comptoir
+			_item(Vector3(-hw + 0.45, 0, -1.4), Vector3(0.55, 1.5, 0.45), Color(0.8, 0.8, 0.78), bright)                            # présentoir à journaux
+			_item(Vector3(0, 0, -2.6), Vector3(1.1, 0.9, 0.7), Color(0.4, 0.28, 0.18), bright)                                      # table de livres
+		"fleuriste", "primeur":
+			_item(Vector3(0, 0, -d + 0.45), Vector3(width - 0.6, 1.5, 0.5), Color(0.45, 0.32, 0.2), [Color(0.85, 0.15, 0.2), Color(0.95, 0.75, 0.1), Color(0.3, 0.6, 0.2)])
+			_item(Vector3(hw - 0.55, 0, -1.6), Vector3(0.7, 1.0, 0.6), Color(0.3, 0.3, 0.32), [Color(0.95, 0.85, 0.2)])              # caisse
+			# étals sur le trottoir : cagettes, seaux de fleurs
+			for i in 3:
+				var ox := -hw + 0.6 + float(i) * (width - 1.2) / 2.0
+				_item(Vector3(ox, 0, 1.05), Vector3(0.75, 0.8, 0.55), Color(0.62, 0.48, 0.3),
+					[Color(0.9, 0.2, 0.15), Color(0.95, 0.7, 0.1), Color(0.35, 0.65, 0.2)] if kind == "primeur" else [Color(0.95, 0.4, 0.6), Color(0.96, 0.95, 0.92), Color(0.85, 0.1, 0.15)], false, true)
+		"opticien", "coiffeur":
+			_item(Vector3(-hw + 0.45, 0, -d * 0.55), Vector3(0.45, 2.0, d * 0.5), Color(0.92, 0.92, 0.9), [Color(0.1, 0.1, 0.12), Color(0.6, 0.4, 0.2)])
+			_item(Vector3(hw - 0.45, 0, -d * 0.55), Vector3(0.45, 2.0, d * 0.5), Color(0.92, 0.92, 0.9), [Color(0.1, 0.1, 0.12), Color(0.8, 0.8, 0.85)])
+			_item(Vector3(0, 0, -2.0), Vector3(0.9, 0.9, 0.55), Color(0.2, 0.2, 0.22), [Color(0.95, 0.95, 0.95)])
+			_item(Vector3(0, 0, -d + 0.6), Vector3(width - 1.2, 1.1, 0.6), Color(0.85, 0.85, 0.82), [Color(0.2, 0.2, 0.2)])
 		_:
 			_item(Vector3(0, 0, -d + 0.6), Vector3(width - 0.8, 1.1, 0.7), Color(0.4, 0.26, 0.14), [Color(0.95, 0.95, 0.95), Color(0.5, 0.3, 0.1)])  # comptoir
 			for i in 2:
 				_item(Vector3(-hw * 0.45 + float(i) * hw * 0.9, 0, -2.0), Vector3(0.7, 0.75, 0.7), Color(0.3, 0.2, 0.12), [Color(0.9, 0.9, 0.9)])   # tables
 				_item(Vector3(-hw * 0.45 + float(i) * hw * 0.9 + 0.55, 0, -2.0), Vector3(0.4, 0.9, 0.4), Color(0.18, 0.12, 0.08), [])            # chaises
 			_item(Vector3(-hw + 0.4, 0, -d + 1.6), Vector3(0.45, 1.9, 0.45), Color(0.25, 0.15, 0.1), [Color(0.3, 0.6, 0.25), Color(0.6, 0.15, 0.15)])  # étagère à bouteilles
+			if kind == "cafe":
+				# terrasse : guéridons et chaises cannées sur le trottoir
+				for i in 2:
+					var ox := -hw * 0.5 + float(i) * hw
+					_item(Vector3(ox, 0, 1.2), Vector3(0.6, 0.74, 0.6), Color(0.75, 0.72, 0.65), [], false, true)
+					_item(Vector3(ox + 0.6, 0, 1.2), Vector3(0.42, 0.88, 0.42), Color(0.55, 0.4, 0.25), [], false, true)
+					_item(Vector3(ox - 0.6, 0, 1.2), Vector3(0.42, 0.88, 0.42), Color(0.55, 0.4, 0.25), [], false, true)
 
 
 # ------------------------------------------------------------------ interactions
