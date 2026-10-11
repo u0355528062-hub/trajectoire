@@ -32,6 +32,15 @@ func _ready() -> void:
 	police.name = "Police"
 	police.setup(crowd, player, tension)
 	add_child(police)
+	# la ville autour : passants sur les trottoirs, habitants aux fenêtres et aux balcons
+	var civilians := Civilians.new()
+	civilians.name = "Civilians"
+	civilians.setup(crowd, police, player)
+	add_child(civilians)
+	var residents := Residents.new()
+	residents.name = "Residents"
+	residents.setup(crowd, police, player)
+	add_child(residents)
 	var hud := preload("res://scripts/hud.gd").new()
 	add_child(hud)
 	hud.bind(player)
