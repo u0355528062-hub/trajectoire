@@ -19,6 +19,9 @@ var obstacles: Array[Dictionary] = []
 var _obs: Array[Dictionary] = []
 var _obs_c := PackedVector3Array()
 var _obs_r2 := PackedFloat32Array()
+var _obs_r := PackedFloat32Array()
+var _obs_grid := {}                 # Vector2i -> PackedInt32Array (indices dans _obs)
+const OBS_CELL := 6.0
 var _obs_tick := 0
 var _hash := {}
 var _nav_dirty := true
@@ -287,11 +290,33 @@ func _spawn_all() -> void:
 		["medic", "", 0, "", true, Vector2.ZERO, -1, false],
 		["press", "", 0, "", false, Vector2.ZERO, -1, false],
 	]
-	var chat_centers := [Vector3(-4.6, 0, -1.4), Vector3(7.6, 0, 2.6), Vector3(-9.0, 0, 4.0)]
+	# --- la foule grossit (x2,5) : cortège plus long, groupes de discussion, bloc, solitaires, médic, presse
+	var extra := RandomNumberGenerator.new()
+	extra.seed = 9191
+	for row in 6:
+		for col in 3:
+			var x := (float(col) - 1.0) * 1.45 + extra.randf_range(-0.25, 0.25)
+			var r := extra.randf()
+			var pr := "sign" if r < 0.3 else ("flare" if r < 0.36 else "")
+			var mk := "balaclava" if pr == "flare" else ("bandana" if extra.randf() < 0.15 else "")
+			cfg.append(["march", pr, extra.randi_range(1, 4), mk, extra.randf() < 0.12, Vector2(x, 5.8 + float(row) * 1.25), -1, pr == "" and extra.randf() < 0.15])
+	for g in range(3, 7):
+		for m in (4 if g % 2 == 0 else 3):
+			cfg.append(["chat", "", 0, "bandana" if extra.randf() < 0.1 else "", extra.randf() < 0.15, Vector2.ZERO, g, extra.randf() < 0.25])
+	for b in 4:
+		cfg.append(["bloc", "flare" if b == 0 else "", 0, "bloc", false, Vector2.ZERO, -1, b == 2])
+	for l in 6:
+		cfg.append(["loner", "sign" if l % 3 == 0 else "", extra.randi_range(1, 4), "", extra.randf() < 0.2, Vector2.ZERO, -1, l % 2 == 1])
+	cfg.append(["medic", "", 0, "", true, Vector2.ZERO, -1, false])
+	cfg.append(["press", "", 0, "", false, Vector2.ZERO, -1, false])
+	var chat_centers := [Vector3(-4.6, 0, -1.4), Vector3(7.6, 0, 2.6), Vector3(-9.0, 0, 4.0),
+		Vector3(18.0, 0, -1.6), Vector3(-21.0, 0, 1.4), Vector3(26.0, 0, -19.5), Vector3(3.0, 0, 11.0)]
 	for g in chat_centers.size():
 		_chats.append({"center": chat_centers[g], "home": chat_centers[g], "members": [], "speaker": null, "next": 2.0 + g * 1.7, "last": null, "reply": -1.0, "listener": null})
-	var bloc_home := [Vector3(6.0, 0, -13.2), Vector3(7.3, 0, -12.4), Vector3(5.2, 0, -14.3), Vector3(7.0, 0, -14.5)]
-	var loner_home := [Vector3(1.0, 0, 6.5), Vector3(12.0, 0, -2.5)]
+	var bloc_home := [Vector3(6.0, 0, -13.2), Vector3(7.3, 0, -12.4), Vector3(5.2, 0, -14.3), Vector3(7.0, 0, -14.5),
+		Vector3(8.4, 0, -13.6), Vector3(4.6, 0, -12.6), Vector3(8.2, 0, -15.2), Vector3(6.1, 0, -15.6)]
+	var loner_home := [Vector3(1.0, 0, 6.5), Vector3(12.0, 0, -2.5), Vector3(-25.0, 0, -1.0), Vector3(20.0, 0, 9.0),
+		Vector3(-14.0, 0, 8.5), Vector3(30.0, 0, -14.0), Vector3(-10.0, 0, -18.0), Vector3(9.0, 0, -21.0)]
 	var bloc_i := 0
 	var loner_i := 0
 	for i in cfg.size():
@@ -339,7 +364,7 @@ func _spawn_all() -> void:
 				n.bold = rng.randf_range(0.65, 1.0)
 				n.calm = rng.randf_range(0.5, 0.95)
 			"medic":
-				pos = Vector3(-2.5, 0, 3.5)
+				pos = Vector3(-2.5, 0, 3.5) if i < 40 else Vector3(14.0, 0, -9.0)
 				n.bold = 0.5
 				n.calm = 0.9
 				n.outfit["vest"] = true
@@ -347,7 +372,7 @@ func _spawn_all() -> void:
 				n.outfit["backpack"] = true
 				n.outfit["bag_color"] = Color(0.72, 0.1, 0.1)
 			"press":
-				pos = Vector3(11.0, 0, 7.0)
+				pos = Vector3(11.0, 0, 7.0) if i < 40 else Vector3(-16.0, 0, -2.0)
 				n.bold = 0.55
 				n.calm = 0.8
 				n.outfit["top"] = "jacket"
@@ -397,7 +422,14 @@ func _build_audio() -> void:
 
 
 # =================================================================== boucle
+var _prof_t0 := 0
+var _tick_n := 0
+const ANIM_BUDGET := 12            # animations de squelette par image physique (au-delà de 5 m)
+const SHADOW_DIST := 48.0          # au-delà, les personnages ne projettent plus d'ombre (coût de rendu)
+
+
 func _physics_process(delta: float) -> void:
+	_prof_t0 = Time.get_ticks_usec()
 	_time += delta
 	_bump_cd = maxf(_bump_cd - delta, 0.0)
 	_cheer_cd = maxf(_cheer_cd - delta, 0.0)
@@ -427,19 +459,49 @@ func _physics_process(delta: float) -> void:
 	_update_chats(delta)
 	_update_rally(delta)
 	_update_bumps()
+	if Actor.prof:
+		Actor.prof_acc["crowd_logic"] = int(Actor.prof_acc.get("crowd_logic", 0)) + Time.get_ticks_usec() - _prof_t0
 	var cam := get_viewport().get_camera_3d()
 	var cp := cam.global_position if cam else Vector3.ZERO
-	for n in actors:
+	_tick_n += 1
+	# budget d'animations de squelette par image physique (hors personnages tout proches) : le coût reste borné
+	# quel que soit le nombre de personnages ; l'ordre tourne pour que les retardés passent en premier
+	var budget := ANIM_BUDGET
+	var list := actors.duplicate()      # un personnage peut quitter la scène pendant la boucle (fourgon)
+	var nact := list.size()
+	var start := _tick_n % maxi(nact, 1)
+	for k in nact:
+		var n: Actor = list[(start + k) % nact]
+		if not is_instance_valid(n) or not n.is_inside_tree():
+			continue
 		var d := n.global_position.distance_to(cp)
-		var every := 1 if d < 22.0 else (2 if d < 45.0 else 3)
+		var vis := cam == null or d < 5.0 or cam.is_position_in_frustum(n.global_position + Vector3.UP)
+		# fréquence de mise à jour (réflexion + déplacement), étalée entre les personnages pour lisser la charge :
+		# tout près à chaque image physique, puis une sur deux, trois, quatre
+		var s := 1 if d < 12.0 else (2 if d < 30.0 else (3 if d < 60.0 else 4))
+		# animation du squelette : intervalle en images physiques (60 Hz tout près, puis 30, 20, 15, 10 Hz)
+		var ae := 1 if d < 5.0 else (2 if d < 14.0 else (3 if d < 30.0 else (4 if d < 50.0 else 6)))
 		var has_prop: bool = (n is Npc and (n as Npc).prop != "") or (n is Cop)
-		var lod := 0 if d < 40.0 else (1 if (d < 70.0 or has_prop) else 2)
+		var lod := 0 if d < 15.0 else (1 if (d < 60.0 or has_prop) else 2)
 		# hors champ : on ne voit que son ombre, on l'anime moins souvent et sans les détails du visage
-		if cam != null and d > 5.0 and not cam.is_position_in_frustum(n.global_position + Vector3.UP):
-			every = maxi(every * 2, 4)
+		if not vis:
+			if d > 8.0:
+				s = mini(s + 1, 5)
+			ae = maxi(ae * 2, 8)
 			lod = maxi(lod, 1)
 		n.human.lod = lod
-		n.tick(delta, every)
+		n.human.set_shadows(d < SHADOW_DIST)
+		n.tick_dt += delta
+		n.anim_wait += 1
+		if (_tick_n + n.tick_phase) % s == 0:
+			var dt := n.tick_dt
+			n.tick_dt = 0.0
+			var anim := n.anim_wait >= ae and (d < 5.0 or budget > 0)
+			if anim:
+				n.anim_wait = 0
+				if d >= 5.0:
+					budget -= 1
+			n.tick(dt, anim)
 	if _banner_l != null and _banner_r != null and _banner_l.pole_node and _banner_r.pole_node:
 		var a := _banner_r.pole_node.global_transform * Vector3(0, 1.4, 0)
 		var b := _banner_l.pole_node.global_transform * Vector3(0, 1.4, 0)
@@ -788,6 +850,7 @@ func _cache_obstacles() -> void:
 	_obs.clear()
 	_obs_c.clear()
 	_obs_r2.clear()
+	_obs_r.clear()
 	for o in obstacles:
 		var node: Node3D = o["node"]
 		if not is_instance_valid(node):
@@ -800,6 +863,7 @@ func _cache_obstacles() -> void:
 		_obs.append({"c": c, "inv": Basis(Vector3.UP, node.global_rotation.y).inverse(), "h": h, "circle": o["circle"]})
 		_obs_c.append(c)
 		_obs_r2.append(r * r)
+		_obs_r.append(r)
 	for n in get_tree().get_nodes_in_group("dyn_obstacles"):
 		var info: Array = n.obstacle_box()
 		if info.size() == 3:
@@ -808,6 +872,20 @@ func _cache_obstacles() -> void:
 			_obs.append({"c": info[0], "inv": Basis(Vector3.UP, float(info[2])).inverse(), "h": hb, "circle": false})
 			_obs_c.append(info[0])
 			_obs_r2.append(r2 * r2)
+			_obs_r.append(r2)
+	# grille spatiale (cases de OBS_CELL m) : chaque obstacle est inscrit dans toutes les cases qu'il touche
+	_obs_grid.clear()
+	for i in _obs.size():
+		var oc: Vector3 = _obs_c[i]
+		var rr: float = _obs_r[i]
+		for gx in range(floori((oc.x - rr) / OBS_CELL), floori((oc.x + rr) / OBS_CELL) + 1):
+			for gz in range(floori((oc.z - rr) / OBS_CELL), floori((oc.z + rr) / OBS_CELL) + 1):
+				var key := Vector2i(gx, gz)
+				if not _obs_grid.has(key):
+					_obs_grid[key] = PackedInt32Array()
+				var arr: PackedInt32Array = _obs_grid[key]
+				arr.append(i)
+				_obs_grid[key] = arr
 
 
 func _rebuild_hash() -> void:
@@ -869,7 +947,9 @@ func separation(n: Actor) -> Vector3:
 
 func resolve(n: Actor, p: Vector3) -> Vector3:
 	var rad := 0.3
-	for i in _obs.size():
+	var cell: Variant = _obs_grid.get(Vector2i(floori(p.x / OBS_CELL), floori(p.z / OBS_CELL)))
+	var near: PackedInt32Array = cell if cell != null else PackedInt32Array()
+	for i in near:
 		var oc: Vector3 = _obs_c[i]
 		var ddx := p.x - oc.x
 		var ddz := p.z - oc.z

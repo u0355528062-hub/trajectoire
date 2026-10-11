@@ -11,6 +11,9 @@ const RUN := 3.7
 var crowd: Crowd
 var human: Human
 var idx := 0
+var tick_dt := 0.0                 # temps accumulé depuis la dernière mise à jour (mises à jour espacées au loin)
+var anim_wait := 0                 # images physiques depuis la dernière animation du squelette
+var tick_phase := randi() % 12     # décalage pour étaler les mises à jour entre les personnages
 var variant := "male_a"
 var outfit := {}
 var female := false
@@ -722,21 +725,46 @@ func _move(delta: float) -> void:
 
 
 # =================================================================== boucle
-func tick(delta: float, anim_every: int) -> void:
+## Profilage optionnel (tests de performance) : temps cumulés par étape, en µs
+static var prof := false
+static var prof_acc := {}
+
+
+static func _prof_add(key: String, t0: int) -> int:
+	var t1 := Time.get_ticks_usec()
+	prof_acc[key] = int(prof_acc.get(key, 0)) + t1 - t0
+	return t1
+
+
+## Une mise à jour : réflexion, déplacement, expression ; `anim` : recalculer le squelette cette fois-ci
+## (décidé par la foule selon la distance et le budget d'animations par image)
+func tick(delta: float, anim: bool) -> void:
 	_frame += 1
 	act_t += delta
 	_prev_t += delta
 	_blend = minf(_blend + delta * _blend_speed, 1.0)
+	var t := Time.get_ticks_usec() if prof else 0
 	_pre_tick(delta)
 	_think(delta)
+	if prof:
+		t = _prof_add("think", t)
 	_move(delta)
+	if prof:
+		t = _prof_add("move", t)
 	_express(delta)
 	_anim_acc += delta
-	if _frame % anim_every == 0 or human.kick_t >= 0.0:
+	if anim or human.kick_t >= 0.0:
 		var hv := Vector3(vel.x, 0, vel.z).length()
 		human.animate(_anim_acc, hv, clampf((hv - 1.6) / 2.0, 0.0, 1.0), true, 0.0, 0.0)
 		_anim_acc = 0.0
+		var tp := Time.get_ticks_usec() if prof else 0
 		_place_props()
+		if prof:
+			_prof_add("props", tp)
+		if prof:
+			prof_acc["anim_n"] = int(prof_acc.get("anim_n", 0)) + 1
+	if prof:
+		t = _prof_add("anim", t)
 
 
 ## Crochets pour les classes dérivées

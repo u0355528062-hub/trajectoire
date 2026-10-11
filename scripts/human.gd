@@ -64,6 +64,8 @@ const N_LOARM := {"L": "lowerarm01_L", "R": "lowerarm01_R"}
 const N_WRIST := {"L": "wrist_L", "R": "wrist_R"}
 const N_CLAV := {"L": "clavicle_L", "R": "clavicle_R"}
 var lod := 0             # 0 complet, 1 sans yeux ni mâchoire, 2 sans bras IK
+var _shadows := true
+var _shadow_meshes: Array[MeshInstance3D] = []
 var _fall_on := false
 var _fc := {}            # cache de la courbure des doigts
 var _finger_idx := {}
@@ -118,6 +120,16 @@ func _ready() -> void:
 	_whoosh.stream = Sfx.get_stream(&"kick_whoosh")
 	_whoosh.volume_db = -6.0
 	add_child(_whoosh)
+
+
+## Ombres portées du personnage (coupées au loin par la foule pour alléger le rendu)
+func set_shadows(on: bool) -> void:
+	if on == _shadows:
+		return
+	_shadows = on
+	for mi in _shadow_meshes:
+		if is_instance_valid(mi):
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if on else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 func _find_skeleton(n: Node) -> Skeleton3D:
@@ -260,6 +272,8 @@ func _apply_materials(root: Node) -> void:
 			head_meshes.append(mi)
 		var small := nm in ["Eyes", "CapBrim", "Ponytail", "Bandana"]
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if small else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		if not small:
+			_shadow_meshes.append(mi)
 		mi.extra_cull_margin = 1.0
 
 
@@ -383,8 +397,14 @@ func _gp(n: String) -> Vector3:
 	return skeleton.get_bone_global_pose(bone[n]).origin
 
 
+var _parent_cache := {}
+
 func _parent_of(n: String) -> String:
-	return skeleton.get_bone_name(skeleton.get_bone_parent(bone[n]))
+	var p: Variant = _parent_cache.get(n)
+	if p == null:
+		p = skeleton.get_bone_name(skeleton.get_bone_parent(bone[n]))
+		_parent_cache[n] = p
+	return p
 
 
 ## Fixe la rotation locale d'un os (repère de repos = repère monde du squelette)
@@ -420,6 +440,43 @@ func _mid_joint(a: Vector3, target: Vector3, l1: float, l2: float, pole: Vector3
 	var x := (d * d + l1 * l1 - l2 * l2) / (2.0 * d)
 	var h := sqrt(maxf(l1 * l1 - x * x, 0.0))
 	return [a + u * x + po * h, a + u * d]
+
+
+## Pose globale de l'os `n` connaissant celle de son ancêtre `anc` (os intermédiaires : pose locale actuelle).
+## Évite get_bone_global_pose, qui recalcule tout le squelette dès qu'un os a bougé.
+var _chain_cache := {}
+
+func _global_from(n: String, anc: String, g_anc: Transform3D) -> Transform3D:
+	var key := n + ">" + anc
+	var chain: Variant = _chain_cache.get(key)
+	if chain == null:
+		var ids: Array[int] = []
+		var i: int = bone[n]
+		var stop: int = bone[anc]
+		while i != stop and i >= 0:
+			ids.push_front(i)
+			i = skeleton.get_bone_parent(i)
+		chain = ids
+		_chain_cache[key] = ids
+	var g := g_anc
+	for b: int in chain:
+		g = g * Transform3D(Basis(skeleton.get_bone_pose_rotation(b)), skeleton.get_bone_pose_position(b))
+	return g
+
+
+## IK 2 os rapide : `g_par` est la pose globale du parent de `upper`. Renvoie la rotation globale de `lower`.
+func _solve_limb_g(upper: String, lower: String, end: String, target: Vector3, pole: Vector3, g_par: Transform3D) -> Quaternion:
+	var a := g_par * skeleton.get_bone_pose_position(bone[upper])
+	var l1: float = (rest[lower] - rest[upper]).length()
+	var l2: float = (rest[end] - rest[lower]).length()
+	var r := _mid_joint(a, target, l1, l2, pole)
+	var m: Vector3 = r[0]
+	var e: Vector3 = r[1]
+	var q_up := Quaternion((rest[lower] - rest[upper]).normalized(), (m - a).normalized()).normalized()
+	skeleton.set_bone_pose_rotation(bone[upper], g_par.basis.get_rotation_quaternion().normalized().inverse() * q_up)
+	var q_lo := Quaternion((rest[end] - rest[lower]).normalized(), (e - m).normalized()).normalized()
+	skeleton.set_bone_pose_rotation(bone[lower], q_up.inverse() * q_lo)
+	return q_lo
 
 
 func _solve_limb(upper: String, lower: String, end: String, target: Vector3, pole: Vector3) -> void:
@@ -464,6 +521,7 @@ func animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float
 
 
 func _animate(delta: float, speed: float, run_t: float, grounded: bool, vy: float, pitch: float) -> void:
+	var _pt := Time.get_ticks_usec() if Actor.prof else 0
 	t_idle += delta
 	kick = move_toward(kick, 0.0, delta * 2.6)
 	look_pitch = lerpf(look_pitch, pitch, minf(1.0, delta * 10.0))
@@ -578,7 +636,12 @@ func _animate(delta: float, speed: float, run_t: float, grounded: bool, vy: floa
 			if bone.has("orbicularis04_" + sd):
 				_local("orbicularis04_" + sd, Quaternion(Vector3.RIGHT, -0.18 * lid))
 
+	if Actor.prof:
+		_pt = Actor._prof_add("a_tronc", _pt)
 	# --- jambes (IK) : appui plat, balancier en arc
+	var g_hip := {}
+	for side: String in SIDES:
+		g_hip[side] = skeleton.get_bone_global_pose(bone[_parent_of(N_UPLEG[side])])
 	for side: String in SIDES:
 		var is_l := side == "L"
 		var ph := fposmod(phase + (0.0 if is_l else 0.5), 1.0)
@@ -639,18 +702,26 @@ func _animate(delta: float, speed: float, run_t: float, grounded: bool, vy: floa
 		if moving and grounded and w > 0.5 and ph < float(_prev_ph[side]) - 0.5:
 			footstep.emit(speed)
 		_prev_ph[side] = ph
-		_solve_limb(hip_n, N_LOLEG[side], N_FOOT[side], target, pole)
-		_global(N_FOOT[side], Quaternion(Vector3.RIGHT, fpitch - 0.25 * air))
+		var q_lo := _solve_limb_g(hip_n, N_LOLEG[side], N_FOOT[side], target, pole, g_hip[side])
+		skeleton.set_bone_pose_rotation(bone[N_FOOT[side]], q_lo.inverse() * Quaternion(Vector3.RIGHT, fpitch - 0.25 * air))
 		var toe: String = N_TOE[side]
 		if bone.has(toe):
 			_local(toe, Quaternion.IDENTITY)
 
+	if Actor.prof:
+		_pt = Actor._prof_add("a_jambes", _pt)
 	# --- bras : animation libre (FK), puis IK pondérée si le mortier les guide
 	var targets: Array = [null, null]
 	if hand_provider.is_valid():
 		targets = hand_provider.call()
+	if Actor.prof:
+		_pt = Actor._prof_add("a_mains", _pt)
 	var swing := lerpf(0.5, 1.0, run_t) * w
 	var hunch_arm := 0.12 * hunch
+	var g_clp := {}
+	if targets[0] != null or targets[1] != null:
+		for sd: String in ["R", "L"]:
+			g_clp[sd] = skeleton.get_bone_global_pose(bone[_parent_of(N_CLAV[sd])])
 	for idx in 2:
 		var side := "R" if idx == 0 else "L"
 		var is_l := side == "L"
@@ -687,15 +758,18 @@ func _animate(delta: float, speed: float, run_t: float, grounded: bool, vy: floa
 		var pole := Vector3(0.5 * sgn, -1.0, -0.45)
 		if tg.has("pole"):
 			pole = _dir_to_skel(tg["pole"]).normalized()
-		_solve_limb(up, lo, wr, wrist, pole)
+		var g_upp := _global_from(_parent_of(up), _parent_of(cl), g_clp[side])
+		var q_lo2 := _solve_limb_g(up, lo, wr, wrist, pole, g_upp)
 		var br := _frame(hand_f[side], palm_n[side])
 		var bt := _frame(f_w, p_w)
-		_global(wr, (bt * br.inverse()).get_rotation_quaternion())
+		skeleton.set_bone_pose_rotation(bone[wr], q_lo2.inverse() * (bt * br.inverse()).get_rotation_quaternion())
 		if wt < 0.999:
 			for i in 3:
 				var ik_q := skeleton.get_bone_pose_rotation(bone[ids[i]]).normalized()
 				skeleton.set_bone_pose_rotation(bone[ids[i]], fk_q[i].slerp(ik_q, wt))
 		_curl_fingers(side, lerpf(fk_curl, tg.get("curl", 0.9), wt), lerpf(0.4, tg.get("thumb", 0.4), wt), tg.get("index", 0.0) * wt, tg.get("middle", 0.0) * wt)
+	if Actor.prof:
+		_pt = Actor._prof_add("a_bras", _pt)
 	if fall > 0.002 or _fall_on:
 		_fall_on = fall > 0.002
 		_apply_fall()

@@ -636,6 +636,13 @@ func _assign_arrest(t: Node3D, n_cops: int) -> void:
 
 # =================================================================== boucle
 func _physics_process(delta: float) -> void:
+	var t0 := Time.get_ticks_usec() if Actor.prof else 0
+	_police_tick(delta)
+	if Actor.prof:
+		Actor._prof_add("police", t0)
+
+
+func _police_tick(delta: float) -> void:
 	_t += delta
 	_run_queue()
 	cops = cops.filter(func(c): return is_instance_valid(c))

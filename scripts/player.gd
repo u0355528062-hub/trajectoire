@@ -385,6 +385,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	var t0 := Time.get_ticks_usec() if Actor.prof else 0
+	_player_tick(delta)
+	if Actor.prof:
+		Actor._prof_add("joueur", t0)
+
+
+func _player_tick(delta: float) -> void:
 	# --- entrée
 	var iv := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var wants_run := Input.is_action_pressed("run") and iv.y <= 0.3 and iv.length() > 0.1 and not crouching
