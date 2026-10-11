@@ -80,14 +80,14 @@ func _move(delta: float) -> void:
 
 
 ## Mise à jour rare de loin / hors champ (le gestionnaire choisit `every`)
-func tick(delta: float, anim_every: int) -> void:
+func tick_every(delta: float, anim_every: int) -> void:
 	_skip_acc += delta
 	_skip += 1
 	if _skip % maxi(anim_every, 1) != 0:
 		return
 	var dd := _skip_acc
 	_skip_acc = 0.0
-	super.tick(dd, 1)
+	super.tick(dd, true)
 
 
 # =================================================================== poses

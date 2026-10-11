@@ -1,104 +1,171 @@
 class_name UiKit
 extends RefCounted
-## Petits composants d'interface soignés (verre sombre, accent ambre) : interrupteur, curseur, bouton,
-## capsule de touche, rangée de réglage. Utilisés par le menu Échap.
+## Composants d'interface aux couleurs de la charte (voir UiStyle) : bouton (principal, secondaire,
+## segment, onglet, discret), interrupteur, curseur, capsule de touche, rangée de réglage.
+## Utilisés par le menu Échap, les réglages et l'écran titre.
 
-const AMBER := Color(1.0, 0.72, 0.28)
-const AMBER_SOFT := Color(1.0, 0.72, 0.28, 0.18)
-const GLASS := Color(0.05, 0.055, 0.085, 0.9)
-const GLASS_LIGHT := Color(0.11, 0.12, 0.17, 0.92)
-const TEXT := Color(0.94, 0.95, 0.98)
-const MUTED := Color(0.94, 0.95, 0.98, 0.58)
-const LINE := Color(1, 1, 1, 0.09)
-
-static var _grabber: Texture2D
-static var _title_font: Font
+# Anciens noms conservés : ils pointent vers la nouvelle palette
+const AMBER := UiStyle.RED
+const AMBER_SOFT := Color(0.925, 0.2, 0.15, 0.18)
+const GLASS := UiStyle.INK_PANEL
+const GLASS_LIGHT := Color(0.1, 0.095, 0.105, 0.94)
+const TEXT := UiStyle.PAPER
+const MUTED := UiStyle.PAPER_DIM
+const LINE := UiStyle.LINE
 
 
 static func title_font() -> Font:
-	if _title_font == null:
-		var f := load("res://assets/fonts/PermanentMarker-Regular.ttf")
-		_title_font = f if f is Font else ThemeDB.fallback_font
-	return _title_font
+	return UiStyle.font("marker")
 
 
-static func style(bg: Color, radius := 14, border := LINE, bw := 1, margin := 12.0, shadow := 0) -> StyleBoxFlat:
-	var s := StyleBoxFlat.new()
-	s.bg_color = bg
-	s.set_corner_radius_all(radius)
-	s.set_border_width_all(bw)
-	s.border_color = border
-	s.set_content_margin_all(margin)
+static func style(bg: Color, radius := 6, border := LINE, bw := 1, margin := 12.0, shadow := 0) -> StyleBoxFlat:
+	var s := UiStyle.box(bg, radius, border, bw, margin)
 	if shadow > 0:
-		s.shadow_color = Color(0, 0, 0, 0.45)
-		s.shadow_size = shadow
-	s.anti_aliasing = true
+		UiStyle.soft_shadow(s, 0.5, shadow, Vector2(0, 6))
 	return s
 
 
-static func label(text: String, size := 15, color := TEXT) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", color)
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return l
+static func label(text: String, size := 16, color := TEXT, kind := "regular") -> Label:
+	return UiStyle.label(text, size, color, kind)
 
 
-static func _grabber_tex() -> Texture2D:
-	if _grabber == null:
-		var img := Image.create(40, 40, false, Image.FORMAT_RGBA8)
-		for y in 40:
-			for x in 40:
-				var d := Vector2(x + 0.5, y + 0.5).distance_to(Vector2(20, 20))
-				var a := clampf(19.0 - d, 0.0, 1.0)
-				var ring := clampf(d - 12.0, 0.0, 1.0)
-				var col := Color(1.0, 0.86, 0.55).lerp(Color(1.0, 0.72, 0.28), clampf((y - 10.0) / 24.0, 0.0, 1.0))
-				col = col.lerp(Color(1, 1, 1), (1.0 - ring) * 0.0)
-				img.set_pixel(x, y, Color(col.r, col.g, col.b, a))
-		_grabber = ImageTexture.create_from_image(img)
-	return _grabber
-
-
-## Bouton principal / secondaire
+## Bouton. Variantes : "primary" (rouge), "secondary" (encre), "seg" (segment de choix),
+## "tab" (onglet souligné), "ghost" (discret, pour « Retour »). Au survol : papier crème et ombre
+## rouge décalée, petit rebond.
 class Btn extends Button:
-	var primary := false
-	var _hover := 0.0
+	var kind := "secondary"
+	var _hover_k := 0.0
 
-	func _init(txt := "", is_primary := false) -> void:
+	func _init(txt := "", is_primary := false, variant := "") -> void:
 		text = txt
-		primary = is_primary
+		kind = variant if variant != "" else ("primary" if is_primary else "secondary")
 		focus_mode = Control.FOCUS_ALL
-		custom_minimum_size = Vector2(0, 52 if is_primary else 46)
-		add_theme_font_size_override("font_size", 19 if is_primary else 16)
-		add_theme_color_override("font_color", Color(0.1, 0.07, 0.02) if is_primary else UiKit.TEXT)
-		add_theme_color_override("font_hover_color", Color(0.1, 0.07, 0.02) if is_primary else Color.WHITE)
-		add_theme_color_override("font_pressed_color", Color(0.1, 0.07, 0.02) if is_primary else Color.WHITE)
-		add_theme_color_override("font_focus_color", Color(0.1, 0.07, 0.02) if is_primary else Color.WHITE)
-		var n := UiKit.style(UiKit.AMBER if is_primary else Color(1, 1, 1, 0.06), 14, Color(1, 1, 1, 0.0) if is_primary else UiKit.LINE, 1, 10.0)
-		var h := UiKit.style(Color(1.0, 0.8, 0.42) if is_primary else Color(1, 1, 1, 0.13), 14, UiKit.AMBER if not is_primary else Color(1, 1, 1, 0.5), 1, 10.0)
-		var p := UiKit.style(Color(0.9, 0.62, 0.2) if is_primary else Color(1, 1, 1, 0.2), 14, UiKit.AMBER, 1, 10.0)
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		match kind:
+			"primary":
+				_setup(UiStyle.RED, UiStyle.PAPER, 56, 19, "caps")
+			"secondary":
+				_setup(Color(UiStyle.PAPER, 0.05), UiStyle.PAPER, 50, 17, "caps")
+			"seg":
+				_setup_seg()
+			"tab":
+				_setup_tab()
+			"ghost":
+				_setup_ghost()
+		mouse_entered.connect(func(): _hover(true))
+		mouse_exited.connect(func(): _hover(false))
+		focus_entered.connect(func(): _hover(true))
+		focus_exited.connect(func(): _hover(false))
+
+	func _setup(bg: Color, fg: Color, h: int, fs: int, font_kind: String) -> void:
+		custom_minimum_size = Vector2(0, h)
+		add_theme_font_override("font", UiStyle.font(font_kind))
+		add_theme_font_size_override("font_size", fs)
+		var n := UiStyle.box(bg, 4, Color(UiStyle.PAPER, 0.0 if kind == "primary" else 0.14), 0 if kind == "primary" else 1, 12.0)
+		var hv := UiStyle.print_shadow(UiStyle.box(UiStyle.PAPER, 4, UiStyle.PAPER, 0, 12.0), UiStyle.RED, Vector2(5, 5))
+		var p := UiStyle.box(UiStyle.RED_DEEP if kind == "primary" else UiStyle.RED, 4, UiStyle.RED, 0, 12.0)
+		var d := UiStyle.box(Color(UiStyle.PAPER, 0.03), 4, Color(UiStyle.PAPER, 0.06), 1, 12.0)
 		add_theme_stylebox_override("normal", n)
-		add_theme_stylebox_override("hover", h)
+		add_theme_stylebox_override("hover", hv)
+		add_theme_stylebox_override("hover_pressed", hv)
 		add_theme_stylebox_override("pressed", p)
-		add_theme_stylebox_override("focus", h)
-		mouse_entered.connect(func(): _tween_scale(1.025))
-		mouse_exited.connect(func(): _tween_scale(1.0))
-		focus_entered.connect(func(): _tween_scale(1.025))
-		focus_exited.connect(func(): _tween_scale(1.0))
+		add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		add_theme_stylebox_override("disabled", d)
+		add_theme_color_override("font_color", fg)
+		add_theme_color_override("font_hover_color", UiStyle.INK)
+		add_theme_color_override("font_hover_pressed_color", UiStyle.INK)
+		add_theme_color_override("font_pressed_color", UiStyle.PAPER)
+		add_theme_color_override("font_focus_color", fg)
+		add_theme_color_override("font_disabled_color", UiStyle.PAPER_MUTE)
+
+	func _setup_seg() -> void:
+		toggle_mode = true
+		custom_minimum_size = Vector2(0, 38)
+		add_theme_font_override("font", UiStyle.font("semibold"))
+		add_theme_font_size_override("font_size", 15)
+		var n := UiStyle.box(Color(UiStyle.PAPER, 0.04), 3, Color(UiStyle.PAPER, 0.14), 1, 8.0)
+		n.content_margin_left = 14
+		n.content_margin_right = 14
+		var hv := UiStyle.box(Color(UiStyle.PAPER, 0.14), 3, Color(UiStyle.PAPER, 0.4), 1, 8.0)
+		hv.content_margin_left = 14
+		hv.content_margin_right = 14
+		var on := UiStyle.print_shadow(UiStyle.box(UiStyle.PAPER, 3, UiStyle.PAPER, 1, 8.0), UiStyle.RED, Vector2(3, 3))
+		on.content_margin_left = 14
+		on.content_margin_right = 14
+		add_theme_stylebox_override("normal", n)
+		add_theme_stylebox_override("hover", hv)
+		add_theme_stylebox_override("pressed", on)
+		add_theme_stylebox_override("hover_pressed", on)
+		add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		add_theme_color_override("font_color", UiStyle.PAPER_DIM)
+		add_theme_color_override("font_hover_color", UiStyle.PAPER)
+		add_theme_color_override("font_pressed_color", UiStyle.INK)
+		add_theme_color_override("font_hover_pressed_color", UiStyle.INK)
+		add_theme_color_override("font_focus_color", UiStyle.PAPER)
+
+	func _setup_tab() -> void:
+		toggle_mode = true
+		custom_minimum_size = Vector2(0, 46)
+		add_theme_font_override("font", UiStyle.font("caps"))
+		add_theme_font_size_override("font_size", 16)
+		var n := UiStyle.box(Color(0, 0, 0, 0), 0, Color(UiStyle.PAPER, 0.0), 0, 10.0)
+		n.border_width_bottom = 3
+		n.content_margin_left = 18
+		n.content_margin_right = 18
+		var hv := n.duplicate() as StyleBoxFlat
+		hv.border_color = Color(UiStyle.PAPER, 0.25)
+		var on := n.duplicate() as StyleBoxFlat
+		on.border_color = UiStyle.RED
+		add_theme_stylebox_override("normal", n)
+		add_theme_stylebox_override("hover", hv)
+		add_theme_stylebox_override("pressed", on)
+		add_theme_stylebox_override("hover_pressed", on)
+		add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		add_theme_color_override("font_color", UiStyle.PAPER_MUTE)
+		add_theme_color_override("font_hover_color", UiStyle.PAPER_DIM)
+		add_theme_color_override("font_pressed_color", UiStyle.PAPER)
+		add_theme_color_override("font_hover_pressed_color", UiStyle.PAPER)
+		add_theme_color_override("font_focus_color", UiStyle.PAPER)
+
+	func _setup_ghost() -> void:
+		custom_minimum_size = Vector2(0, 40)
+		add_theme_font_override("font", UiStyle.font("caps"))
+		add_theme_font_size_override("font_size", 14)
+		var n := UiStyle.box(Color(0, 0, 0, 0), 4, Color(UiStyle.PAPER, 0.16), 1, 8.0)
+		n.content_margin_left = 14
+		n.content_margin_right = 16
+		var hv := UiStyle.box(UiStyle.PAPER, 4, UiStyle.PAPER, 1, 8.0)
+		hv.content_margin_left = 14
+		hv.content_margin_right = 16
+		add_theme_stylebox_override("normal", n)
+		add_theme_stylebox_override("hover", hv)
+		add_theme_stylebox_override("pressed", hv)
+		add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		add_theme_color_override("font_color", UiStyle.PAPER_DIM)
+		add_theme_color_override("font_hover_color", UiStyle.INK)
+		add_theme_color_override("font_pressed_color", UiStyle.INK)
+		add_theme_color_override("font_focus_color", UiStyle.PAPER)
+		add_theme_color_override("icon_normal_color", UiStyle.PAPER_DIM)
+		add_theme_color_override("icon_hover_color", UiStyle.INK)
+		add_theme_color_override("icon_pressed_color", UiStyle.INK)
+		add_theme_color_override("icon_focus_color", UiStyle.PAPER)
+		add_theme_constant_override("icon_max_width", 14)
+		add_theme_constant_override("h_separation", 8)
+		icon = UiIcons.tex("chevron", 28)
 
 	func _notification(what: int) -> void:
 		if what == NOTIFICATION_RESIZED:
 			pivot_offset = size * 0.5
 
-	func _tween_scale(k: float) -> void:
+	func _hover(on: bool) -> void:
+		if kind == "tab" or kind == "seg":
+			return
 		pivot_offset = size * 0.5
-		var tw := create_tween()
-		tw.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-		tw.tween_property(self, "scale", Vector2.ONE * k, 0.12)
+		var tw := create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		tw.tween_property(self, "scale", Vector2.ONE * (1.03 if on else 1.0), 0.16)
 
 
-## Interrupteur animé
+## Interrupteur animé : pilule rouge quand activé, pastille crème
 class Switch extends Control:
 	signal toggled(on: bool)
 	var on := false:
@@ -106,13 +173,17 @@ class Switch extends Control:
 			on = v
 			queue_redraw()
 	var _k := 0.0
+	var _hov := false
 
 	func _init(initial := false) -> void:
 		on = initial
 		_k = 1.0 if initial else 0.0
-		custom_minimum_size = Vector2(54, 28)
+		custom_minimum_size = Vector2(58, 30)
+		size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		focus_mode = Control.FOCUS_ALL
 		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		mouse_entered.connect(func(): _hov = true; queue_redraw())
+		mouse_exited.connect(func(): _hov = false; queue_redraw())
 
 	func _gui_input(e: InputEvent) -> void:
 		if (e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT) or e.is_action_pressed("ui_accept"):
@@ -123,18 +194,24 @@ class Switch extends Control:
 	func _process(delta: float) -> void:
 		var want := 1.0 if on else 0.0
 		if absf(_k - want) > 0.001:
-			_k = move_toward(_k, want, delta * 9.0)
+			_k = move_toward(_k, want, delta * 7.0)
 			queue_redraw()
 
 	func _draw() -> void:
 		var r := Rect2(Vector2.ZERO, size)
-		var e := _k * _k * (3.0 - 2.0 * _k)
-		draw_style_box(UiKit.style(Color(1, 1, 1, 0.1).lerp(UiKit.AMBER, e), int(size.y * 0.5), Color(1, 1, 1, 0.14 * (1.0 - e)), 1, 0.0), r)
+		var e := UiStyle.smooth(_k)
+		var bg := Color(UiStyle.PAPER, 0.1 if not _hov else 0.16).lerp(UiStyle.RED, e)
+		draw_style_box(UiStyle.box(bg, int(size.y * 0.5), Color(UiStyle.PAPER, 0.22 * (1.0 - e)), 1, 0.0), r)
+		var rad := size.y * 0.5 - 4.0
 		var cx := lerpf(size.y * 0.5, size.x - size.y * 0.5, e)
-		draw_circle(Vector2(cx, size.y * 0.5 + 1.0), size.y * 0.5 - 3.0, Color(0, 0, 0, 0.25))
-		draw_circle(Vector2(cx, size.y * 0.5), size.y * 0.5 - 3.0, Color(1, 1, 1, 0.96))
+		draw_circle(Vector2(cx + 1.0, size.y * 0.5 + 1.5), rad, Color(0, 0, 0, 0.3), true, -1.0, true)
+		draw_circle(Vector2(cx, size.y * 0.5), rad, UiStyle.PAPER, true, -1.0, true)
+		if e > 0.5:
+			var tk := UiIcons.tex("check", 32)
+			var s := rad * 1.1
+			draw_texture_rect(tk, Rect2(cx - s * 0.5, size.y * 0.5 - s * 0.5, s, s), false, Color(UiStyle.RED, (e - 0.5) * 2.0))
 		if has_focus():
-			draw_arc(Vector2(cx, size.y * 0.5), size.y * 0.5 - 1.0, 0.0, TAU, 24, UiKit.AMBER, 1.5, true)
+			draw_style_box(UiStyle.box(Color(0, 0, 0, 0), int(size.y * 0.5) + 3, UiStyle.PAPER, 2, 0.0), r.grow(3.0))
 
 
 static func slider(minv: float, maxv: float, step: float, value: float) -> HSlider:
@@ -143,61 +220,69 @@ static func slider(minv: float, maxv: float, step: float, value: float) -> HSlid
 	s.max_value = maxv
 	s.step = step
 	s.value = value
-	s.custom_minimum_size = Vector2(260, 30)
+	s.custom_minimum_size = Vector2(240, 30)
 	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	s.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	s.focus_mode = Control.FOCUS_ALL
-	var track := style(Color(1, 1, 1, 0.1), 5, Color(0, 0, 0, 0), 0, 0.0)
-	track.content_margin_top = 4
-	track.content_margin_bottom = 4
-	var fill := style(AMBER, 5, Color(0, 0, 0, 0), 0, 0.0)
-	fill.content_margin_top = 4
-	fill.content_margin_bottom = 4
+	s.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var track := UiStyle.box(Color(UiStyle.PAPER, 0.14), 3)
+	track.content_margin_top = 3
+	track.content_margin_bottom = 3
+	var fill := UiStyle.box(UiStyle.RED, 3)
+	fill.content_margin_top = 3
+	fill.content_margin_bottom = 3
 	s.add_theme_stylebox_override("slider", track)
 	s.add_theme_stylebox_override("grabber_area", fill)
 	s.add_theme_stylebox_override("grabber_area_highlight", fill)
-	var gt := _grabber_tex()
-	s.add_theme_icon_override("grabber", gt)
-	s.add_theme_icon_override("grabber_highlight", gt)
-	s.add_theme_icon_override("grabber_disabled", gt)
+	s.add_theme_icon_override("grabber", UiIcons.tex("grab", 24))
+	s.add_theme_icon_override("grabber_highlight", UiIcons.tex("grab_hl", 26))
+	s.add_theme_icon_override("grabber_disabled", UiIcons.tex("grab", 24))
+	s.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	return s
 
 
 static func keycap(text: String) -> PanelContainer:
-	var p := PanelContainer.new()
-	var s := style(Color(1, 1, 1, 0.1), 7, Color(1, 1, 1, 0.26), 1, 5.0)
-	s.content_margin_left = 9
-	s.content_margin_right = 9
-	s.border_width_bottom = 3
-	p.add_theme_stylebox_override("panel", s)
-	p.add_child(label(text, 13, TEXT))
-	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return p
+	return UiStyle.keycap(text, 15)
 
 
-## Ligne de réglage : libellé + description à gauche, contrôle à droite
+## Ligne de réglage : intitulé + description à gauche, contrôle à droite, filet en dessous.
+## S'éclaire légèrement au survol.
 static func row(title: String, hint: String, control: Control, value_label: Label = null) -> Control:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", style(Color(1, 1, 1, 0.035), 12, Color(1, 1, 1, 0.05), 1, 12.0))
+	var st := UiStyle.box(Color(UiStyle.PAPER, 0.0), 4, UiStyle.LINE, 0, 0.0)
+	st.border_width_bottom = 1
+	st.content_margin_left = 14
+	st.content_margin_right = 14
+	st.content_margin_top = 12
+	st.content_margin_bottom = 12
+	panel.add_theme_stylebox_override("panel", st)
+	panel.mouse_filter = Control.MOUSE_FILTER_PASS
+	panel.mouse_entered.connect(func(): st.bg_color = Color(UiStyle.PAPER, 0.04))
+	panel.mouse_exited.connect(func(): st.bg_color = Color(UiStyle.PAPER, 0.0))
 	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 18)
+	h.add_theme_constant_override("separation", 24)
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(h)
 	var left := VBoxContainer.new()
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	left.add_theme_constant_override("separation", 1)
+	left.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	left.add_theme_constant_override("separation", 2)
+	left.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.add_child(left)
-	left.add_child(label(title, 16, TEXT))
+	left.add_child(UiStyle.label(title, 18, UiStyle.PAPER, "semibold"))
 	if hint != "":
-		var hl := label(hint, 12, MUTED)
+		var hl := UiStyle.label(hint, 14, UiStyle.PAPER_MUTE)
 		hl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		hl.custom_minimum_size.x = 230
+		hl.custom_minimum_size.x = 260
 		left.add_child(hl)
 	var right := HBoxContainer.new()
-	right.add_theme_constant_override("separation", 12)
+	right.add_theme_constant_override("separation", 14)
 	right.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	right.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	h.add_child(right)
 	right.add_child(control)
 	if value_label != null:
-		value_label.custom_minimum_size.x = 56
+		value_label.custom_minimum_size.x = 64
 		value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		right.add_child(value_label)
 	return panel

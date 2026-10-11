@@ -206,23 +206,10 @@ func _update_followers(delta: float) -> void:
 
 
 # =================================================================== boucle (LOD)
-## Le gestionnaire de foule passe `every` (1 près de la caméra, 3+ loin ou hors champ) : loin, on ne fait
-## la mise à jour complète qu'une image sur `every`, avec le temps accumulé.
-func tick(delta: float, anim_every: int) -> void:
-	if anim_every <= 2:
-		var d := delta + _skip_acc
-		_skip_acc = 0.0
-		super.tick(d, anim_every)
-		_update_followers(d)
-		return
-	_skip_acc += delta
-	_skip += 1
-	if _skip % anim_every != 0:
-		return
-	var dd := _skip_acc
-	_skip_acc = 0.0
-	super.tick(dd, 1)
-	_update_followers(dd)
+## La foule espace déjà les mises à jour selon la distance (temps accumulé dans `delta`)
+func tick(delta: float, anim: bool) -> void:
+	super.tick(delta, anim)
+	_update_followers(delta)
 
 
 func _speed() -> float:

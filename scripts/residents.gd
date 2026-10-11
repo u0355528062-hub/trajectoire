@@ -102,7 +102,7 @@ func _tick_residents(delta: float) -> void:
 			every = maxi(every * 3, 6)
 			lod = 2
 		r.human.lod = lod
-		r.tick(delta, every)
+		r.tick_every(delta, every)
 
 
 func _update(_dt: float) -> void:
