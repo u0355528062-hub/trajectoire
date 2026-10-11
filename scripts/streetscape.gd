@@ -203,6 +203,15 @@ func is_free(p: Vector2, r: float, allow_route := false) -> bool:
 	return true
 
 
+## Cherche une place libre près de `p` (petits décalages, d'abord le long de la rue). Renvoie null si aucune.
+func find_spot(p: Vector2, r: float, allow_route := false) -> Variant:
+	for d in [Vector2.ZERO, Vector2(1, 0), Vector2(-1, 0), Vector2(2, 0), Vector2(-2, 0), Vector2(0, 0.6), Vector2(0, -0.6),
+			Vector2(3, 0), Vector2(-3, 0), Vector2(4, 0), Vector2(-4, 0)]:
+		if is_free(p + d, r, allow_route):
+			return p + d
+	return null
+
+
 # ------------------------------------------------------------------ bordures et caniveaux
 func _build_lowered() -> void:
 	for c in crossings:
@@ -614,8 +623,9 @@ func _build_furniture() -> void:
 			[Vector2(66.0, 1.2), 0.0, true], [Vector2(-25.0, -13.1), PI, false], [Vector2(24.0, -13.1), PI, false],
 			[Vector2(9.3, -18.6), -PI * 0.5, false], [Vector2(-64.0, -13.2), PI, false], [Vector2(80.0, -13.2), PI, false],
 			[Vector2(-12.0, 17.6), PI, false], [Vector2(8.5, 17.6), PI, false]]:
-		var p: Vector2 = bp[0]
-		if is_free(p, 0.9):
+		var sp: Variant = find_spot(bp[0], 0.9)
+		if sp != null:
+			var p: Vector2 = sp
 			add_child(Landmarks.bench(Vector3(p.x, 0, p.y), bp[1], bp[2], crowd))
 			take(p, 1.0)
 			count("banc")
@@ -623,15 +633,17 @@ func _build_furniture() -> void:
 	for p in [Vector2(-26.5, -3.3), Vector2(25.0, -3.3), Vector2(-22.0, -11.6), Vector2(18.5, -11.6), Vector2(17.6, 10.0),
 			Vector2(-13.3, 12.0), Vector2(-60.0, -3.4), Vector2(64.0, -3.4), Vector2(-46.4, 22.0), Vector2(-71.6, -30.0),
 			Vector2(30.2, 11.6), Vector2(-3.5, 15.4), Vector2(2.0, -21.5)]:
-		if is_free(p, 0.35):
-			_prop(BagBin.new(), p, _rng.randf() * TAU)
+		var sp: Variant = find_spot(p, 0.35)
+		if sp != null:
+			_prop(BagBin.new(), sp, _rng.randf() * TAU)
 			count("corbeille")
 	# poubelles à roulettes au pied des immeubles (couvercles : vert ordures, jaune tri, blanc verre)
 	for tb in [[Vector2(-37.0, 18.1), Color(0.11, 0.25, 0.16)], [Vector2(36.6, -25.0), Color(0.85, 0.68, 0.08)],
 			[Vector2(-35.4, -25.1), Color(0.88, 0.88, 0.85)], [Vector2(-45.2, 30.0), Color(0.11, 0.25, 0.16)],
 			[Vector2(-44.6, 30.8), Color(0.85, 0.68, 0.08)]]:
-		var p: Vector2 = tb[0]
-		if is_free(p, 0.45, true):
+		var sp: Variant = find_spot(tb[0], 0.45, true)
+		if sp != null:
+			var p: Vector2 = sp
 			var bin := TrashBin.new()
 			bin.body_color = Color(0.11, 0.25, 0.16)
 			bin.lid_color = tb[1]
@@ -642,16 +654,18 @@ func _build_furniture() -> void:
 			count("poubelle")
 	# arceaux à vélos (groupes)
 	for g in [[Vector2(21.5, 16.6), 5, 0.0], [Vector2(-66.0, -21.0), 4, 0.0], [Vector2(70.0, 15.5), 4, 0.0]]:
-		var p: Vector2 = g[0]
-		if is_free(p, 0.6 * g[1] * 0.5 + 0.4, true):
+		var sp: Variant = find_spot(g[0], 0.6 * g[1] * 0.5 + 0.4, true)
+		if sp != null:
+			var p: Vector2 = sp
 			add_child(Landmarks.bike_racks(Vector3(p.x, 0, p.y), g[1], g[2], crowd))
 			take(p, 0.45 * g[1] + 0.3)
 			count("arceaux", g[1])
 	# jardinières (bacs plantés)
 	for j in [[Vector2(3.0, 12.8), 0.0], [Vector2(9.0, 12.6), 0.0], [Vector2(-10.5, 11.2), 0.0], [Vector2(36.0, 15.6), PI * 0.5],
 			[Vector2(-40.0, 15.0), PI * 0.5], [Vector2(-30.0, -16.0), 0.0]]:
-		var p: Vector2 = j[0]
-		if is_free(p, 1.0, true):
+		var sp: Variant = find_spot(j[0], 1.0, true)
+		if sp != null:
+			var p: Vector2 = sp
 			add_child(Landmarks.planter_box(Vector3(p.x, 0, p.y), j[1], _rng.randi(), crowd))
 			take(p, 1.1)
 			count("jardiniere")
@@ -663,8 +677,9 @@ func _build_furniture() -> void:
 		[Vector2(nr.position.x - 0.5, Quartier.NORTH_Z + 1.2), "one_way", -PI * 0.5], [Vector2(nr.end.x + 0.5, Quartier.NORTH_Z + 1.4), "zone30", PI],
 		[Vector2(sr.end.x + 0.5, Quartier.SOUTH_Z - 1.2), "zone30", 0.0], [Vector2(sr.position.x - 0.5, Quartier.SOUTH_Z - 1.4), "one_way", PI * 0.5]]
 	for sg in signs:
-		var p: Vector2 = sg[0]
-		if is_free(p, 0.25, true):
+		var sp: Variant = find_spot(sg[0], 0.25)
+		if sp != null:
+			var p: Vector2 = sp
 			var rs := RoadSign.new()
 			rs.kind = sg[1]
 			_prop(rs, p, sg[2])
@@ -675,8 +690,9 @@ func _build_furniture() -> void:
 			[Vector2(66.0, Quartier.ROAD_Z0 - 0.6), 0.0], [Vector2(90.0, Quartier.ROAD_Z0 - 0.6), 0.0], [Vector2(7.0, Quartier.ROAD_Z0 - 0.6), 0.0],
 			[Vector2(nr.position.x - 0.6, 34.0), PI * 0.5], [Vector2(nr.end.x + 0.6, 52.0), -PI * 0.5],
 			[Vector2(sr.position.x - 0.6, -40.0), PI * 0.5], [Vector2(sr.end.x + 0.6, -58.0), -PI * 0.5]]:
-		var p: Vector2 = lp[0]
-		if is_free(p, 0.3, true):
+		var sp: Variant = find_spot(lp[0], 0.3)
+		if sp != null:
+			var p: Vector2 = sp
 			var lamp := LampPost.new()
 			lamp.crowd = crowd
 			lamp.position = Vector3(p.x, 0, p.y)
