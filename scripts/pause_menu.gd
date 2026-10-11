@@ -41,7 +41,8 @@ func _ready() -> void:
 	UiStyle.apply_theme(get_tree())
 	Settings.load_all()
 	Settings.apply(get_tree())
-	get_tree().node_added.connect(Settings.route_player)
+	if not get_tree().node_added.is_connected(Settings.route_player):
+		get_tree().node_added.connect(Settings.route_player)
 	_save_timer = Timer.new()
 	_save_timer.one_shot = true
 	_save_timer.wait_time = 0.5

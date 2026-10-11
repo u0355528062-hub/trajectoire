@@ -37,6 +37,43 @@ const CROSSWALKS := [-50.0, -10.0, 30.0]              # passages piétons en tra
 const TREE_ROWS := [-2.3, -12.2]                      # alignements de platanes (z), un arbre tous les ~9 m
 const TREE_SKIP := [Vector2(-3.5, 3.5), Vector2(40.0, 60.0)]   # pas d'arbre : devant l'abribus, au barrage de police
 
+# --- lieux nommés de l'histoire (campagne) : ids stables utilisés par les chapitres (scripts/story/*.gd).
+# Positions au sol ; le module Carte les ajuste aux bâtiments réels (voir docs/CAMPAGNE.md § « Lieux »).
+const SPOTS := {
+	"depart": Vector3(0.0, 0.0, 0.0),            # point de départ d'origine du joueur
+	"square": Vector3(-24.0, 0.0, 14.0),         # square (rassemblement des premiers jours)
+	"metro": Vector3(15.0, 0.0, 10.5),           # sortie du métro
+	"kiosque": Vector3(28.0, 0.0, 11.5),
+	"morris": Vector3(-6.0, 0.0, 12.0),          # colonne Morris (affiches)
+	"wallace": Vector3(6.5, 0.0, -17.0),
+	"abribus": Vector3(0.0, 0.0, -15.0),
+	"parking": Vector3(-27.0, 0.0, -19.0),
+	"velib": Vector3(18.0, 0.0, -14.0),
+	"bar_qg": Vector3(-12.0, 0.0, 16.0),         # café-bar « Le Zinc » de Jo (QG)
+	"boulangerie": Vector3(8.0, 0.0, 16.5),
+	"supermarche": Vector3(34.0, 0.0, -23.5),    # supérette / supermarché (étiquettes de prix)
+	"banque": Vector3(-4.0, 0.0, -23.5),
+	"pharmacie": Vector3(22.0, 0.0, 16.5),
+	"carrefour_ouest": Vector3(-50.0, 0.0, -7.4),
+	"rue_nord": Vector3(-50.0, 0.0, 40.0),       # rue adjacente nord (rue des Cerisiers)
+	"rue_nord_fond": Vector3(-50.0, 0.0, 70.0),
+	"rue_sud": Vector3(-77.0, 0.0, -45.0),       # rue adjacente sud (rue de la Forge)
+	"rue_sud_fond": Vector3(-77.0, 0.0, -75.0),
+	"station_service": Vector3(-77.0, 0.0, -70.0),
+	"cordon": Vector3(54.0, 0.0, -7.4),          # ligne de police d'origine (en travers du boulevard)
+	"parvis_mairie": Vector3(92.0, 0.0, -7.4),   # parvis de la mairie (bout est du boulevard)
+	"mairie": Vector3(102.0, 0.0, -7.4),
+}
+
+
+## Position d'un lieu nommé (erreur explicite si l'id n'existe pas)
+static func spot(id: String) -> Vector3:
+	if not SPOTS.has(id):
+		push_error("Quartier.spot : lieu inconnu « %s »" % id)
+		return Vector3.ZERO
+	return SPOTS[id]
+
+
 # --- stationnement le long de la chaussée (voitures garées) : [x0, x1, z]
 const PARK_LANES := [[-100.0, -60.0, -4.9], [-100.0, -60.0, -9.9], [62.0, 100.0, -4.9]]
 

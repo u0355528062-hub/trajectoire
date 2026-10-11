@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Lance Godot 4.4.1 avec un sémaphore machine (3 instances max) pour que les agents ne saturent pas les 4 cœurs.
+#   tools/dev/gd --headless --path . --fixed-fps 30 -s tools/tests/<test>.gd
+#   tools/dev/gd --render --path . --resolution 1280x720 -s tools/tests/shot1.gd -- /tmp/x.png 60   (rendu sous xvfb)
+GODOT=${GODOT:-/usr/local/bin/godot}
+SLOTS=${GD_SLOTS:-3}
+render=0
+args=()
+for a in "$@"; do
+	if [ "$a" = "--render" ]; then render=1; else args+=("$a"); fi
+done
+while :; do
+	for i in $(seq 1 "$SLOTS"); do
+		exec {fd}>"/tmp/godot-slot-$i.lock"
+		if flock -n "$fd"; then
+			if [ "$render" = 1 ]; then
+				nice -n 5 xvfb-run -a -s "-screen 0 1280x720x24" "$GODOT" "${args[@]}"
+			else
+				nice -n 5 "$GODOT" "${args[@]}"
+			fi
+			rc=$?
+			exec {fd}>&-
+			exit $rc
+		fi
+		exec {fd}>&-
+	done
+	sleep 3
+done
