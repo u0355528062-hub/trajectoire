@@ -993,6 +993,9 @@ func resolve(n: Actor, p: Vector3) -> Vector3:
 		p = _push_circle(p, src.global_position, r)
 	if player:
 		p = _push_circle(p, player.global_position, 0.48)
+	# passants : tout le quartier (trottoirs, rues adjacentes), pas seulement la zone de la manifestation
+	if n is Passerby:
+		return Passerby.street_clamp(p)
 	# les façades : personne ne traverse les murs (sauf les pilleurs dans une boutique ouverte)
 	var zlo := ParisStreet.SOUTH_Z + 0.35
 	var zhi := ParisStreet.NORTH_Z - 0.35
