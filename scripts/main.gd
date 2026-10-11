@@ -1,5 +1,5 @@
 extends Node3D
-## Monde : baseplate grise plate, ciel de crépuscule, lumière & post-traitement.
+## Monde : sol du quartier (plat), ciel de crépuscule, lumière & post-traitement.
 
 var player: Player
 
@@ -28,6 +28,7 @@ func _ready() -> void:
 	street.name = "ParisStreet"
 	street.crowd = crowd
 	add_child(street)
+	Streetscape.build(self, crowd)
 	var police := Police.new()
 	police.name = "Police"
 	police.setup(crowd, player, tension)
@@ -175,9 +176,7 @@ func _build_ground() -> void:
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(2400, 2400)
 	mi.mesh = plane
-	var mat := ShaderMaterial.new()
-	mat.shader = load("res://shaders/baseplate.gdshader")
-	mi.material_override = mat
+	mi.material_override = Streetscape.ground_material()
 	body.add_child(mi)
 	var cs := CollisionShape3D.new()
 	var box := BoxShape3D.new()
