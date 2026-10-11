@@ -28,6 +28,10 @@ func _ready() -> void:
 	street.name = "ParisStreet"
 	street.crowd = crowd
 	add_child(street)
+	var parking := Parking.new()          # voitures garées, parking, station de vélos (vandalisables)
+	parking.name = "Parking"
+	parking.crowd = crowd
+	add_child(parking)
 	var police := Police.new()
 	police.name = "Police"
 	police.setup(crowd, player, tension)

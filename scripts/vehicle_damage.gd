@@ -95,7 +95,7 @@ func _on_pane_broken(p: GlassPane, point: Vector3) -> void:
 	_vandal_event(point, 0.03)
 	pane_broken.emit(p)
 	if is_inside_tree():
-		get_tree().call_group("crowd", "on_event", "car_glass", {"pos": point, "car": car, "role": role})
+		_notify("car_glass", {"pos": point, "car": car, "role": role})
 
 
 func _vandal_event(point: Vector3, amount: float) -> void:
@@ -103,7 +103,12 @@ func _vandal_event(point: Vector3, amount: float) -> void:
 	if now - _last_evt < 1.0:
 		return
 	_last_evt = now
-	get_tree().call_group("crowd", "on_event", "car_vandal", {"pos": point, "car": car, "amount": amount})
+	_notify("car_vandal", {"pos": point, "car": car, "amount": amount})
+
+
+## Diffuse un événement « voiture » (foule, police, tension) ; surchargé par les voitures civiles
+func _notify(type: String, d: Dictionary) -> void:
+	get_tree().call_group("crowd", "on_event", type, d)
 
 
 # =================================================================== bosses
@@ -252,11 +257,7 @@ func ignite() -> void:
 	_burn_t = 0.0
 	car.add_to_group("fire_sources")
 	# foyers : compartiment moteur (capot) et habitacle
-	var specs: Array = []
-	if car.kind == "car":
-		specs = [[Vector3(0, 0.98, -1.45), Vector3(0.5, 0.05, 0.45), 0.62, 1.1], [Vector3(0, 1.0, 0.25), Vector3(0.4, 0.05, 0.8), 0.5, 0.9]]
-	else:
-		specs = [[Vector3(0, 1.4, -2.9), Vector3(0.7, 0.05, 0.3), 0.75, 1.3], [Vector3(0, 2.3, -2.0), Vector3(0.7, 0.05, 0.5), 0.6, 1.1]]
+	var specs := _fire_specs()
 	var first := true
 	for s in specs:
 		var fx := FireFx.new()
@@ -286,9 +287,16 @@ func ignite() -> void:
 	car.add_child(_roar)
 	_roar.play(randf() * 4.0)
 	var p := car.global_position + Vector3.UP * 1.0
-	get_tree().call_group("crowd", "on_event", "car_burn", {"pos": p, "car": car, "player": by_player})
+	_notify("car_burn", {"pos": p, "car": car, "player": by_player})
 	get_tree().call_group("crowd", "on_event", "fire_start", {"pos": p, "floor": false, "car": true, "bin": car})
 	ignited.emit()
+
+
+## Foyers [position locale, étendue, taille des flammes, taille de la fumée] : compartiment moteur puis habitacle
+func _fire_specs() -> Array:
+	if car.kind == "car":
+		return [[Vector3(0, 0.98, -1.45), Vector3(0.5, 0.05, 0.45), 0.62, 1.1], [Vector3(0, 1.0, 0.25), Vector3(0.4, 0.05, 0.8), 0.5, 0.9]]
+	return [[Vector3(0, 1.4, -2.9), Vector3(0.7, 0.05, 0.3), 0.75, 1.3], [Vector3(0, 2.3, -2.0), Vector3(0.7, 0.05, 0.5), 0.6, 1.1]]
 
 
 func _update_burn(delta: float) -> void:
@@ -332,7 +340,7 @@ func _apply_char() -> void:
 			var mi := m as MeshInstance3D
 			var mo := mi.material_override
 			var is_decal: bool = mo is StandardMaterial3D and (mo as StandardMaterial3D).albedo_texture != null and (mo as StandardMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED
-			if mo is StandardMaterial3D and (is_decal or mo == PoliceVehicle.mat("car_white") or mo == PoliceVehicle.mat("van_navy") or mo == PoliceVehicle.mat("glass")):
+			if mo is StandardMaterial3D and (is_decal or _charrable(mo)):
 				_mat_list.append([mi, mo])
 				mi.material_override = mo.duplicate()
 	for e in _mat_list:
@@ -345,6 +353,11 @@ func _apply_char() -> void:
 		mm.roughness = lerpf(orig.roughness, 0.95, charred)
 		mm.clearcoat_enabled = orig.clearcoat_enabled and charred < 0.4
 		mm.metallic_specular = lerpf(orig.metallic_specular, 0.2, charred)
+
+
+## Matériau de carrosserie (ou de vitre) qui noircit dans l'incendie
+func _charrable(mo: Material) -> bool:
+	return mo == PoliceVehicle.mat("car_white") or mo == PoliceVehicle.mat("van_navy") or mo == PoliceVehicle.mat("glass")
 
 
 func explode() -> void:
