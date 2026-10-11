@@ -109,20 +109,43 @@ voiture attaquée ou incendiée, projectiles sur les policiers…) et avec ce qu
 - **Appel (G)** près de l'abribus : les plus téméraires accourent, donnent des coups de pied dans les
   vitres ou lancent des pierres en criant « Ouais ! Allez ! ».
 
-## Le boulevard haussmannien
+## Le quartier
 
-La place est désormais un **boulevard parisien** : deux rangées continues d'immeubles en pierre de taille
-(rez-de-chaussée à refends, balcons filants en fer forgé aux 2e et 5e étages, persiennes, corniche à denticules,
-toits en zinc mansardés avec lucarnes et souches de cheminée, fenêtres éclairées le soir). Plus d'immeubles
-lointains en arrière-plan : la rue se referme sur elle-même.
+Un **petit quartier parisien vivant** autour d'un boulevard :
+- **Immeubles variés** en cinq familles : haussmanniens en pierre de taille (balcons filants, mansardes en zinc),
+  Belle Époque (bow-windows, consoles), immeubles de faubourg enduits (ocre, rose, crème…) à volets peints,
+  immeubles de brique et pierre, Art déco. Hauteurs, couleurs, garde-corps, volets, jardinières, balcons
+  habités (pots, chaises, climatiseurs), intérieurs de fenêtres allumés, pignons aveugles, plaques de rue
+  émaillées et numéros. Deux rues adjacentes (rue des Cerisiers, rue de la Forge) et des fronts d'immeubles qui
+  ferment la perspective aux deux bouts.
+- **Commerces** : boulangerie, café avec terrasse (guéridons, chaises bistrot), tabac avec sa carotte rouge,
+  pharmacie et sa croix verte, fleuriste et primeur avec étals, librairie, opticien, coiffeur, supérette,
+  banque… devantures en boiserie à lettres dorées, modernes à caisson lumineux, ou en pierre ; stores imprimés.
+- **Rue** : trottoirs, bordures en granit, caniveaux, pavés, platanes, square (pelouse, haies, bancs, arceaux),
+  entrée de métro Guimard, kiosque, colonne Morris, fontaine Wallace, passages piétons et **feux tricolores qui
+  fonctionnent**, potelets, corbeilles, lampadaires.
+- **Voitures garées** (une trentaine, modèles et couleurs variés), **parking** avec barrière et horodateur,
+  scooters, **station de vélos** : tout se vandalise ; une voiture frappée déclenche son **alarme**, et on peut
+  la **brûler** (fumigène ou journal enflammé près du moteur, vitre cassée) jusqu'à la carcasse.
+- **Passants** (couples, personnes âgées, gens au téléphone, avec leurs courses, leur chien…) qui traversent
+  le quartier, s'arrêtent pour filmer, puis s'éloignent quand ça chauffe ; **habitants aux fenêtres et aux
+  balcons** qui regardent, filment, applaudissent ou rentrent quand il y a du gaz.
+- Ciel de crépuscule nuageux, reflets du boulevard sur les vitres et le sol.
 
-**Deux immeubles sur trois** ont des commerces en rez-de-chaussée (banque, boulangerie, pharmacie, supérette,
-boutique de mode, café) avec une **grande vitrine feuilletée, difficile à briser** : il faut s'y reprendre à
-plusieurs coups de pied (F) ou plusieurs pavés. Une fois la vitrine tombée, **on peut entrer**. Quand ça chauffe
-(ÉCHAUFFOURÉES et au-delà), des casseurs s'en prennent d'eux-mêmes aux vitrines, la banque en priorité ;
-la brèche attire d'autres manifestants qui **s'engouffrent dans la boutique, renversent les rayonnages, les
-comptoirs, les distributeurs**, la marchandise vole, et certains ressortent les bras chargés. La foule
-acclame, la tension monte, et les CRS repèrent les casseurs à la sortie.
+**Deux immeubles sur trois** (le long du boulevard) ont des boutiques avec une **grande vitrine feuilletée,
+difficile à briser** : plusieurs coups de pied (F) ou plusieurs pavés. Une fois la vitrine tombée, **on peut
+entrer**. Quand ça chauffe, des casseurs s'en prennent d'eux-mêmes aux vitrines, la banque en priorité ; la
+brèche attire d'autres manifestants qui **s'engouffrent dans la boutique, renversent les rayonnages, les
+comptoirs, les distributeurs**, la marchandise vole, et certains ressortent les bras chargés.
+
+## Performances
+
+La foule compte environ **75 manifestants** (plus les CRS, les passants et les habitants). Pour que ça reste
+fluide : les personnages éloignés ou hors champ réfléchissent et bougent moins souvent (mises à jour étalées),
+l'animation des squelettes suit la distance avec un **budget fixe par image** (le coût ne grimpe pas avec le
+nombre de personnages), le visage détaillé n'est calculé que de près, les ombres des personnages sont coupées
+au loin, l'évitement des obstacles passe par une grille spatiale, et les immeubles sont des maillages fusionnés
+dont les détails disparaissent au loin. `tools/tests/prof1.gd` mesure le coût de chaque étape.
 
 ## Voitures de police
 

@@ -91,6 +91,7 @@ Le gaz brouille l'image : sors du nuage, un **médic** (gilet jaune à croix rou
   Une vitre cassée + un fumigène ou une torche posée près du moteur, et elle prend feu.
 - **Pétards** (5 et 6) : le petit fait peur, le gros fait mal aux oreilles.
 - **Barrières, cônes, panneaux, boîtes à journaux, lampadaires** : tout se frappe et se renverse.
+- **Voitures garées** : frappe-en une, l'alarme se déclenche ; casse une vitre et pose un fumigène près du moteur pour la brûler.
 - **Vitrines** : 2 immeubles sur 3 ont des boutiques. Donne plusieurs coups de pied (F) ou lance des pierres dans
   la vitrine : elle finit par céder. Entre et casse les meubles ; quand ça chauffe, la foule le fait d'elle-même.
 - **Barricade** : quand ça chauffe, des manifestants portent les barrières en travers de la rue ; la police doit les renverser pour avancer.
@@ -109,7 +110,7 @@ Le gaz brouille l'image : sors du nuage, un **médic** (gilet jaune à croix rou
 ## 7. Où est quoi (si tu veux modifier plus tard)
 
 - `main.tscn` : la scène lancée (ciel, lumière, sol, arrêt de bus, poubelles, foule, joueur).
-- `scripts/` : le comportement. `player.gd` (déplacements, caméra, objets), `human.gd` (corps, marche, course, coup de pied), `mortar.gd` (visée, tir), `bus_stop.gd` (arrêt de bus cassable), `hud.gd` (interface), `crowd.gd` (la foule : cortège, chants, réactions), `npc.gd` (un manifestant : poses, voix, comportements), `trash_bin.gd` (poubelle et feu), `igniter.gd` (briquet), `flare_tool.gd` / `flare.gd` (fumigène), `paris_street.gd` / `paris_building.gd` (le boulevard et ses immeubles), `shop.gd` / `shop_item.gd` (boutiques et leur mobilier), `npc_loot.gd` (pillage).
+- `scripts/` : le comportement. `player.gd` (déplacements, caméra, objets), `human.gd` (corps, marche, course, coup de pied), `mortar.gd` (visée, tir), `bus_stop.gd` (arrêt de bus cassable), `hud.gd` (interface), `crowd.gd` (la foule : cortège, chants, réactions), `npc.gd` (un manifestant : poses, voix, comportements), `trash_bin.gd` (poubelle et feu), `igniter.gd` (briquet), `flare_tool.gd` / `flare.gd` (fumigène), `paris_street.gd` / `paris_building.gd` (le boulevard et ses immeubles), `shop.gd` / `shop_item.gd` (boutiques et leur mobilier), `npc_loot.gd` (pillage), `quartier.gd` (plan du quartier), `streetscape.gd` / `plane_tree.gd` / `landmarks.gd` / `traffic_light.gd` (sols, arbres, métro, kiosque, feux), `civil_car.gd` / `parking.gd` (voitures garées, parking, vélos), `civilians.gd` / `passerby.gd` / `residents.gd` (passants, habitants), `title_screen.gd` / `ui_style.gd` (écran titre, style de l'interface).
 - `assets/` : le personnage (généré depuis des données libres MakeHuman, CC0) et les textures.
 - `tools/` : les programmes Python qui génèrent le personnage et les textures (inutiles pour jouer).
 

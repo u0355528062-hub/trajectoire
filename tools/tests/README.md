@@ -24,6 +24,10 @@ godot --headless --path . --fixed-fps 30 -s tools/tests/<script>.gd
 | `anim1.gd` | Nouvelles actions des manifestants : danse, tambour, chaîne humaine, doigt d'honneur, réconfort, renvoi de grenade |
 | `tag1.gd` | Tags à la bombe : slogans écrits sur la chaussée, les panneaux et les fourgons ; nombre limité |
 | `chase1.gd` | Poursuite du joueur par les CRS (sprint, ténacité, coups en mouvement) |
+| `street1.gd` | Le quartier se construit (arbres, mobilier, feux) et le cortège en fait le tour sans rester bloqué |
+| `civils1.gd` | Passants et habitants : ils circulent, s'éloignent quand ça chauffe, jamais recrutés ni interpellés |
+| `cars1.gd` | Voitures civiles : alarme au coup de pied, vitres, incendie ; jamais comptées parmi les véhicules de police |
+| `prof1.gd` | Profilage détaillé : coût de la logique de foule, réflexion, déplacement, animation (tronc, jambes, mains, bras), police, joueur |
 | `loot1.gd` | Boutiques : casseurs sur une vitrine (banque d'abord), pilleurs qui entrent, renversent les meubles et ressortent ; personne coincé dans une façade |
 | `surge1.gd` | Vague de foule à l'appel : l'abribus secoué jusqu'à l'effondrement |
 | `sound1.gd` | Sons des véhicules : sirène deux-tons puis rapide (stade 3+), radio de bord, grondement d'une voiture en feu jusqu'à l'extinction, « Libérez-le ! » |
