@@ -116,11 +116,11 @@ func _build_shell() -> void:
 	_box(self, wm, Vector3(0.1, height, d - 0.55), Vector3(width * 0.5 - 0.05, height * 0.5, -0.55 - (d - 0.55) * 0.5))
 	_box(self, col_mat(Color(0.78, 0.76, 0.72), 0.8), Vector3(width, 0.06, d), Vector3(0, height, -d * 0.5))
 	# plafonnier lumineux (et vraie lumière pour les boutiques proches)
-	_ceiling = _box(self, col_mat(Color(1.0, 0.92, 0.78), 0.5, 0.7), Vector3(width * 0.6, 0.03, 0.4), Vector3(0, height - 0.05, -d * 0.5))
+	_ceiling = _box(self, col_mat(Color(1.0, 0.92, 0.78), 0.5, 0.45), Vector3(width * 0.6, 0.03, 0.4), Vector3(0, height - 0.05, -d * 0.5))
 	if lit:
 		_light = OmniLight3D.new()
 		_light.light_color = Color(1.0, 0.9, 0.75)
-		_light.light_energy = 0.55
+		_light.light_energy = 0.32
 		_light.omni_range = maxf(width, d) * 0.95
 		_light.shadow_enabled = false
 		_light.position = Vector3(0, height - 0.4, -d * 0.5)
@@ -310,9 +310,10 @@ static func make_sign(parent: Node3D, k: String, sv: int, fr: Dictionary, pos: V
 
 
 # ------------------------------------------------------------------ mobilier selon le commerce
-func _item(pos: Vector3, size: Vector3, colr: Color, goods: Array, heavy := false, outside := false) -> ShopItem:
+func _item(pos: Vector3, size: Vector3, colr: Color, goods: Array, heavy := false, outside := false, shape := "") -> ShopItem:
 	var it := ShopItem.new()
 	it.outside = outside
+	it.shape = shape
 	it.position = pos
 	it.size = size
 	it.color = colr
@@ -375,7 +376,7 @@ func _furnish() -> void:
 			for i in 3:
 				var ox := -hw + 0.6 + float(i) * (width - 1.2) / 2.0
 				_item(Vector3(ox, 0, 1.05), Vector3(0.75, 0.8, 0.55), Color(0.62, 0.48, 0.3),
-					[Color(0.9, 0.2, 0.15), Color(0.95, 0.7, 0.1), Color(0.35, 0.65, 0.2)] if kind == "primeur" else [Color(0.95, 0.4, 0.6), Color(0.96, 0.95, 0.92), Color(0.85, 0.1, 0.15)], false, true)
+					[Color(0.9, 0.2, 0.15), Color(0.95, 0.7, 0.1), Color(0.35, 0.65, 0.2)] if kind == "primeur" else [Color(0.95, 0.4, 0.6), Color(0.96, 0.95, 0.92), Color(0.85, 0.1, 0.15)], false, true, "crate")
 		"opticien", "coiffeur":
 			_item(Vector3(-hw + 0.45, 0, -d * 0.55), Vector3(0.45, 2.0, d * 0.5), Color(0.92, 0.92, 0.9), [Color(0.1, 0.1, 0.12), Color(0.6, 0.4, 0.2)])
 			_item(Vector3(hw - 0.45, 0, -d * 0.55), Vector3(0.45, 2.0, d * 0.5), Color(0.92, 0.92, 0.9), [Color(0.1, 0.1, 0.12), Color(0.8, 0.8, 0.85)])
@@ -391,9 +392,11 @@ func _furnish() -> void:
 				# terrasse : guéridons et chaises cannées sur le trottoir
 				for i in 2:
 					var ox := -hw * 0.5 + float(i) * hw
-					_item(Vector3(ox, 0, 1.2), Vector3(0.6, 0.74, 0.6), Color(0.75, 0.72, 0.65), [], false, true)
-					_item(Vector3(ox + 0.6, 0, 1.2), Vector3(0.42, 0.88, 0.42), Color(0.55, 0.4, 0.25), [], false, true)
-					_item(Vector3(ox - 0.6, 0, 1.2), Vector3(0.42, 0.88, 0.42), Color(0.55, 0.4, 0.25), [], false, true)
+					_item(Vector3(ox, 0, 1.3), Vector3(0.6, 0.74, 0.6), Color(0.75, 0.72, 0.65), [], false, true, "table")
+					var ch1 := _item(Vector3(ox + 0.55, 0, 1.3), Vector3(0.42, 0.88, 0.42), Color(0.55, 0.4, 0.25), [], false, true, "chair")
+					ch1.rotation.y = -PI * 0.5 + randf_range(-0.3, 0.3)
+					var ch2 := _item(Vector3(ox - 0.55, 0, 1.3), Vector3(0.42, 0.88, 0.42), Color(0.55, 0.4, 0.25), [], false, true, "chair")
+					ch2.rotation.y = PI * 0.5 + randf_range(-0.3, 0.3)
 
 
 # ------------------------------------------------------------------ interactions

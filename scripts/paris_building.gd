@@ -176,7 +176,7 @@ static func mat(key: String) -> Material:
 		"glow":
 			m.emission_enabled = true
 			m.emission = Color(1, 1, 1)
-			m.emission_energy_multiplier = 0.9
+			m.emission_energy_multiplier = 0.28
 			m.roughness = 0.4
 		"cloth":
 			m.roughness = 0.95

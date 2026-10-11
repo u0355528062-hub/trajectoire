@@ -8,6 +8,7 @@ var color := Color(0.7, 0.7, 0.7)
 var goods: Array = []
 var heavy := false
 var outside := false          # sur le trottoir (terrasse, étal) : pas concerné par le pillage
+var shape := ""               # "" (meuble), "table" (guéridon), "chair" (chaise bistrot), "crate" (cagette, étal)
 var shop: Shop
 var smashed := false
 var hp := 1
@@ -42,7 +43,33 @@ func _ready() -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = hash(str(position) + str(size))
 	var tall := size.y > 1.3 and not goods.is_empty()
-	if tall:
+	if shape == "table":
+		_add(st, _unit_cyl, Vector3(size.x, 0.03, size.x), Vector3(0, size.y, 0), Color(0.82, 0.8, 0.74))           # plateau en marbre
+		_add(st, _unit_cyl, Vector3(0.05, size.y, 0.05), Vector3(0, size.y * 0.5, 0), Color(0.12, 0.12, 0.12))      # pied en fonte
+		_add(st, _unit_cyl, Vector3(0.4, 0.03, 0.4), Vector3(0, 0.015, 0), Color(0.12, 0.12, 0.12))
+		if r.randf() < 0.6:
+			_add(st, _unit_cyl, Vector3(0.08, 0.08, 0.08), Vector3(0.1, size.y + 0.055, 0.05), Color(0.95, 0.95, 0.93))   # tasse
+	elif shape == "chair":
+		var cane := Color(0.72, 0.55, 0.32)
+		var frame := Color(0.32, 0.2, 0.1)
+		_add(st, _unit_box, Vector3(size.x, 0.04, size.z), Vector3(0, 0.46, 0), cane)                               # assise cannée
+		_add(st, _unit_box, Vector3(size.x, 0.36, 0.03), Vector3(0, 0.7, -size.z * 0.5), cane)                      # dossier
+		for lx in [-1.0, 1.0]:
+			for lz in [-1.0, 1.0]:
+				_add(st, _unit_cyl, Vector3(0.03, 0.46, 0.03), Vector3(lx * size.x * 0.42, 0.23, lz * size.z * 0.42), frame)
+			_add(st, _unit_cyl, Vector3(0.03, 0.42, 0.03), Vector3(lx * size.x * 0.42, 0.67, -size.z * 0.48), frame)
+	elif shape == "crate":
+		# étal : tréteau en bois et cagettes pleines
+		_add(st, _unit_box, Vector3(size.x, 0.05, size.z), Vector3(0, size.y - 0.25, 0), Color(0.55, 0.4, 0.25))
+		for lx in [-1.0, 1.0]:
+			_add(st, _unit_box, Vector3(0.05, size.y - 0.25, size.z * 0.8), Vector3(lx * size.x * 0.4, (size.y - 0.25) * 0.5, 0), Color(0.45, 0.32, 0.2))
+		for k in 2:
+			var cx := -size.x * 0.25 + float(k) * size.x * 0.5
+			_add(st, _unit_box, Vector3(size.x * 0.46, 0.18, size.z * 0.9), Vector3(cx, size.y - 0.13, 0), Color(0.78, 0.66, 0.46))
+			var gc: Color = goods[r.randi() % goods.size()] if not goods.is_empty() else Color(0.8, 0.2, 0.2)
+			for j in 10:
+				_add(st, _unit_cyl, Vector3(0.09, 0.08, 0.09), Vector3(cx + r.randf_range(-size.x * 0.2, size.x * 0.2), size.y - 0.01 + r.randf() * 0.04, r.randf_range(-size.z * 0.38, size.z * 0.38)), gc.darkened(r.randf() * 0.25))
+	elif tall:
 		# rayonnage : montants, fond, tablettes
 		_add(st, _unit_box, Vector3(size.x, size.y, 0.04), Vector3(0, size.y * 0.5, -size.z * 0.5 + 0.02), color.darkened(0.15))
 		for sx in [-1.0, 1.0]:
@@ -52,7 +79,7 @@ func _ready() -> void:
 	else:
 		_add(st, _unit_box, size, Vector3(0, size.y * 0.5, 0), color)
 		_add(st, _unit_box, Vector3(size.x + 0.04, 0.04, size.z + 0.04), Vector3(0, size.y + 0.02, 0), color.lightened(0.15))   # plateau
-	if not goods.is_empty():
+	if not goods.is_empty() and shape == "":
 		var rows := maxi(int((size.y - 0.15) / 0.42), 1) if tall else 1
 		for row in rows:
 			var y := 0.12 + float(row) * 0.42 if tall else size.y + 0.04
