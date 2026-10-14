@@ -10,6 +10,7 @@ const AREA_MIN := Vector2(-38.0, -25.2)      # jusqu'au pied des façades (boule
 const AREA_MAX := Vector2(38.0, 18.2)
 const VARIANTS := ["male_a", "male_b", "male_c", "male_d", "male_e", "female_a", "female_b", "female_c", "female_d"]
 const CHANTS := ["chant_lacherien", "chant_ensemble", "chant_rue", "chant_onestla"]
+const MAX_SIZE := 170                 # au-delà, la fluidité n'est plus garantie (LOD d'animation)
 const POLICE_CHANTS := ["chant_police", "chant_justice", "chant_partout", "chant_libere", "chant_resiste"]
 
 var npcs: Array[Npc] = []
@@ -27,6 +28,16 @@ var _hash := {}
 var _nav_dirty := true
 var player: Player
 var bus: BusStop
+# --- réglages du monde (WorldSetup « crowd », voir configure())
+var size := -1                     # nombre de manifestants (-1 : foule d'origine)
+var cortege := true                # un cortège défile (sinon : groupes de discussion)
+var bloc := -1                     # « black bloc » (-1 : proportion d'origine)
+var medic := true                  # street medics
+var press := true                  # journalistes
+var theme := "origine"             # pancartes : « origine » | « prix » (vie chère)
+var calm := false                  # pas d'initiative spontanée (feux, pillage, vandalisme, barricades, bagarres, tags)
+var gather := ""                   # lieu (Quartier.SPOTS) autour duquel se tiennent les groupes ("" : boulevard)
+var _original := true              # foule d'origine (fixé à la création)
 var excitement := 0.3
 var rally_active := false
 var surge := false                 # grand mouvement de foule : on secoue l'abribus jusqu'à l'effondrer
@@ -110,6 +121,38 @@ func setup(p: Player, b: BusStop) -> void:
 	bus = b
 
 
+## Réglages du monde (clé « crowd » de WorldSetup.config()), à appeler avant l'ajout à la scène.
+## size : -1 (foule d'origine), un entier, ou "mobilisation" (jauge de campagne).
+func configure(cfg: Dictionary) -> void:
+	var sz: Variant = cfg.get("size", -1)
+	if sz is String:
+		size = int(Campaign.stat(sz)) if Campaign.STAT_DEFAULTS.has(sz) else -1
+	else:
+		size = int(sz)
+	if size >= 0:
+		size = mini(size, MAX_SIZE)
+	cortege = bool(cfg.get("cortege", true))
+	bloc = int(cfg.get("bloc", -1))
+	medic = bool(cfg.get("medic", true))
+	press = bool(cfg.get("press", true))
+	theme = str(cfg.get("theme", "origine"))
+	calm = bool(cfg.get("calm", false))
+	gather = str(cfg.get("gather", ""))
+	if gather != "" and not Quartier.SPOTS.has(gather):
+		push_error("Crowd : lieu de rassemblement inconnu « %s »" % gather)
+		gather = ""
+
+
+## La foule est-elle celle d'origine (aucun réglage de composition) ?
+func is_original() -> bool:
+	return size < 0 and cortege and bloc < 0 and medic and press and gather == "" and theme == "origine"
+
+
+## Centre des groupes de discussion quand il n'y a pas de cortège
+func gather_center() -> Vector3:
+	return clamp_area(Quartier.spot(gather)) if gather != "" else Vector3(-4.0, 0.0, 2.0)
+
+
 func _ready() -> void:
 	add_to_group("crowd")
 	_rng.seed = 4242
@@ -125,12 +168,26 @@ func _ready() -> void:
 		add_obstacle(m, Vector2(c[1], 0.0), Vector2.ZERO, true)
 	if bus:
 		add_obstacle(bus, Vector2(2.15, 1.05))
+	_original = is_original()
 	_spawn_all()
 	standoff = Standoff.new(self)
 	_initial_count = npcs.size()
 	_build_audio()
+	if not is_original():
+		# le brouhaha suit la taille de la foule
+		if npcs.is_empty():
+			_murmur.stop()
+			_bed.stop()
+		else:
+			var db := linear_to_db(clampf(sqrt(float(npcs.size()) / 73.0), 0.2, 1.4))
+			_murmur.volume_db += db
+			_bed.volume_db += db
 	_banner = Banner.new()
 	add_child(_banner)
+	_banner.visible = _banner_l != null and _banner_r != null
+	var btex := CrowdTheme.banner_texture(self, theme)
+	if btex != null:
+		(_banner.material_override as ShaderMaterial).set_shader_parameter("tex", btex)
 
 
 # =================================================================== cortège : parcours
@@ -211,6 +268,8 @@ func march_target(n: Npc) -> Array:
 func cortege_center() -> Vector3:
 	if standoff.active:
 		return standoff.center + Vector3.UP * 1.5
+	if not cortege:
+		return gather_center() + Vector3.UP * 1.5
 	var r := route_at(cortege_s - 2.6)
 	return (r[0] as Vector3) + Vector3.UP * 1.5
 
@@ -311,14 +370,31 @@ func _spawn_all() -> void:
 	cfg.append(["press", "", 0, "", false, Vector2.ZERO, -1, false])
 	var chat_centers := [Vector3(-4.6, 0, -1.4), Vector3(7.6, 0, 2.6), Vector3(-9.0, 0, 4.0),
 		Vector3(18.0, 0, -1.6), Vector3(-21.0, 0, 1.4), Vector3(26.0, 0, -19.5), Vector3(3.0, 0, 11.0)]
+	var custom := not is_original()
+	if custom:
+		cfg = _compose(cfg, extra)
+		var groups := 0
+		for c in cfg:
+			groups = maxi(groups, int(c[6]) + 1)
+		chat_centers = _group_centers(chat_centers, groups)
 	for g in chat_centers.size():
 		_chats.append({"center": chat_centers[g], "home": chat_centers[g], "members": [], "speaker": null, "next": 2.0 + g * 1.7, "last": null, "reply": -1.0, "listener": null})
 	var bloc_home := [Vector3(6.0, 0, -13.2), Vector3(7.3, 0, -12.4), Vector3(5.2, 0, -14.3), Vector3(7.0, 0, -14.5),
 		Vector3(8.4, 0, -13.6), Vector3(4.6, 0, -12.6), Vector3(8.2, 0, -15.2), Vector3(6.1, 0, -15.6)]
 	var loner_home := [Vector3(1.0, 0, 6.5), Vector3(12.0, 0, -2.5), Vector3(-25.0, 0, -1.0), Vector3(20.0, 0, 9.0),
 		Vector3(-14.0, 0, 8.5), Vector3(30.0, 0, -14.0), Vector3(-10.0, 0, -18.0), Vector3(9.0, 0, -21.0)]
+	if custom and (gather != "" or not cortege):
+		# pas de cortège : tout le monde se tient autour du lieu de rassemblement
+		var gc := gather_center()
+		for k in bloc_home.size():
+			bloc_home[k] = clamp_area(gc + Vector3(-7.0, 0, -4.0) + (bloc_home[k] as Vector3) - Vector3(6.5, 0, -13.8))
+		for k in loner_home.size():
+			var a := TAU * k / loner_home.size() + 0.4
+			loner_home[k] = clamp_area(gc + Vector3(cos(a), 0, sin(a)) * (7.0 + 2.0 * (k % 2)))
 	var bloc_i := 0
 	var loner_i := 0
+	var medic_i := 0
+	var press_i := 0
 	for i in cfg.size():
 		var c: Array = cfg[i]
 		var n := Npc.new()
@@ -364,7 +440,10 @@ func _spawn_all() -> void:
 				n.bold = rng.randf_range(0.65, 1.0)
 				n.calm = rng.randf_range(0.5, 0.95)
 			"medic":
-				pos = Vector3(-2.5, 0, 3.5) if i < 40 else Vector3(14.0, 0, -9.0)
+				pos = Vector3(-2.5, 0, 3.5) if medic_i % 2 == 0 else Vector3(14.0, 0, -9.0)
+				if custom and (gather != "" or not cortege):
+					pos = clamp_area(gather_center() + Vector3(-5.5 + 2.0 * medic_i, 0, -4.5))
+				medic_i += 1
 				n.bold = 0.5
 				n.calm = 0.9
 				n.outfit["vest"] = true
@@ -372,7 +451,10 @@ func _spawn_all() -> void:
 				n.outfit["backpack"] = true
 				n.outfit["bag_color"] = Color(0.72, 0.1, 0.1)
 			"press":
-				pos = Vector3(11.0, 0, 7.0) if i < 40 else Vector3(-16.0, 0, -2.0)
+				pos = Vector3(11.0, 0, 7.0) if press_i % 2 == 0 else Vector3(-16.0, 0, -2.0)
+				if custom and (gather != "" or not cortege):
+					pos = clamp_area(gather_center() + Vector3(5.0, 0, -3.0 - 2.0 * press_i))
+				press_i += 1
 				n.bold = 0.55
 				n.calm = 0.8
 				n.outfit["top"] = "jacket"
@@ -385,8 +467,109 @@ func _spawn_all() -> void:
 		n.home_pos = pos
 		n.position = Vector3(pos.x, ground_y(pos), pos.z)
 		add_child(n)
+		_dress(n)
 		npcs.append(n)
 		actors.append(n)
+
+
+## Habillage au thème du chapitre (pancartes sur la vie chère…)
+func _dress(n: Npc) -> void:
+	if theme == "prix" and n.sign_node != null:
+		CrowdTheme.dress_sign(n.sign_node, n.idx * 7 + n.sign_idx)
+
+
+## Composition d'une foule paramétrée, proportionnelle à la foule d'origine `orig` (même format de lignes) :
+## [rôle, accessoire, n° pancarte, masque, gilet, emplacement, groupe, fumeur]. Les lignes d'origine sont reprises
+## dans l'ordre (le cortège garde sa tête : banderole, mégaphone…), puis complétées.
+func _compose(orig: Array, rng: RandomNumberGenerator) -> Array:
+	var by_role := {"march": [], "chat": [], "bloc": [], "loner": [], "medic": [], "press": []}
+	for row in orig:
+		(by_role[row[0]] as Array).append(row)
+	var total := size if size >= 0 else orig.size()
+	var k := float(total) / float(orig.size())
+	var n_medic := 0
+	if medic and total >= 6:
+		n_medic = clampi(roundi((by_role["medic"] as Array).size() * k), 1, 4)
+	var n_press := 0
+	if press and total >= 6:
+		n_press = clampi(roundi((by_role["press"] as Array).size() * k), 1, 4)
+	var n_bloc := roundi((by_role["bloc"] as Array).size() * k) if bloc < 0 else bloc
+	var n_loner := roundi((by_role["loner"] as Array).size() * k)
+	# les rôles « à côté » ne mangent jamais toute la foule
+	var side := n_medic + n_press + n_bloc + n_loner
+	while side > total:
+		if n_loner > 0:
+			n_loner -= 1
+		elif n_press > 0:
+			n_press -= 1
+		elif n_medic > 0:
+			n_medic -= 1
+		else:
+			n_bloc -= 1
+		side -= 1
+	var rest := total - side
+	var nm := float((by_role["march"] as Array).size())
+	var n_march := roundi(rest * nm / (nm + float((by_role["chat"] as Array).size()))) if cortege else 0
+	var n_chat := rest - n_march
+	var out: Array = []
+	# cortège : tête d'origine, puis des rangs de trois derrière
+	var marchers: Array = by_role["march"]
+	var last_y := 0.0
+	for i in mini(n_march, marchers.size()):
+		out.append(marchers[i])
+		last_y = maxf(last_y, (marchers[i][5] as Vector2).y)
+	for j in maxi(n_march - marchers.size(), 0):
+		var x := (float(j % 3) - 1.0) * 1.45 + rng.randf_range(-0.25, 0.25)
+		var y := last_y + 1.25 * float(j / 3 + 1)
+		var r := rng.randf()
+		var pr := "sign" if r < 0.3 else ("flare" if r < 0.34 and not calm else "")
+		var mk := "balaclava" if pr == "flare" else ("bandana" if rng.randf() < 0.12 else "")
+		out.append(["march", pr, rng.randi_range(1, 4), mk, rng.randf() < 0.12, Vector2(x, y), -1, pr == "" and rng.randf() < 0.15])
+	# groupes de discussion de 3 ou 4 (attributs repris des groupes d'origine)
+	var chatters: Array = by_role["chat"]
+	var groups := ceili(float(n_chat) / 3.5) if n_chat > 0 else 0
+	for i in n_chat:
+		var src: Array = chatters[i % chatters.size()]
+		var g := i % maxi(groups, 1)
+		var pr2 := ""
+		# sans cortège, les pancartes sont dans les groupes
+		if not cortege and rng.randf() < 0.3:
+			pr2 = "sign"
+		var mk2: String = "" if calm and src[3] == "balaclava" else src[3]
+		out.append(["chat", pr2, rng.randi_range(1, 4), mk2, src[4], Vector2.ZERO, g, src[7]])
+	for role in [["bloc", n_bloc], ["loner", n_loner], ["medic", n_medic], ["press", n_press]]:
+		var rows: Array = by_role[role[0]]
+		for i in int(role[1]):
+			var row: Array = (rows[i % rows.size()] as Array).duplicate()
+			# un seul mortier dans un bloc renforcé ; aucun accessoire offensif dans une foule calme
+			if (i >= rows.size() and row[1] == "mortar") or (calm and row[1] in ["mortar", "flare"]):
+				row[1] = ""
+			out.append(row)
+	return out
+
+
+## Centres des `n` groupes de discussion : ceux d'origine (boulevard), ou en couronnes autour du lieu de
+## rassemblement quand il n'y a pas de cortège
+func _group_centers(base: Array, n: int) -> Array:
+	var out: Array = []
+	if cortege and gather == "":
+		for g in n:
+			if g < base.size():
+				out.append(base[g])
+			else:
+				var a := 2.399963 * g
+				out.append(clamp_area(Vector3(-2.0, 0, 4.0) + Vector3(cos(a), 0, sin(a) * 0.6) * (10.0 + 1.2 * g)))
+		return out
+	var c := gather_center()
+	for g in n:
+		if g == 0:
+			out.append(c)
+			continue
+		# spirale (angle d'or) : les groupes restent à ~3,5 m les uns des autres
+		var r := 3.6 * sqrt(float(g))
+		var a2 := 2.399963 * g
+		out.append(clamp_area(c + Vector3(cos(a2) * r, 0, sin(a2) * r)))
+	return out
 
 
 func _build_audio() -> void:
@@ -555,7 +738,7 @@ func _update_cortege(delta: float) -> void:
 		_chant_seq += delta
 		if _chant_seq > float(_later_chant_delay) and not chanting:
 			_start_chant_track()
-	elif not chanting:
+	elif not chanting and (_original or (cortege and npcs.size() >= 20)):      # pas de chants à douze
 		_next_chant -= delta
 		if _next_chant <= 0.0:
 			_start_chant_seq()
@@ -1104,6 +1287,8 @@ func nearest_fire(p: Vector3, r: float) -> Node3D:
 
 ## Départ de feu spontané, rare : un manifestant décidé fait un feu au sol ou brûle une poubelle
 func _update_arson(delta: float) -> void:
+	if calm:
+		return
 	_arson_cd -= delta
 	if _arson_cd > 0.0 or player == null:
 		return
@@ -1445,6 +1630,8 @@ func _update_hostility(delta: float) -> void:
 
 ## Corps à corps : à partir du stade « AFFRONTEMENT », les plus enragés foncent sur un policier
 func _update_brawls(delta: float) -> void:
+	if calm:
+		return
 	if police == null or police.stage < 3:
 		return
 	_brawl_cd -= delta
@@ -1713,6 +1900,8 @@ func _update_gas_awareness(delta: float) -> void:
 
 ## Des manifestants arrivent par l'ouest pour remplacer les interpellés (et grossir le rang quand ça chauffe)
 func _update_newcomers(delta: float) -> void:
+	if not cortege:
+		return
 	_newcomer_cd -= delta
 	if _newcomer_cd > 0.0:
 		return
@@ -1749,6 +1938,7 @@ func _update_newcomers(delta: float) -> void:
 	n.home_pos = start
 	n.position = Vector3(start.x, ground_y(start), start.z)
 	add_child(n)
+	_dress(n)
 	npcs.append(n)
 	actors.append(n)
 	if _rng.randf() < 0.6:
@@ -2181,6 +2371,8 @@ func _ev_car_vandal(d: Dictionary) -> void:
 
 ## Initiative rare : un manifestant décidé donne un coup de pied dans un cône, une barrière, un panneau...
 func _update_vandalism(delta: float) -> void:
+	if calm:
+		return
 	_vandal_cd -= delta
 	if _vandal_cd > 0.0 or player == null:
 		return
@@ -2205,6 +2397,8 @@ func _update_vandalism(delta: float) -> void:
 
 ## Une voiture de police mal gardée près de la foule : des enragés s'en prennent à elle d'eux-mêmes
 func _update_car_attacks(delta: float) -> void:
+	if calm:
+		return
 	if police == null or police.stage < 2:
 		return
 	_carat_cd -= delta
@@ -2241,6 +2435,8 @@ func _update_car_attacks(delta: float) -> void:
 ## Boutiques : quand la tension monte, des casseurs s'attaquent aux vitrines (la banque d'abord) ; une
 ## vitrine ouverte attire les pilleurs, qui entrent et saccagent tout.
 func _update_looting(delta: float) -> void:
+	if calm:
+		return
 	_loot_cd -= delta
 	if _loot_cd > 0.0:
 		return
@@ -2320,6 +2516,8 @@ func _ev_shop_open(d: Dictionary) -> void:
 
 ## Tags : de temps en temps, un manifestant sort une bombe de peinture
 func _update_tags(delta: float) -> void:
+	if calm:
+		return
 	_tag_cd -= delta
 	if _tag_cd > 0.0:
 		return
@@ -2424,6 +2622,8 @@ func _update_taunts(delta: float) -> void:
 
 ## Quand la police avance pour de bon, des manifestants montent une barricade avec les barrières qui traînent
 func _update_barricade(delta: float) -> void:
+	if calm:
+		return
 	# places libérées : barrière renversée, déplacée, ou porteur qui a renoncé
 	var any := false
 	for i in BARRICADE_Z.size():
