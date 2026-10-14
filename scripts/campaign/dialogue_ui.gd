@@ -33,6 +33,7 @@ var _choosing := false
 var _hot := -1
 var _skip := false
 var _line_on := false
+var _sub_hold := false            # la dernière réplique reste affichée pendant le choix qui suit
 var _line_serial := 0
 var _band_a := 0.0
 var _sub_a := 0.0
@@ -176,7 +177,8 @@ static func read_time(text: String) -> float:
 
 # ------------------------------------------------------------------ répliques
 ## Une réplique : sous-titre, voix éventuelle (opts.vo = chemin), le personnage parle ; attend la fin.
-## opts : "anim" (geste), "look" (cible du regard : id de personnage, "sam", id de lieu), "wait" (pause après).
+## opts : "anim" (geste), "look" (cible du regard : id de personnage, "sam", id de lieu), "wait" (pause après),
+## "keep" (le sous-titre reste affiché, atténué, jusqu'au choix suivant).
 func play_line(who: String, text: String, opts := {}) -> void:
 	if text.strip_edges() == "":
 		return
@@ -208,6 +210,7 @@ func play_line(who: String, text: String, opts := {}) -> void:
 		_sam_t = 0.0
 	_stage_looks(who, node, opts.get("look", null), total + 2.5)
 	# sous-titre
+	_sub_hold = false
 	_show_line(who, text)
 	if stream:
 		_vo.stop()
@@ -221,12 +224,12 @@ func play_line(who: String, text: String, opts := {}) -> void:
 		t += get_process_delta_time()
 		if _skip:
 			_skip = false
-			if _text.visible_ratio < 1.0 and not auto:
+			if _text.visible_characters >= 0 and not auto:
 				reveal = 0.0
 				_text.visible_characters = -1
 			else:
 				break
-		if reveal > 0.0:
+		if reveal > 0.0 and _text.visible_characters >= 0:
 			var vc := DialogueLip.visible_chars(text, t / reveal)
 			_text.visible_characters = -1 if vc >= text.length() else vc
 		_prog.anchor_left = 0.5 - 0.5 * clampf(t / total, 0.0, 1.0)
@@ -243,6 +246,7 @@ func play_line(who: String, text: String, opts := {}) -> void:
 	if a and is_instance_valid(a):
 		a.stop_talk()
 	_sam_t = -1.0
+	_sub_hold = bool(opts.get("keep", false)) and not auto
 	_hide_line()
 	var w := float(opts.get("wait", 0.0))
 	if w > 0.0:
@@ -398,6 +402,9 @@ func choose(prompt: String, options: Array, timer := 0.0) -> int:
 	_timer_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_timer_bar.visible = timer > 0.0
 	tw.add_child(_timer_bar)
+	var top := 0.71 if _sub_hold else 0.85
+	_choice_root.anchor_top = top
+	_choice_root.anchor_bottom = top
 	_choice_root.visible = true
 	_choice_root.modulate.a = 0.0
 	_choice = -1
@@ -420,6 +427,7 @@ func choose(prompt: String, options: Array, timer := 0.0) -> int:
 			if t >= timer:
 				_choice = 0
 	_choosing = false
+	_sub_hold = false
 	var picked := _choice
 	if picked < _rows.size():
 		_rows[picked].flash()
@@ -432,6 +440,17 @@ func choose(prompt: String, options: Array, timer := 0.0) -> int:
 		Input.mouse_mode = prev if prev != Input.MOUSE_MODE_VISIBLE else Input.MOUSE_MODE_CAPTURED
 	choice_made.emit(picked)
 	return picked
+
+
+## Passe à la suite : affiche toute la réplique, ou la termine si elle est déjà entière (clic, Espace, E)
+func advance() -> void:
+	if _line_on:
+		_skip = true
+
+
+## Une réplique ou un choix est-il à l'écran ?
+func busy() -> bool:
+	return _line_on or _choosing
 
 
 func _pick(k: int) -> void:
@@ -494,12 +513,12 @@ func _cine_on() -> bool:
 # ------------------------------------------------------------------ boucle
 func _process(delta: float) -> void:
 	# apparition / disparition douce du sous-titre et du voile
-	var want := 1.0 if _line_on else 0.0
+	var want := 1.0 if _line_on else (0.8 if _sub_hold else 0.0)
 	_sub_a = move_toward(_sub_a, want, delta * (8.0 if _line_on else 5.0))
 	_sub.modulate.a = _sub_a
-	_band_a = move_toward(_band_a, 1.0 if (_line_on or _choosing) else 0.0, delta * 3.0)
+	_band_a = move_toward(_band_a, 1.0 if (_line_on or _choosing or _sub_hold) else 0.0, delta * 3.0)
 	_band.modulate.a = _band_a
-	if not _line_on and _sub_a <= 0.0 and _text.text != "":
+	if not _line_on and not _sub_hold and _sub_a <= 0.0 and _text.text != "":
 		_text.text = ""
 	# bouche de Sam
 	if _sam_t >= 0.0:
@@ -560,6 +579,8 @@ func run(dlg: Dictionary, node := "start") -> String:
 				var vp := voice_path(dlg_id, line_id(cur, i))
 				if ResourceLoader.exists(vp):
 					o["vo"] = vp
+				if i + 1 < steps.size() and steps[i + 1] is Dictionary and (steps[i + 1] as Dictionary).has("choice"):
+					o["keep"] = true
 				_apply(s)
 				await play_line(who, str(s["text"]), o)
 			elif s.has("choice"):
