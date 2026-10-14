@@ -51,7 +51,7 @@ func tool_obj(id: String, text: String, spec: Dictionary, tool: String, zone: Va
 	var o := objective(id, text, spec)
 	if o and not kit(tool):
 		_fallback(o, zone, radius, 1.5, int(spec.get("count", 1)))
-		hint("Outil pas encore disponible dans cette version : reste près du repère pour avancer.", 5.0)
+		hint("Outil pas encore disponible dans cette version : l'objectif avance tout seul près du repère.", 5.0)
 	return o
 
 
@@ -61,7 +61,7 @@ func _fallback(o: Objective, zone: Variant, radius: float, per_unit: float, unit
 		await wait(0.25)
 		if not o.is_active() or not is_instance_valid(player):
 			return
-		if zone is String and not Quartier.SPOTS.has(zone) and actor(zone) == null:
+		if zone is String and zone != "player" and not Quartier.SPOTS.has(zone) and actor(zone) == null:
 			continue
 		var c := pos_of(zone)
 		if Vector2(player.global_position.x - c.x, player.global_position.z - c.z).length() > radius:

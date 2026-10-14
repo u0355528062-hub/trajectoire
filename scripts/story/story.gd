@@ -51,6 +51,22 @@ const CHAPTERS := [
 		"tools": ["phone", "tracts"],
 		"spawn": "bar_qg",
 	},
+	{
+		"id": "cortege",
+		"title": "Premier cortège",
+		"date": "Mardi 16 mars — 19 h 40",
+		"script": "res://scripts/story/ch_cortege.gd",
+		"tod": "crepuscule",
+		"weather": "sec",
+		"crowd": {"size": "mobilisation", "cortege": true, "bloc": 0, "medic": true, "press": false, "theme": "prix",
+			"gather": "square", "calm": false},
+		"police": {"enabled": true, "cordon": true, "line_x": 84.0, "max_stage": 2, "start_tension": 0.1,
+			"tension_frozen": false, "patrol": false},
+		"civilians": {"density": 0.9},
+		"residents": true,
+		"tools": ["phone", "megaphone", "tracts"],
+		"spawn": "square",
+	},
 ]
 
 
