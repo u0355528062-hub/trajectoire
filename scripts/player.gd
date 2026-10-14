@@ -5,7 +5,9 @@ extends CharacterBody3D
 ## appel à la foule (G).
 
 signal view_changed(first_person: bool)
-signal item_changed(index: int)         # 0 = mains libres, 1 mortier, 2 pierres, 3 briquet, 4 fumigène, 5-6 pétards
+signal item_changed(index: int)         # 0 = mains libres, 1 mortier, 2 pierres, 3 briquet, 4 fumigène, 5-6 pétards, 7-11 kit
+signal tools_changed(items: Array)      # outils autorisés (numéros d'objet, dans l'ordre des touches 1..9)
+signal kit_changed                      # compteurs du kit (batterie, tracts, affiches, peinture)
 signal ammo_changed(count: int, maximum: int)
 signal message(text: String)
 signal stage_changed(label: String, progress: float)
@@ -22,6 +24,10 @@ const JUMP_VELOCITY := 5.0
 const GRAVITY := 14.0
 const MOUSE_SENS := 0.0025
 const EYE_HEIGHT := 1.70
+## Identifiant WorldSetup de chaque objet (index = numéro d'objet ; 0 = mains libres)
+const ITEM_IDS := ["", "mortar", "stones", "igniter", "flare", "petards_small", "petards_medium",
+	"phone", "tracts", "posters", "megaphone", "spray"]
+const KIT_FIRST := 7
 
 var human: Human
 var mortar: Mortar
@@ -29,6 +35,18 @@ var thrower: Thrower
 var igniter: Igniter
 var flare_tool: FlareTool
 var petard_tool: PetardTool
+var phone: PhoneTool
+var tracts: TractTool
+var posters: PosterTool
+var megaphone: MegaphoneTool
+var spray: SprayTool
+var talk: TalkInteract
+var near_talk: Actor              # personne à qui parler (E)
+var _e_talk: Actor
+## Outils autorisés (numéros d'objet) : la touche k choisit le k-ième
+var tool_items: Array[int] = [1, 2, 3, 4, 5, 6]
+var _tools_set := false
+var _placed := false
 var cam_yaw: Node3D
 var cam_pitch: Node3D
 var spring: SpringArm3D
@@ -191,6 +209,18 @@ func _ready() -> void:
 	petard_tool.thrown.connect(func(): _shake = 0.2)
 	petard_tool.counts_changed.connect(func(a, b, c, d): petards_changed.emit(a, b, c, d))
 	petard_tool.blown_in_hand.connect(func(sz, pos): on_blast(0.0, pos, sz))
+	phone = PhoneTool.new()
+	tracts = TractTool.new()
+	posters = PosterTool.new()
+	megaphone = MegaphoneTool.new()
+	spray = SprayTool.new()
+	for kt: KitTool in [phone, tracts, posters, megaphone, spray]:
+		kt.attach_to(human, self)
+		kt.message.connect(func(t): message.emit(t))
+		kt.count_changed.connect(func(): kit_changed.emit())
+	talk = TalkInteract.new()
+	talk.player = self
+	add_child(talk)
 	human.hand_provider = Callable(self, "_hands")
 	_tool_hands = Callable(mortar, "_hand_targets")
 	_voice = AudioStreamPlayer3D.new()
@@ -227,7 +257,75 @@ func _ready() -> void:
 	camera.current = true
 	spring.add_child(camera)
 
-	select_item(1)
+	if not _tools_set:
+		set_tools(WorldSetup.config().get("tools", WorldSetup.DEFAULT["tools"]))
+	if tool_items.has(1):
+		select_item(1)
+	_auto_spawn.call_deferred()
+
+
+# =================================================================== outils autorisés, point de départ
+## Outils autorisés pour la partie (ids de WorldSetup : "mortar", "stones", … "phone", "tracts", "posters",
+## "megaphone", "spray"). L'ordre des touches 1..9 suit l'ordre des numéros d'objet.
+func set_tools(ids: Array) -> void:
+	_tools_set = true
+	var items: Array[int] = []
+	for i in range(1, ITEM_IDS.size()):
+		if ids.has(ITEM_IDS[i]):
+			items.append(i)
+	tool_items = items
+	if is_node_ready():
+		if current_item != 0 and not tool_items.has(current_item) and not _tools_busy():
+			select_item(0)
+		tools_changed.emit(tool_items.duplicate())
+
+
+func tool_allowed(i: int) -> bool:
+	return i == 0 or tool_items.has(i)
+
+
+## Outil du kit de campagne d'un numéro d'objet (null pour les outils d'origine)
+func kit_tool(i: int) -> KitTool:
+	match i:
+		7: return phone
+		8: return tracts
+		9: return posters
+		10: return megaphone
+		11: return spray
+	return null
+
+
+## Point de départ (fourni par main.gd ou le directeur) : position et, si donné, orientation
+func place_at(pos: Vector3, yaw := NAN) -> void:
+	_placed = true
+	if is_inside_tree():
+		global_position = pos
+	else:
+		position = pos
+	velocity = Vector3.ZERO
+	if not is_nan(yaw):
+		_yaw = yaw
+		if human:
+			human.rotation.y = yaw
+
+
+## Sans appel de place_at : lieu de départ de la configuration (WorldSetup « spawn »), s'il y en a un
+func _auto_spawn() -> void:
+	if _placed:
+		return
+	var id := str(WorldSetup.config().get("spawn", ""))
+	if id != "" and Quartier.SPOTS.has(id):
+		place_at(Quartier.spot(id) + Vector3(0, 0.05, 0))
+
+
+## Interpellation : la police garde le téléphone
+func confiscate_phone() -> void:
+	if phone:
+		phone.confiscate()
+	if current_item == 7:
+		phone.hide_now()
+		select_item(0)
+	set_tools(tool_items.filter(func(i): return i != 7).map(func(i): return ITEM_IDS[i]))
 
 
 func _register_inputs() -> void:
@@ -245,6 +343,11 @@ func _register_inputs() -> void:
 		"slot_4": [KEY_4, KEY_KP_4],
 		"slot_5": [KEY_5, KEY_KP_5],
 		"slot_6": [KEY_6, KEY_KP_6],
+		"slot_7": [KEY_7, KEY_KP_7],
+		"slot_8": [KEY_8, KEY_KP_8],
+		"slot_9": [KEY_9, KEY_KP_9],
+		"phone_publish": [KEY_P],
+		"phone_publish_blur": [KEY_O],
 		"interact": [KEY_E],
 		"call_crowd": [KEY_G],
 		"reload_cheat": [KEY_R],
@@ -276,17 +379,27 @@ func _register_inputs() -> void:
 
 
 func _tools_busy() -> bool:
-	return mortar.busy or thrower.busy or igniter.busy or flare_tool.busy or petard_tool.busy
+	return mortar.busy or thrower.busy or igniter.busy or flare_tool.busy or petard_tool.busy \
+		or phone.busy or tracts.busy or posters.busy or megaphone.busy or spray.busy
 
 
 func _busy() -> bool:
 	return _tools_busy() or human.kick_t >= 0.0 or _grab_bin != null or _lift_t >= 0.0
 
 
-## 0 = mains libres, 1 = mortier, 2 = pierres, 3 = briquet + journal, 4 = fumigène, 5-6 = pétards (petit, moyen)
+## 0 = mains libres, 1 = mortier, 2 = pierres, 3 = briquet + journal, 4 = fumigène, 5-6 = pétards (petit, moyen),
+## 7 = téléphone, 8 = tracts, 9 = affiches + colle, 10 = mégaphone, 11 = bombe de peinture
 func select_item(i: int) -> void:
-	if _tools_busy() or i == current_item or _lift_t >= 0.0:
+	if _tools_busy() or i == current_item or _lift_t >= 0.0 or not tool_allowed(i):
 		return
+	for j in range(KIT_FIRST, ITEM_IDS.size()):
+		var kt := kit_tool(j)
+		if j == i:
+			kt.set_equipped(true)
+		elif i == 0:
+			kt.set_equipped(false)
+		else:
+			kt.hide_now()
 	mortar.set_equipped(i == 1)
 	thrower.set_equipped(i == 2)
 	igniter.set_equipped(i == 3)
@@ -318,6 +431,7 @@ func select_item(i: int) -> void:
 		3: _tool_hands = Callable(igniter, "_hand_targets")
 		4: _tool_hands = Callable(flare_tool, "_hand_targets")
 		5, 6: _tool_hands = Callable(petard_tool, "_hand_targets")
+		_: _tool_hands = Callable(kit_tool(i), "_hand_targets")
 	current_item = i
 	if aiming:
 		aiming = false
@@ -325,7 +439,19 @@ func select_item(i: int) -> void:
 	item_changed.emit(i)
 
 
+## Numéro de case (0..8) d'une touche 1..9, ou -1
+func _slot_of(event: InputEvent) -> int:
+	if not event.is_pressed() or event.is_echo():
+		return -1
+	for k in 9:
+		if event.is_action_pressed("slot_%d" % (k + 1)):
+			return k
+	return -1
+
+
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_released("fire") and current_item >= KIT_FIRST:
+		kit_tool(current_item).release()
 	if event is InputEventMouseMotion and wheel_open:
 		# roue des gestes ouverte : la souris choisit un geste au lieu de tourner la caméra
 		wheel_vec += event.relative
@@ -342,24 +468,27 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton and event.pressed and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 		var dirn := 1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else -1
 		if _grab_bin == null:
-			select_item(posmod(current_item + dirn, 7))
+			var cyc: Array[int] = [0]
+			cyc.append_array(tool_items)
+			select_item(cyc[posmod(maxi(cyc.find(current_item), 0) + dirn, cyc.size())])
 	elif event.is_action_pressed("toggle_view"):
 		first_person = not first_person
 		view_changed.emit(first_person)
-	elif _grab_bin == null and event.is_action_pressed("slot_1"):
-		select_item(0 if current_item == 1 else 1)
-	elif _grab_bin == null and event.is_action_pressed("slot_2"):
-		select_item(0 if current_item == 2 else 2)
-	elif _grab_bin == null and event.is_action_pressed("slot_3"):
-		select_item(0 if current_item == 3 else 3)
-	elif _grab_bin == null and event.is_action_pressed("slot_4"):
-		select_item(0 if current_item == 4 else 4)
-	elif _grab_bin == null and event.is_action_pressed("slot_5"):
-		select_item(0 if current_item == 5 else 5)
-	elif _grab_bin == null and event.is_action_pressed("slot_6"):
-		select_item(0 if current_item == 6 else 6)
+	elif _grab_bin == null and _slot_of(event) >= 0:
+		# touche k : k-ième outil autorisé (une seconde fois : mains libres)
+		var k := _slot_of(event)
+		if k < tool_items.size():
+			select_item(0 if current_item == tool_items[k] else tool_items[k])
+	elif event.is_action_pressed("phone_publish") and current_item == 7:
+		if not phone.publish_last(false):
+			message.emit("Aucune vidéo à publier")
+	elif event.is_action_pressed("phone_publish_blur") and current_item == 7:
+		if not phone.publish_last(true):
+			message.emit("Aucune vidéo à publier")
 	elif event.is_action_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and _grab_bin == null:
 		match current_item:
+			7, 8, 9, 10, 11:
+				kit_tool(current_item).use()
 			1: mortar.try_fire()
 			2: thrower.throw_stone()
 			3: igniter.use()
@@ -375,10 +504,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		human.start_kick()
 	elif event.is_action_pressed("call_crowd"):
 		call_crowd()
-	elif event.is_action_pressed("reload_cheat"):
+	elif event.is_action_pressed("reload_cheat") and not Campaign.active:
+		# recharge (triche) : bac à sable seulement
 		mortar.reload_all()
 		flare_tool.reload_all()
 		petard_tool.reload_all()
+		for j in range(KIT_FIRST, ITEM_IDS.size()):
+			kit_tool(j).reload_all()
 		message.emit("Obus, fumigènes et pétards rechargés")
 	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE and false:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -423,6 +555,8 @@ func _player_tick(delta: float) -> void:
 		igniter.set_aim(aiming and current_item == 3)
 		flare_tool.set_aim(aiming and (current_item == 4 or flare_tool.carrying))
 		petard_tool.set_aim(aiming and (current_item == 5 or current_item == 6))
+		for j in range(KIT_FIRST, ITEM_IDS.size()):
+			kit_tool(j).set_aim(aiming and current_item == j)
 	cam_yaw.rotation.y = _yaw
 	var basis_yaw := Basis(Vector3.UP, _yaw)
 	var wish := basis_yaw * Vector3(iv.x, 0.0, iv.y)
@@ -503,6 +637,10 @@ func _player_tick(delta: float) -> void:
 	igniter.step(delta)
 	flare_tool.step(delta)
 	petard_tool.step(delta)
+	for j in range(KIT_FIRST, ITEM_IDS.size()):
+		kit_tool(j).step(delta)
+	if current_item != 0 and not tool_allowed(current_item) and not _tools_busy():
+		select_item(0)
 	var speed := Vector3(velocity.x, 0, velocity.z).length()
 	var run_blend := clampf((speed - WALK_SPEED) / (RUN_SPEED - WALK_SPEED), 0.0, 1.0)
 	human.animate(delta, speed, run_blend, is_on_floor() and _mantle_t < 0.0, velocity.y if _mantle_t < 0.0 else 1.6, _pitch)
@@ -1018,14 +1156,29 @@ func _update_bins(delta: float) -> void:
 			near_car = null
 	# déchet à ramasser devant soi
 	near_pick = null
-	if _grab_bin == null and not _tools_busy() and human.kick_t < 0.0:
+	if _grab_bin == null and not _tools_busy() and human.kick_t < 0.0 and tool_allowed(3):
 		near_pick = igniter.find_pickable()
 		if near_pick != null and near_bin != null:
 			var dp := (near_pick.global_position - global_position) * Vector3(1, 0, 1)
 			var db := (near_bin.global_position - global_position) * Vector3(1, 0, 1)
 			if db.length() < dp.length():
 				near_pick = null
+	# quelqu'un à qui parler : la plus proche des interactions l'emporte
+	talk.update(delta)
+	near_talk = null
+	if _grab_bin == null and not _tools_busy() and human.kick_t < 0.0 and talk.target != null:
+		var other := INF
+		for o in [near_bin, near_pick, near_lift, near_car]:
+			if o != null:
+				other = minf(other, ((o as Node3D).global_position - global_position).length())
+		if talk.target_dist < other:
+			near_talk = talk.target
+			near_bin = null
+			near_pick = null
+			near_lift = null
+			near_car = null
 	if Input.is_action_just_pressed("interact") and _grab_bin == null:
+		_e_talk = near_talk
 		_e_t = 0.0
 		_e_bin = near_bin
 		_e_pick = near_pick
@@ -1039,6 +1192,8 @@ func _update_bins(delta: float) -> void:
 		else:
 			if _grab_bin != null:
 				_end_grab()
+			elif _e_talk != null and is_instance_valid(_e_talk) and _e_t <= 0.5:
+				talk.activate(_e_talk, tracts if current_item == 8 else null)
 			elif _e_car != null and is_instance_valid(_e_car) and _e_t <= 0.5:
 				start_mantle(_e_car)
 			elif _e_lift != null and is_instance_valid(_e_lift) and _e_lift.has_method("is_down") and _e_lift.is_down() and _e_t <= 0.6:
@@ -1056,6 +1211,7 @@ func _update_bins(delta: float) -> void:
 			elif _e_t <= 0.32 and igniter.held != null and not igniter.busy:
 				igniter.put_down()
 			_e_t = -1.0
+			_e_talk = null
 			_e_pick = null
 			_e_lift = null
 			_e_car = null
@@ -1258,25 +1414,29 @@ func context_prompt() -> Array:
 			return igniter.prompt()
 		4:
 			if flare_tool.flare == null:
-				return [["R"], "Plus de fumigènes"]
+				return [["—"] if Campaign.active else ["R"], "Plus de fumigènes"]
 			if not flare_tool.is_lit():
 				return [["CLIC GAUCHE"], "Craquer le fumigène"]
 			return [["CLIC DROIT", "CLIC GAUCHE"], "Brandir · Lancer"]
 		5, 6:
 			if not petard_tool.has_item():
-				return [["R"], "Plus de pétards de ce type"]
+				return [["—"] if Campaign.active else ["R"], "Plus de pétards de ce type"]
 			if not petard_tool.lit:
 				return [["CLIC GAUCHE"], "Allumer la mèche"]
 			return [["CLIC DROIT", "CLIC GAUCHE"], "Viser · Lancer (vite !)"]
 		0:
 			if flare_tool.carrying:
 				return [["CLIC DROIT", "CLIC GAUCHE"], "Fumigène en main : brandir · lancer"]
+		7, 8, 9, 10, 11:
+			return kit_tool(current_item).prompt()
 	return []
 
 
 func interact_prompt() -> String:
 	if _grab_bin != null or igniter.busy:
 		return ""
+	if near_talk != null:
+		return talk.prompt(current_item == 8)
 	if near_car != null and near_pick == null:
 		return "Monter sur le capot"
 	if near_lift != null and near_pick == null:

@@ -60,6 +60,13 @@ var _dog_yaw := 0.0
 var _dog_ph := 0.0
 var _dog_t := 0.0
 var gear := {}
+var tract_n: Node3D           # tract reçu du joueur, tenu un moment à la main
+var offered := false          # le joueur lui a déjà tendu un tract
+var _tract_t := 0.0           # temps restant avant de le ranger (ou de le jeter)
+var _tract_toss := false
+var _chat_tract := false
+
+static var _litter: Array = []    # tracts jetés par terre (les plus anciens disparaissent)
 
 
 func _ready() -> void:
@@ -156,6 +163,12 @@ func _place_props() -> void:
 		var f: Vector3 = pr["f"]
 		var pp: Vector3 = pr["p"]
 		phone.global_transform = Transform3D(Props.basis_up(f, pp), (pr["pos"] as Vector3) + pp * 0.018 + f * 0.012)
+	if tract_n:
+		var side := "L" if bag_l == null and leash_n == null else "R"
+		tract_n.visible = not (side == "R" and (bag_r != null or cane_n != null or phone_on)) and act not in ["pocket", "back", "push"]
+		var ph := pr if side == "R" else human.palm("L")
+		var tf: Vector3 = ph["f"]
+		tract_n.global_transform = Transform3D(Props.basis_up(tf, ph["p"]), (ph["pos"] as Vector3) + (ph["p"] as Vector3) * 0.012 + tf * 0.03)
 	var yb := Basis(Vector3.UP, yaw)
 	if bag_r:
 		bag_r.global_transform = Transform3D(yb, (pr["pos"] as Vector3) + (pr["p"] as Vector3) * 0.02)
@@ -252,6 +265,12 @@ func _think(delta: float) -> void:
 		_hold_t -= delta
 		if _hold_t <= 0.0 and state == "walk":
 			_set_walk_pose()
+		elif _hold_t <= 0.0 and state == "stop":
+			set_act("crossed", {}, 2.5)
+	if _tract_t > 0.0:
+		_tract_t -= delta
+		if _tract_t <= 0.0:
+			_drop_tract()
 	# avance-t-il vraiment ? (sinon le gestionnaire le retire hors de vue)
 	_prog_t += delta
 	if _prog_t > 3.0:
@@ -275,6 +294,8 @@ func _think(delta: float) -> void:
 			_think_flee(delta)
 		"gassed":
 			_think_gassed(delta)
+		"chat":
+			_think_chat(delta)
 
 
 func _think_walk(delta: float) -> void:
@@ -311,7 +332,7 @@ func _think_companion(_delta: float) -> void:
 	if lead.done:
 		done = true
 		return
-	if lead.state == "stop":
+	if lead.state in ["stop", "chat"]:
 		if has_goal:
 			stop_move()
 			face(lead._stop_p)
@@ -376,6 +397,103 @@ func resume() -> void:
 	_set_walk_pose()
 	if wp < route.size():
 		_go_wp()
+
+
+# =================================================================== tracts et conversation (joueur)
+## Le joueur lui tend un tract. `opinion` (0..100) : plus le mouvement est populaire, plus on le prend.
+## Renvoie "take" (le prend), "talk" (s'arrête, discute, puis le prend), "refuse" (geste de refus en passant),
+## "already" (en a déjà eu un) ou "" (ne s'arrête pas : il fuit, ou il s'en va)
+func offer_tract(from: Vector3, opinion := 18.0) -> String:
+	if done or leaving or state in ["flee", "gassed"]:
+		return ""
+	if offered:
+		return "already"
+	offered = true
+	look(from + Vector3.UP * 1.5, 1.0)
+	var p_talk := 0.07 + curious * 0.12
+	var p_take := 0.14 + curious * 0.15 + clampf(opinion, 0.0, 100.0) / 100.0 * 0.4
+	if hurry or fear > 0.3:
+		p_talk *= 0.4
+		p_take -= 0.1
+	if kind in ["phone", "stroller", "dog"]:
+		p_talk *= 0.5
+		p_take -= 0.05
+	if age == "elder":
+		p_talk += 0.06
+	var r := _rng.randf()
+	if r < p_talk:
+		_chat(from, _rng.randf_range(3.5, 5.0), true)
+		return "talk"
+	if r < p_talk + p_take:
+		_chat(from, 1.5, true)
+		return "take"
+	set_act("refuse", {}, 5.0)
+	_hold_t = 1.3
+	if _rng.randf() < 0.45:
+		say_cat("refuse", false)
+	return "refuse"
+
+
+## Le joueur lui adresse la parole : il s'arrête, le regarde et répond quelques secondes
+func talk_to(from: Vector3, sec := 3.5) -> bool:
+	if done or leaving or state in ["flee", "gassed"]:
+		return false
+	_chat(from, sec, false)
+	return true
+
+
+func _chat(from: Vector3, sec: float, tract: bool) -> void:
+	state = "chat"
+	state_t = 0.0
+	_stop_p = from
+	_stop_dur = sec
+	_chat_tract = tract
+	stop_move()
+	face(from)
+	look(from + Vector3.UP * 1.5, 1.0)
+	set_act("reach" if tract else "talk", {}, 4.0)
+	if not tract or sec > 2.0:
+		say_cat("reply" if _rng.randf() < 0.5 else "talk", false)
+
+
+func _think_chat(_delta: float) -> void:
+	look(_stop_p + Vector3.UP * 1.5, 1.0)
+	if _chat_tract and state_t > 0.5 and tract_n == null:
+		_take_tract()
+	if act == "reach" and state_t > 1.0:
+		set_act("talk" if _stop_dur > 2.0 else _walk_act, {}, 3.0)
+	if state_t > _stop_dur or mgr.stage() >= 2:
+		resume()
+
+
+## Prend le tract : il le garde en main un moment, puis le range… ou le jette par terre
+func _take_tract() -> void:
+	tract_n = MeshKit.mesh_instance(MeshKit.rbox(Vector3(0.105, 0.148, 0.002), 0.0008, 1), KitTool.paper_mat(Color(0.95, 0.94, 0.9)))
+	tract_n.top_level = true
+	add_child(tract_n)
+	var band := MeshKit.mesh_instance(MeshKit.rbox(Vector3(0.1, 0.04, 0.0006), 0.0002, 1), KitTool.paper_mat(Color(0.82, 0.12, 0.1)), Vector3(0, 0.045, 0.0013), Vector3.ZERO, tract_n)
+	band.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_tract_t = _rng.randf_range(5.0, 11.0)
+	_tract_toss = _rng.randf() < 0.3
+
+
+func _drop_tract() -> void:
+	if tract_n == null:
+		return
+	if _tract_toss and is_inside_tree():
+		var ball := MeshInstance3D.new()
+		ball.mesh = Props.paper_ball_mesh()
+		ball.material_override = Props.paper_material()
+		get_tree().current_scene.add_child(ball)
+		ball.global_position = global_position + forward() * 0.3 + Vector3(0, 0.03, 0)
+		_litter = _litter.filter(func(o): return is_instance_valid(o))
+		_litter.append(ball)
+		while _litter.size() > 20:
+			var old: Variant = _litter.pop_front()
+			if is_instance_valid(old):
+				(old as Node).queue_free()
+	tract_n.queue_free()
+	tract_n = null
 
 
 # =================================================================== réactions
