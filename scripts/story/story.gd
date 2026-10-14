@@ -83,6 +83,22 @@ const CHAPTERS := [
 		"tools": ["phone", "megaphone", "stones", "flare", "petards_small"],
 		"spawn": "square",
 	},
+	{
+		"id": "blocus",
+		"title": "Blocus",
+		"date": "Mardi 6 avril — 5 h 50",
+		"script": "res://scripts/story/ch_blocus.gd",
+		"tod": "aube",
+		"weather": "brume",
+		"crowd": {"size": "mobilisation", "cortege": false, "bloc": 6, "medic": true, "press": true, "theme": "prix",
+			"gather": "abribus", "calm": true},
+		"police": {"enabled": true, "cordon": true, "max_stage": 3, "start_tension": 0.2, "tension_frozen": false,
+			"patrol": false},
+		"civilians": {"density": 0.6},
+		"residents": true,
+		"tools": ["phone", "megaphone", "tracts"],
+		"spawn": "bar_qg",
+	},
 ]
 
 

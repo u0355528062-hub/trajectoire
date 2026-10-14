@@ -119,6 +119,8 @@ l'affrontement (= affrontement). Épilogue au Zinc devant le JT.
 | `karim_prison`, `sam_fiche` | bool | 4, 5 | fins |
 | `docu_lou` | bool | 4 | fin cachée |
 | `ch5_issue` | accord / tenir / affrontement | 5 | fins |
+| `ch5_ferreira_la`, `ch5_arg_*`, `ch5_laisse_passer` | bool | 5 | négociation, épilogue |
+| `fin_suggeree` | greve / recul / amere / essoufflement | 5 (épilogue) | JT de l'épilogue ; `NewsFeed.pick_ending()` peut le reprendre |
 | `casse_total` | int (vitres + 3 × voitures + choix violents) | tous | fins |
 
 Jauges (`Campaign`) : opinion (départ 18), mobilisation (12), répression (0,15), notoriété (0). Chaque chapitre
