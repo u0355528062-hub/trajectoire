@@ -19,6 +19,22 @@ const CHAPTERS := [
 		"tools": [],
 		"spawn": "supermarche",
 	},
+	{
+		"id": "douze",
+		"title": "On était douze",
+		"date": "Jeudi 11 mars — 18 h 30",
+		"script": "res://scripts/story/ch_douze.gd",
+		"tod": "aprem",
+		"weather": "sec",
+		"crowd": {"size": 12, "cortege": false, "bloc": 0, "medic": false, "press": false, "theme": "prix",
+			"gather": "square", "calm": true},
+		"police": {"enabled": true, "cordon": false, "max_stage": 1, "start_tension": 0.0, "tension_frozen": true,
+			"patrol": true},
+		"civilians": {"density": 1.1},
+		"residents": true,
+		"tools": ["phone", "tracts", "posters", "spray"],
+		"spawn": "bar_qg",
+	},
 ]
 
 
