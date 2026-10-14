@@ -67,6 +67,22 @@ const CHAPTERS := [
 		"tools": ["phone", "megaphone", "tracts"],
 		"spawn": "square",
 	},
+	{
+		"id": "nasse",
+		"title": "La nasse",
+		"date": "Jeudi 25 mars — 22 h 15",
+		"script": "res://scripts/story/ch_nasse.gd",
+		"tod": "nuit",
+		"weather": "pluie",
+		"crowd": {"size": "mobilisation", "cortege": true, "bloc": 12, "medic": true, "press": true, "theme": "prix",
+			"gather": "square", "calm": false},
+		"police": {"enabled": true, "cordon": true, "max_stage": 4, "start_tension": 0.35, "tension_frozen": false,
+			"patrol": false},
+		"civilians": {"density": 0.4},
+		"residents": true,
+		"tools": ["phone", "megaphone", "stones", "flare", "petards_small"],
+		"spawn": "square",
+	},
 ]
 
 
