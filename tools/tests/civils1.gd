@@ -188,4 +188,4 @@ func _report() -> void:
 	for k in checks:
 		print("  %s : %s" % [k, "ok" if checks[k] else "ÉCHEC"])
 		ok = ok and checks[k]
-	print("RÉSULTAT : %s" % ("ok" if ok else "ÉCHEC"))
+	print("RÉSULTAT : %s" % ("OK" if ok else "ÉCHEC"))
