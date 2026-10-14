@@ -136,12 +136,17 @@ func _check_world() -> void:
 	var gather := str(cc.get("gather", ""))
 	if gather != "" and not crowd.npcs.is_empty():
 		var gc := crowd.gather_center()
+		# le cortège suit son parcours : seuls les autres se rassemblent
 		var near := 0
+		var still := 0
 		for n in crowd.npcs:
+			if n.role == "march":
+				continue
+			still += 1
 			if n.global_position.distance_to(gc) < 16.0:
 				near += 1
-		if near < crowd.npcs.size() * 0.75:
-			_fail("seulement %d / %d personnes autour du lieu de rassemblement" % [near, crowd.npcs.size()])
+		if still > 0 and near < still * 0.75:
+			_fail("seulement %d / %d personnes autour du lieu de rassemblement" % [near, still])
 	# police
 	if not bool(pc["enabled"]):
 		if not police.cops.is_empty() or not police.vehicles.is_empty():
