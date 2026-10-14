@@ -137,3 +137,25 @@ func frame(a: Variant, b: Variant, side := 0.7, fov := 42.0) -> void:
 func wide(target: Variant, dist: float, h: float, yaw: float, fov := 50.0) -> void:
 	await shot({"from": cam(target, dist, h, yaw), "look": pos_of(target) + Vector3.UP * 1.2, "dur": 0.05,
 		"fov": fov, "cut": true})
+
+
+## Objectif « filmer / photographier » un sujet (film_clip ou photo dont "subjects" contient `subject` :
+## "prix", "temoignage", "police_lbd", "crowd"…). Sans le téléphone, rester près de `zone` suffit.
+func clip_obj(id: String, text: String, subject: String, zone: Variant, radius := 6.0) -> Objective:
+	var o := objective(id, text, {"type": "manual", "waypoint": pos_of(zone)})
+	if o == null:
+		return null
+	if kit("phone_tool"):
+		_watch_clip(o, subject, "film_clip")
+		_watch_clip(o, subject, "photo")
+	else:
+		_fallback(o, zone, radius, 2.0, 1)
+		hint("Téléphone pas encore disponible dans cette version : reste près du repère pour avancer.", 5.0)
+	return o
+
+
+func _watch_clip(o: Objective, subject: String, ev: String) -> void:
+	while alive() and o.is_active():
+		var d := await wait_event(ev, 1.0)
+		if o.is_active() and (d.get("subjects", []) as Array).has(subject):
+			o.complete()

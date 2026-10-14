@@ -35,6 +35,22 @@ const CHAPTERS := [
 		"tools": ["phone", "tracts", "posters", "spray"],
 		"spawn": "bar_qg",
 	},
+	{
+		"id": "prix",
+		"title": "Les prix, en vrai",
+		"date": "Samedi 13 mars — 15 h 00",
+		"script": "res://scripts/story/ch_prix.gd",
+		"tod": "aprem",
+		"weather": "bruine",
+		"crowd": {"size": 4, "cortege": false, "bloc": 0, "medic": false, "press": false, "theme": "prix",
+			"gather": "square", "calm": true},
+		"police": {"enabled": true, "cordon": false, "max_stage": 1, "start_tension": 0.0, "tension_frozen": true,
+			"patrol": true},
+		"civilians": {"density": 1.3},
+		"residents": true,
+		"tools": ["phone", "tracts"],
+		"spawn": "bar_qg",
+	},
 ]
 
 
