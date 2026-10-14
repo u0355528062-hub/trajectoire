@@ -120,12 +120,12 @@ func _run() -> void:
 	check(p.current_item == 8, "touche 2 -> 2e outil autorisé (tracts)")
 	await key(KEY_5)
 	check(p.current_item == 8, "touche 5 sans outil : rien ne change")
-	var wheel := InputEventMouseButton.new()
-	wheel.button_index = MOUSE_BUTTON_WHEEL_UP
-	wheel.pressed = true
-	Input.parse_input_event(wheel)
+	p.cycle_item(1)          # molette (sans fenêtre, la souris n'est pas capturée : on appelle directement)
 	await frames(3)
 	check(p.current_item == 9, "molette -> outil autorisé suivant (affiches)")
+	p.cycle_item(1)
+	await frames(3)
+	check(p.current_item == 0, "molette après le dernier outil -> mains libres")
 	p.set_tools(WorldSetup.TOOLS_ORIGINAL)
 	await frames(3)
 	check(p.current_item == 0 and p.tool_items == [1, 2, 3, 4, 5, 6], "retour au bac à sable : 1..6, outil retiré rangé")

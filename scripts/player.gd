@@ -439,6 +439,13 @@ func select_item(i: int) -> void:
 	item_changed.emit(i)
 
 
+## Molette : outil autorisé suivant (dirn = 1) ou précédent (-1), mains libres comprises
+func cycle_item(dirn: int) -> void:
+	var cyc: Array[int] = [0]
+	cyc.append_array(tool_items)
+	select_item(cyc[posmod(maxi(cyc.find(current_item), 0) + dirn, cyc.size())])
+
+
 ## Numéro de case (0..8) d'une touche 1..9, ou -1
 func _slot_of(event: InputEvent) -> int:
 	if not event.is_pressed() or event.is_echo():
@@ -468,9 +475,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton and event.pressed and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
 		var dirn := 1 if event.button_index == MOUSE_BUTTON_WHEEL_UP else -1
 		if _grab_bin == null:
-			var cyc: Array[int] = [0]
-			cyc.append_array(tool_items)
-			select_item(cyc[posmod(maxi(cyc.find(current_item), 0) + dirn, cyc.size())])
+			cycle_item(dirn)
 	elif event.is_action_pressed("toggle_view"):
 		first_person = not first_person
 		view_changed.emit(first_person)
