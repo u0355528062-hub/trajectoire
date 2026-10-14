@@ -22,6 +22,10 @@ var car: PoliceVehicle
 var car_x0 := 0.0
 var car_min_x := INF
 var car_gone := false
+# --- menus (écran titre, pause) : étapes [nom, image de déclenchement]
+var mstep := 0
+var mframe := 0
+var main_before: Node
 
 
 class Spy extends Node:
@@ -29,7 +33,8 @@ class Spy extends Node:
 	func _ready() -> void:
 		add_to_group("crowd")
 	func on_event(type: String, _d: Dictionary) -> void:
-		if type in ["police_sommation", "police_gas", "police_charge", "police_lbd"]:
+		# dispersion par la force (les ripostes ciblées à un jet de projectile ne comptent pas)
+		if type in ["police_sommation", "police_gas", "police_charge"]:
 			seen.append(type)
 
 
@@ -49,9 +54,9 @@ func _initialize() -> void:
 		"civilians": {"density": 1.5}}})
 	cases.append({"name": "bac à sable : grande foule, police sans cordon", "over": {
 		"crowd": {"size": 150}, "police": {"cordon": false, "start_tension": 0.2}}})
-	cases.append({"name": "sommations avant la force", "over": {}, "kind": "sommations"})
 	cases.append({"name": "patrouille de passage", "over": {"crowd": {"size": 12, "cortege": false, "gather": "square", "calm": true},
 		"police": {"enabled": false}}, "kind": "patrol"})
+	cases.append({"name": "sommations avant la force", "over": {}, "kind": "sommations"})
 
 
 func _next_case() -> void:
@@ -188,9 +193,12 @@ func _process(_d: float) -> bool:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if phase == "build":
 		_next_case()
-		return ci >= cases.size()
+		return phase == "done"
 	if phase == "done":
 		return true
+	if phase == "menus":
+		_menus()
+		return false
 	frame += 1
 	var kind := str(cases[ci].get("kind", ""))
 	if frame == SETTLE:
@@ -240,6 +248,17 @@ func _process(_d: float) -> bool:
 
 
 func _finish() -> void:
+	if phase != "menus":
+		phase = "menus"
+		mstep = 0
+		mframe = 0
+		Campaign.autoplay = true            # les tests n'écrasent pas la sauvegarde du joueur
+		TitleScreen.force_show = true
+		WorldSetup.sandbox = {}
+		main = load("res://main.tscn").instantiate()
+		root.add_child(main)
+		current_scene = main
+		return
 	phase = "done"
 	WorldSetup.sandbox = {}
 	Campaign.reset()
@@ -248,3 +267,93 @@ func _finish() -> void:
 	else:
 		print("RÉSULTAT : ÉCHEC (%d erreurs)" % errors.size())
 	quit(0 if errors.is_empty() else 1)
+
+
+func _title() -> TitleScreen:
+	var pm: PauseMenu = current_scene.get_node_or_null("PauseMenu") if current_scene else null
+	return pm.title if pm != null and is_instance_valid(pm.title) else null
+
+
+func _pause() -> PauseMenu:
+	return current_scene.get_node_or_null("PauseMenu") if current_scene else null
+
+
+func _crowd_size() -> int:
+	for n in current_scene.get_children():
+		if n is Crowd:
+			return (n as Crowd).npcs.size()
+	return -1
+
+
+## Parcours des menus : accueil -> bac à sable sans rechargement -> retour au menu -> bac à sable réglé (rechargé)
+## -> retour au menu -> nouvelle campagne -> « Recommencer le chapitre » -> « Quitter vers le menu »
+func _menus() -> void:
+	mframe += 1
+	if mframe < 25:
+		return
+	mframe = 0
+	var t := _title()
+	match mstep:
+		0:
+			if t == null or not t.is_showing():
+				_menu_fail("l'écran titre n'apparaît pas au lancement")
+				return
+			if not t._cols.has("campaign") or not t._cols.has("sandbox"):
+				_menu_fail("colonnes Campagne / Bac à sable absentes")
+			main_before = current_scene
+			t._show_col("sandbox")
+			t._launch_sandbox(SandboxMenu.to_sandbox(SandboxMenu.DEFAULTS))
+		1:
+			if current_scene != main_before:
+				_menu_fail("le bac à sable d'origine a rechargé la scène")
+			mframe = -40               # le fondu de sortie de l'accueil dure ~1,3 s
+		2:
+			if t != null:
+				_menu_fail("l'écran titre est resté après « Bac à sable »")
+			_pause()._to_title()
+		3:
+			if t == null or not t.is_showing():
+				_menu_fail("« Quitter vers le menu » ne ramène pas l'écran titre")
+				return
+			t._launch_sandbox({"crowd": {"size": 25}, "tod": "nuit", "police": {"enabled": false}})
+			mframe = -20
+		4:
+			if t != null:
+				_menu_fail("l'écran titre réapparaît après un lancement de bac à sable")
+			if _crowd_size() != 25:
+				_menu_fail("bac à sable réglé : foule de %d au lieu de 25" % _crowd_size())
+			if SandboxMenu.from_sandbox(WorldSetup.sandbox)["size"] != 25:
+				_menu_fail("le menu bac à sable ne relit pas ses derniers réglages")
+			_pause()._to_title()
+		5:
+			if t == null:
+				_menu_fail("pas d'écran titre pour lancer la campagne")
+				return
+			t._new_campaign()
+			mframe = -10
+		6:
+			if t != null or not Campaign.active or current_scene.get_node_or_null("ChapterDirector") == null:
+				_menu_fail("« Nouvelle partie » : campagne non lancée (titre %s, active %s)" % [str(t != null), str(Campaign.active)])
+			Campaign.chapter = 0
+			Campaign.begin_chapter()
+			_pause()._restart_chapter()
+		7:
+			if t != null or not Campaign.active or Campaign.chapter != 0:
+				_menu_fail("« Recommencer le chapitre » : titre %s, active %s, chapitre %d" % [str(t != null), str(Campaign.active), Campaign.chapter])
+			_pause()._to_title()
+		8:
+			if t == null or Campaign.active:
+				_menu_fail("« Quitter vers le menu » en campagne : titre %s, active %s" % [str(t != null), str(Campaign.active)])
+			print("  menus : accueil, bac à sable, retour au menu, campagne, recommencer le chapitre : vus")
+			Campaign.reset()
+			Campaign.active = false
+			Campaign.autoplay = false
+			TitleScreen.force_show = false
+			_finish()
+			return
+	mstep += 1
+
+
+func _menu_fail(msg: String) -> void:
+	errors.append("menus (étape %d) : %s" % [mstep, msg])
+	print("ÉCHEC : ", errors[-1])

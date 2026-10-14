@@ -1,9 +1,10 @@
 class_name TitleScreen
 extends CanvasLayer
 ## Écran d'accueil au lancement : la rue vit en arrière-plan, floutée, filmée par une caméra qui
-## glisse lentement ; titre « BLOCUS » au marqueur, accroche, boutons Jouer / Réglages / Commandes /
-## Quitter, « Appuie sur une touche ». N'apparaît ni sans affichage, ni quand la scène est lancée par
-## un script de test, ni après un « Recommencer ». Une fois en jeu, la souris est capturée.
+## glisse lentement ; titre « BLOCUS » au marqueur, accroche, boutons Campagne (Nouvelle partie / Continuer),
+## Bac à sable (réglages du monde), Réglages, Commandes, Quitter, « Appuie sur une touche » (bac à sable).
+## N'apparaît ni sans affichage, ni quand la scène est lancée par un script de test, ni après un
+## « Recommencer », ni entre deux chapitres de campagne. Une fois en jeu, la souris est capturée.
 
 static var force_show := false       ## les scripts de capture peuvent forcer l'affichage
 static var _seen := false            ## déjà passé une fois dans cette session
@@ -21,13 +22,15 @@ var _hidden: Array = []              # calques d'interface masqués pendant l'ac
 var _frozen: Array = []              # nœuds suspendus pendant l'accueil (joueur, tension)
 var _t := 0.0
 var _focus_btn: Button
+var _cols := {}                      # colonnes de boutons : "main", "campaign", "sandbox"
+var _col_name := "main"
 
 
 ## Faut-il afficher l'écran titre ? (pas en mode sans affichage, pas sous un script de test)
 static func should_show(tree: SceneTree) -> bool:
 	if force_show:
 		return true
-	if _seen:
+	if _seen or Campaign.active:
 		return false
 	if DisplayServer.get_name() == "headless":
 		return false
@@ -44,6 +47,7 @@ func _ready() -> void:
 	layer = 50
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_seen = true
+	force_show = false               # demande ponctuelle (fin de campagne, « Quitter vers le menu »)
 	UiStyle.apply_theme(get_tree())
 	_build()
 	_freeze_world.call_deferred()
@@ -167,10 +171,14 @@ void fragment() {
 	col.add_theme_constant_override("separation", 10)
 	col.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	v.add_child(col)
-	var b_play := _btn("Jouer", true)
-	b_play.pressed.connect(_start)
-	col.add_child(b_play)
-	_focus_btn = b_play
+	_cols["main"] = col
+	var b_camp := _btn("Campagne", true)
+	b_camp.pressed.connect(func(): _show_col("campaign"))
+	col.add_child(b_camp)
+	_focus_btn = b_camp
+	var b_sand := _btn("Bac à sable")
+	b_sand.pressed.connect(func(): _show_col("sandbox"))
+	col.add_child(b_sand)
 	var b_set := _btn("Réglages")
 	b_set.pressed.connect(func(): _open_menu("settings"))
 	col.add_child(b_set)
@@ -180,6 +188,31 @@ void fragment() {
 	var b_q := _btn("Quitter")
 	b_q.pressed.connect(func(): get_tree().quit())
 	col.add_child(b_q)
+	# campagne : nouvelle partie / continuer
+	var camp := VBoxContainer.new()
+	camp.add_theme_constant_override("separation", 10)
+	camp.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	camp.visible = false
+	v.add_child(camp)
+	_cols["campaign"] = camp
+	camp.add_child(UiStyle.label("CAMPAGNE  ·  LA HAUSSE", 15, UiStyle.RED.lightened(0.15), "caps"))
+	if Campaign.has_save():
+		var b_cont := _btn("Continuer", true)
+		b_cont.pressed.connect(_continue_campaign)
+		camp.add_child(b_cont)
+	var b_new := _btn("Nouvelle partie", not Campaign.has_save())
+	b_new.pressed.connect(_new_campaign)
+	camp.add_child(b_new)
+	var b_back := _btn("Retour")
+	b_back.pressed.connect(func(): _show_col("main"))
+	camp.add_child(b_back)
+	# bac à sable : réglages du monde
+	var sand := SandboxMenu.new()
+	sand.visible = false
+	sand.launch.connect(_launch_sandbox)
+	sand.back.connect(func(): _show_col("main"))
+	v.add_child(sand)
+	_cols["sandbox"] = sand
 
 	# « appuie sur une touche »
 	var pc := CenterContainer.new()
@@ -235,8 +268,71 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		get_viewport().set_input_as_handled()
 		if event.keycode == KEY_ESCAPE:
+			if _col_name != "main":
+				_show_col("main")
 			return
+		if _col_name == "main":
+			_launch_sandbox(WorldSetup.sandbox)
+
+
+## Affiche une colonne de boutons (accueil, campagne, bac à sable)
+func _show_col(which: String) -> void:
+	_col_name = which
+	for k in _cols:
+		(_cols[k] as Control).visible = k == which
+	if _press:
+		_press.visible = which == "main"
+	var c: Control = _cols[which]
+	var first: Button = (c as SandboxMenu).first_button if c is SandboxMenu else null
+	if first == null:
+		var bs := c.find_children("*", "Button", true, false)
+		first = bs[0] if not bs.is_empty() else null
+	if first:
+		first.grab_focus()
+	c.modulate.a = 0.0
+	create_tween().tween_property(c, "modulate:a", 1.0, 0.18)
+
+
+# =================================================================== lancement
+## Nouvelle campagne : chapitre 1, sauvegarde, rechargement du monde du chapitre
+func _new_campaign() -> void:
+	Campaign.new_game()
+	Campaign.save()
+	WorldSetup.sandbox = {}
+	_reload()
+
+
+func _continue_campaign() -> void:
+	if not Campaign.load_save():
+		_new_campaign()
+		return
+	WorldSetup.sandbox = {}
+	_reload()
+
+
+## Bac à sable : si le monde déjà construit derrière l'accueil correspond aux réglages, on y entre directement ;
+## sinon on le reconstruit
+func _launch_sandbox(over: Dictionary) -> void:
+	Campaign.active = false
+	WorldSetup.sandbox = over.duplicate(true)
+	var main := menu.get_parent() if menu else null
+	var built: Variant = main.get("cfg") if main else null
+	if built is Dictionary and WorldSetup.config() == built:
 		_start()
+	else:
+		_reload()
+
+
+## Reconstruit la scène avec le nouvel état (campagne ou bac à sable) ; l'accueil ne réapparaît pas
+func _reload() -> void:
+	if _leaving:
+		return
+	_leaving = true
+	var tw := create_tween()
+	tw.tween_property(_root, "modulate:a", 0.0, 0.35)
+	tw.tween_callback(func():
+		get_tree().paused = false
+		get_tree().reload_current_scene())
 
 
 func _open_menu(page: String) -> void:
