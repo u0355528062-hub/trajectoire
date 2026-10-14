@@ -67,6 +67,13 @@ var _pocket_style := "jeans"
 var _rng := RandomNumberGenerator.new()
 var stomp := false                     # piétine sur place (danse, sauts de chant)
 var _k := 1.0                # échelle des bras
+var sep_k := 1.0             # poids de l'écartement mutuel (réduit pour une accolade)
+var _expr_on := false        # un geste expressif pilote la tête / le buste / l'assise (voir _gesture_expr)
+var _expr_keys := {}         # propriétés de Human touchées par le geste en cours (ramenées au repos ensuite)
+
+## Gestes expressifs : ils pilotent aussi la tête, le buste, la bouche ou l'assise, pas seulement les mains
+const EXPR_ACTS := {"nod": true, "shake_head": true, "shrug": true, "explain": true, "sigh": true, "laugh": true,
+	"hug": true, "sit": true, "sit_ground": true}
 
 
 func _ready() -> void:
@@ -157,6 +164,8 @@ func set_act(name: String, p := {}, speed := 3.0) -> void:
 	prm = p
 	_blend = 0.0
 	_blend_speed = speed
+	if EXPR_ACTS.has(name):
+		_expr_on = true
 
 
 func _h(pos: Vector3, f: Vector3, p: Vector3, curl := 0.6, index := 0.0, pole := Vector3.ZERO) -> Dictionary:
@@ -513,6 +522,36 @@ func _pose(name: String, t: float, p: Dictionary) -> Array:
 			var lh := cpos - rgt * 0.02 + sd * 0.1 + Vector3(0, -0.065, 0)
 			return [_h(rh, (sd + Vector3.UP * 0.3).normalized(), -rgt, 0.85, 0.0, Vector3(1, -0.8, 0.2)),
 				_h(lh, sd, Vector3.UP, 0.5, 0.0, Vector3(-1, -0.8, 0.2))]
+		"shrug":
+			# hausser les épaules : avant-bras ouverts, paumes vers le ciel (montée rapide, puis on relâche)
+			var up := _ease(clampf(t / 0.3, 0.0, 1.0)) * (1.0 - 0.45 * _ease(clampf((t - 1.2) / 0.6, 0.0, 1.0)))
+			return _sym(Vector3(0.1 + 0.06 * up, -0.47 + 0.1 * up, 0.12 + 0.1 * up) * k, Vector3(0.45, 0.1, 1), Vector3(0.25, 1, 0), 0.12, Vector3(1, -1, -0.2), sr, sl)
+		"explain":
+			# mains qui accompagnent la parole : temps forts irréguliers, paumes ouvertes l'une vers l'autre
+			var amp2: float = 0.45 + clampf(_talk_amp, 0.0, 1.0) * 0.8
+			var beat := maxf(sin(t * 3.4 + float(idx)), 0.0) * maxf(sin(t * 1.15), 0.2)
+			var gr := Vector3(sin(t * 1.3) * 0.035, 0.06 * beat, sin(t * 2.1) * 0.03) * amp2
+			var gl := Vector3(sin(t * 1.1 + 2.0) * 0.035, 0.05 * maxf(sin(t * 3.0 + 1.7), 0.0), sin(t * 1.9 + 1.0) * 0.03) * amp2
+			return [_h(sr + Vector3(-0.09, -0.36, 0.28) * k + gr, Vector3(-0.2, 0.25, 1), Vector3(-0.75, 0.62, 0), 0.25, 0.0, Vector3(1, -1, -0.25)),
+				_h(sl + Vector3(0.09, -0.38, 0.27) * k + gl, Vector3(0.2, 0.25, 1), Vector3(0.75, 0.62, 0), 0.25, 0.0, Vector3(-1, -1, -0.25))]
+		"laugh":
+			# rire : une main sur le ventre, secouée par le rire
+			var jig := Vector3(0, sin(t * 16.0) * 0.012, 0) * (1.0 - _ease(clampf((t - 2.0) / 0.8, 0.0, 1.0)))
+			return [_h(sr + Vector3(-0.16, -0.5, 0.2) * k + jig, Vector3(-1, -0.1, 0.25), Vector3(0, 0, -1), 0.3, 0.0, Vector3(1, -1, 0)), null]
+		"hug":
+			# accolade : les bras entourent la personne en face (cible : sa poitrine, repère du corps)
+			var tgh: Vector3 = p.get("target", Vector3(0, 1.28, 0.42))
+			var wrap := _ease(clampf(t / 0.6, 0.0, 1.0))
+			var pat := sin(t * 6.0) * 0.02 * clampf(t - 0.8, 0.0, 1.0)
+			var rh2 := sr.lerp(tgh + Vector3(0.05, -0.12, 0.16 + pat), wrap)
+			var lh2 := sl.lerp(tgh + Vector3(-0.05, 0.1, 0.14), wrap)
+			return [_h(rh2, Vector3(-1, 0, 0.15), Vector3(0, 0, -1), 0.4, 0.0, Vector3(1, -0.3, -0.4)),
+				_h(lh2, Vector3(1, 0, 0.15), Vector3(0, 0, -1), 0.4, 0.0, Vector3(-1, -0.3, -0.4))]
+		"sit", "sit_ground":
+			# assis : avant-bras posés sur les cuisses
+			if name == "sit_ground":
+				return _sym(Vector3(0.05, -0.34, 0.4) * k, Vector3(0, -0.45, 1), Vector3(0, 1, 0), 0.35, Vector3(1, -0.4, -0.3), sr, sl)
+			return _sym(Vector3(-0.02, -0.4, 0.32) * k, Vector3(-0.2, -0.5, 1), Vector3(0.3, 1, 0), 0.4, Vector3(1, -0.5, -0.3), sr, sl)
 		"beckon":
 			var bk := sin(t * 5.0) * 0.5 + 0.5
 			return [_h(sr + Vector3(0.05, 0.25 + bk * 0.1, 0.35 - bk * 0.15) * k, Vector3(0, 0.6 + bk * 0.3, 0.8 - bk * 0.5), Vector3(0, -0.3, -1), 0.2, 0.0, Vector3(1, -0.5, -0.3)), null]
@@ -698,7 +737,7 @@ func _move(delta: float) -> void:
 			_stuck_t = 0.0
 			_stuck_ref = pos
 	var sep := crowd.separation(self) if crowd else Vector3.ZERO
-	desired += sep * (2.4 if has_goal else 1.6)
+	desired += sep * (2.4 if has_goal else 1.6) * sep_k
 	var acc := 9.0 if speed_want > 2.0 else 5.5
 	vel = vel.move_toward(desired, acc * delta)
 	if not has_goal and vel.length() < 0.12 and sep.length() < 0.05:
@@ -810,6 +849,70 @@ func _express(delta: float) -> void:
 	look_w = lerpf(look_w, _look_want, minf(1.0, delta * 3.0))
 	human.look_w = look_w
 	human.look_target = look_p
+	if _expr_on:
+		_gesture_expr(delta)
+
+
+## Cibles de tête, de buste, de bouche et d'assise d'un geste expressif à l'instant t
+func _expr_targets(name: String, t: float, p: Dictionary) -> Dictionary:
+	match name:
+		"nod":
+			return {"nod": clampf(1.7 - t, 0.0, 1.0)}
+		"shake_head":
+			return {"shake": clampf(2.0 - t, 0.0, 1.0) * 0.8}
+		"shrug":
+			var u := _ease(clampf(t / 0.3, 0.0, 1.0)) * (1.0 - _ease(clampf((t - 1.2) / 0.6, 0.0, 1.0)))
+			return {"side_lean": 0.18 * u, "lean_extra": -0.04 * u}
+		"explain":
+			return {"lean_extra": 0.03 + 0.03 * sin(t * 0.9)}
+		"sigh":
+			# inspiration (poitrine qui monte), longue expiration (épaules qui tombent), puis un peu voûté
+			var inh := _ease(clampf(t / 0.7, 0.0, 1.0))
+			var exh := _ease(clampf((t - 0.7) / 1.3, 0.0, 1.0))
+			return {"hunch": lerpf(-0.12 * inh, 0.3, exh) - 0.16 * _ease(clampf((t - 2.0) / 1.0, 0.0, 1.0)),
+				"eye_open": 1.0 - 0.45 * exh * (1.0 - _ease(clampf((t - 2.2) / 0.8, 0.0, 1.0))),
+				"jaw": 0.14 * exh * (1.0 - exh), "breath_amp": 0.4 * (1.0 - exh)}
+		"laugh":
+			var fade := 1.0 - _ease(clampf((t - 2.0) / 0.8, 0.0, 1.0))
+			return {"hunch": (0.14 + 0.08 * sin(t * 16.0)) * fade, "jaw": (0.28 + 0.22 * absf(sin(t * 16.0))) * fade,
+				"eye_open": 1.0 - 0.5 * fade, "lean_extra": -0.08 * fade * _ease(clampf(t / 0.3, 0.0, 1.0))}
+		"hug":
+			return {"lean_extra": 0.08 * _ease(clampf(t / 0.6, 0.0, 1.0)), "eye_open": 0.75}
+		"sit":
+			return {"sit": float(p.get("h", 0.62))}
+		"sit_ground":
+			return {"sit": 1.0}
+	return {}
+
+
+## Applique le geste expressif en cours ; à la fin du geste, ramène doucement au repos ce qu'il a touché
+func _gesture_expr(delta: float) -> void:
+	var want := _expr_targets(act, act_t, prm) if EXPR_ACTS.has(act) else {}
+	for key in want:
+		_expr_keys[key] = true
+	var rate := minf(1.0, delta * 7.0)
+	var resting := want.is_empty()
+	for key: String in _expr_keys:
+		var r0 := 1.0 if key == "eye_open" else 0.0
+		var target: float = want.get(key, r0)
+		var cur: float = jaw_extra if key == "jaw" else float(human.get(key))
+		var v := move_toward(cur, target, delta * 1.4) if key == "sit" else lerpf(cur, target, rate)
+		if want.is_empty() and absf(v - r0) < 0.01:
+			v = r0
+		elif want.is_empty():
+			resting = false
+		if key == "jaw":
+			jaw_extra = v
+		else:
+			human.set(key, v)
+	if resting:
+		_expr_keys.clear()
+		_expr_on = false
+
+
+## Assis (banc, marche) : le corps ne doit pas glisser tant qu'on n'est pas relevé
+func seated() -> bool:
+	return human != null and human.sit > 0.15
 
 
 func look(p: Vector3, w := 1.0) -> void:
