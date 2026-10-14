@@ -213,9 +213,18 @@ func _build_main() -> Control:
 	b_ctl.pressed.connect(func(): _click(); show_page("controls"))
 	col.add_child(b_ctl)
 	col.add_child(_gap(6))
-	var b_re := _menu_btn("Recommencer")
-	b_re.pressed.connect(func(): _click(); _ask("Recommencer la partie ?", "Tout repart de zéro : tension, foule et police.", "Recommencer", _restart))
-	col.add_child(b_re)
+	if Campaign.active:
+		var b_rc := _menu_btn("Recommencer le chapitre")
+		b_rc.pressed.connect(func(): _click(); _ask("Recommencer le chapitre ?", "Retour au début du chapitre, dans l'état où tu l'avais commencé.", "Recommencer", _restart_chapter))
+		col.add_child(b_rc)
+	else:
+		var b_re := _menu_btn("Recommencer")
+		b_re.pressed.connect(func(): _click(); _ask("Recommencer la partie ?", "Tout repart de zéro : tension, foule et police.", "Recommencer", _restart))
+		col.add_child(b_re)
+	var b_menu := _menu_btn("Quitter vers le menu")
+	var menu_sub := "La campagne est sauvegardée au début de chaque chapitre." if Campaign.active else "La partie en cours sera perdue."
+	b_menu.pressed.connect(func(): _click(); _ask("Quitter vers le menu ?", menu_sub, "Menu", _to_title))
+	col.add_child(b_menu)
 	var b_q := _menu_btn("Quitter le jeu")
 	b_q.pressed.connect(func(): _click(); _ask("Quitter le jeu ?", "La partie en cours sera perdue.", "Quitter", func(): get_tree().quit()))
 	col.add_child(b_q)
@@ -597,6 +606,19 @@ func _restart() -> void:
 	get_tree().reload_current_scene()
 
 
+## Campagne : on revient à l'état du début du chapitre et on le rejoue
+func _restart_chapter() -> void:
+	Campaign.restart_chapter()
+	_restart()
+
+
+## Retour à l'écran titre (la sauvegarde de campagne reste ; le bac à sable garde ses derniers réglages)
+func _to_title() -> void:
+	Campaign.active = false
+	TitleScreen.force_show = true
+	_restart()
+
+
 # =================================================================== ouverture / fermeture
 func show_page(p: String) -> void:
 	var prev := _page
@@ -644,6 +666,10 @@ func _refresh_stats() -> void:
 	var panes := 0
 	if crowd and crowd.bus:
 		panes = crowd.bus.broken_count()
+	if Campaign.active:
+		var ch := Campaign.chapter_def()
+		_stats.text = "Chapitre %d  ·  %s   ·   Durée %d:%02d" % [Campaign.chapter + 1, str(ch.get("title", "")), secs / 60, secs % 60]
+		return
 	_stats.text = "Durée %d:%02d   ·   Tension max %d %%   ·   Interpellations %d   ·   Vitres brisées %d" % [secs / 60, secs % 60, int(peak * 100.0), arr, panes]
 
 

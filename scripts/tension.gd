@@ -15,6 +15,7 @@ var value := 0.0
 var stage := 0
 var police_active := false     # des policiers sont engagés (la tension redescend plus lentement)
 var frozen := false
+var max_stage := 4             # palier maximal atteignable (réglage du chapitre : la valeur plafonne juste en dessous du suivant)
 var _since := 99.0
 var _log: Array = []
 var _decay_hold := 0.0
@@ -33,7 +34,7 @@ func add(amount: float, why := "") -> void:
 	var old := stage
 	if amount > 0.0:
 		amount *= float(Settings.d["tension_gain"])
-	value = clampf(value + amount, 0.0, 1.0)
+	value = clampf(value + amount, 0.0, ceiling())
 	_peak = maxf(_peak, value)
 	if amount > 0.0:
 		_since = 0.0
@@ -46,9 +47,14 @@ func add(amount: float, why := "") -> void:
 
 func set_value(v: float) -> void:
 	var old := stage
-	value = clampf(v, 0.0, 1.0)
+	value = clampf(v, 0.0, ceiling())
 	_peak = maxf(_peak, value)
 	_refresh_stage(old)
+
+
+## Valeur maximale permise par `max_stage`
+func ceiling() -> float:
+	return 1.0 if max_stage >= STAGES.size() - 1 else STAGES[maxi(max_stage, 0) + 1] - 0.005
 
 
 func _refresh_stage(old: int) -> void:
@@ -59,7 +65,7 @@ func _refresh_stage(old: int) -> void:
 	# petite hystérésis à la baisse
 	if s < stage and value > STAGES[stage] - 0.04:
 		s = stage
-	stage = s
+	stage = mini(s, maxi(max_stage, 0))
 	changed.emit(value, stage)
 	if stage > old:
 		stage_up.emit(stage)
