@@ -19,12 +19,18 @@ func _ready() -> void:
 	player = Player.new()
 	add_child(player)
 	player.position = Vector3(0, 0.05, 0)
+	var spawn := str(cfg.get("spawn", ""))
+	if spawn != "":
+		player.position = Quartier.spot(spawn) + Vector3(0, 0.05, 0)
 	_build_props_world()
+	var pcfg: Dictionary = cfg["police"]
 	var tension := Tension.new()
 	tension.name = "Tension"
+	tension.max_stage = clampi(int(pcfg.get("max_stage", 4)), 0, 4)
 	add_child(tension)
 	var crowd := Crowd.new()
 	crowd.setup(player, bus)
+	crowd.configure(cfg["crowd"])
 	add_child(crowd)
 	Furniture.populate(self, crowd)
 	var street := ParisStreet.new()
@@ -50,16 +56,23 @@ func _ready() -> void:
 	var police := Police.new()
 	police.name = "Police"
 	police.setup(crowd, player, tension)
+	police.configure(pcfg)
 	add_child(police)
+	# tension de départ (la police y répond déjà), éventuellement figée par le chapitre
+	if float(pcfg.get("start_tension", 0.0)) > 0.0:
+		tension.set_value(float(pcfg["start_tension"]))
+	tension.frozen = bool(pcfg.get("tension_frozen", false))
 	# la ville autour : passants sur les trottoirs, habitants aux fenêtres et aux balcons
 	var civilians := Civilians.new()
 	civilians.name = "Civilians"
 	civilians.setup(crowd, police, player)
+	civilians.density = clampf(float((cfg["civilians"] as Dictionary).get("density", 1.0)), 0.0, 1.5)
 	add_child(civilians)
-	var residents := Residents.new()
-	residents.name = "Residents"
-	residents.setup(crowd, police, player)
-	add_child(residents)
+	if bool(cfg.get("residents", true)):
+		var residents := Residents.new()
+		residents.name = "Residents"
+		residents.setup(crowd, police, player)
+		add_child(residents)
 	var hud := preload("res://scripts/hud.gd").new()
 	add_child(hud)
 	hud.bind(player)

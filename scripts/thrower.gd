@@ -287,7 +287,11 @@ func _release() -> void:
 	while stones.size() > 28:
 		var old: Node = stones.pop_front()
 		old.queue_free()
-	get_tree().create_timer(60.0).timeout.connect(func():
-		if is_instance_valid(s):
-			Fx.shrink_and_free(s, 0.8))
+	# minuterie portée par la pierre : elle disparaît avec la scène (rechargement) sans rappel orphelin
+	var life := Timer.new()
+	life.one_shot = true
+	life.autostart = true
+	life.wait_time = 60.0
+	life.timeout.connect(func(): Fx.shrink_and_free(s, 0.8))
+	s.add_child(life)
 	thrown.emit()

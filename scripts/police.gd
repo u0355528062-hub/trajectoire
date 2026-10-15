@@ -17,6 +17,12 @@ var cops: Array[Cop] = []
 var vehicles: Array[PoliceVehicle] = []
 var mode := "hold"                # hold | advance | push | retreat
 var line_c := Vector3(STREET_X, 0.0, ROAD_Z)
+# --- réglages du monde (WorldSetup « police », voir configure())
+var enabled := true               # false : aucun policier, aucun renfort (les paliers de tension restent sans effet)
+var cordon := true                # cordon déjà en place au début
+var patrol := true                # voiture de patrouille garée devant le cordon
+var street_x := STREET_X          # position (x) du cordon d'origine, en travers du boulevard
+var max_stage := 4                # palier de tension maximal auquel la police répond
 var line_dir := Vector3(-1, 0, 0)
 var arrested_count := 0
 var boss: Cop
@@ -60,6 +66,17 @@ func setup(c: Crowd, p: Player, t: Tension) -> void:
 	tension = t
 
 
+## Réglages du monde (clé « police » de WorldSetup.config()), à appeler avant l'ajout à la scène
+func configure(cfg: Dictionary) -> void:
+	enabled = bool(cfg.get("enabled", true))
+	cordon = bool(cfg.get("cordon", true))
+	patrol = bool(cfg.get("patrol", true))
+	max_stage = clampi(int(cfg.get("max_stage", 4)), 0, 4)
+	street_x = float(cfg.get("line_x", STREET_X))
+	line_c = Vector3(street_x, 0.0, ROAD_Z)
+	_adv_goal = street_x
+
+
 func nearest_cop(from: Vector3, r: float) -> Cop:
 	var best: Cop = null
 	var bd := r
@@ -80,7 +97,8 @@ func _ready() -> void:
 	if tension:
 		tension.stage_up.connect(_on_stage_up)
 		tension.stage_down.connect(_on_stage_down)
-	_spawn_cordon()
+	if enabled and cordon:
+		_spawn_cordon()
 
 
 # =================================================================== création
@@ -112,16 +130,17 @@ func _spawn_cordon() -> void:
 	var yaw := atan2(-line_dir.x, -line_dir.z)
 	for i in 6:
 		var z := ROAD_Z + (i - 2.5) * 1.1
-		_spawn_cop("shield", Vector3(STREET_X, 0, z), yaw, "line")
-	boss = _spawn_cop("boss", Vector3(STREET_X + 2.4, 0, ROAD_Z), yaw, "boss")
-	_spawn_cop("grenadier", Vector3(STREET_X + 2.2, 0, ROAD_Z - 2.2), yaw, "support")
-	_spawn_cop("lbd", Vector3(STREET_X + 2.2, 0, ROAD_Z + 2.2), yaw, "support")
+		_spawn_cop("shield", Vector3(street_x, 0, z), yaw, "line")
+	boss = _spawn_cop("boss", Vector3(street_x + 2.4, 0, ROAD_Z), yaw, "boss")
+	_spawn_cop("grenadier", Vector3(street_x + 2.2, 0, ROAD_Z - 2.2), yaw, "support")
+	_spawn_cop("lbd", Vector3(street_x + 2.2, 0, ROAD_Z + 2.2), yaw, "support")
 	# véhicules déjà là, à l'arrêt, gyrophares éteints
-	var van := _make_vehicle("truck", Vector3(STREET_X + 8.0, 0, -8.7), PI / 2.0)
+	var van := _make_vehicle("truck", Vector3(street_x + 8.0, 0, -8.7), PI / 2.0)
 	van.state = "parked"
 	# la voiture de patrouille est garée de travers devant la ligne : à portée des manifestants (et de leur colère)
-	var car := _make_vehicle("car", Vector3(STREET_X - 4.6, 0, -8.7), PI / 2.0 + 0.5)
-	car.state = "parked"
+	if patrol:
+		var car := _make_vehicle("car", Vector3(street_x - 4.6, 0, -8.7), PI / 2.0 + 0.5)
+		car.state = "parked"
 	_layout()
 
 
@@ -154,7 +173,7 @@ func _send_vehicle(kind: String, crew: Array, stage_tag: int) -> void:
 	vehicles.append(v)
 	v.urgent = stage_tag >= 3
 	v.set_lights(true, true)
-	var px := maxf(line_c.x + 9.0 + 3.5 * float(_park_n), STREET_X + 3.0) if kind == "truck" else maxf(line_c.x + 7.0 + 2.0 * float(_park_n), STREET_X)
+	var px := maxf(line_c.x + 9.0 + 3.5 * float(_park_n), street_x + 3.0) if kind == "truck" else maxf(line_c.x + 7.0 + 2.0 * float(_park_n), street_x)
 	px = minf(px, 100.0)
 	var park := Vector3(px, 0, lane_z + (1.0 if lane_z > -7.0 else -0.4))
 	var path: Array[Vector3] = [Vector3(px + 14.0, 0, lane_z), park]
@@ -179,9 +198,53 @@ func _on_parked(v: PoliceVehicle, crew: Array) -> void:
 			if not is_instance_valid(v) or cops.size() >= MAX_COPS:
 				return
 			var c := _spawn_cop(cdef[0], pts[i % pts.size()], yaw, cdef[1])
+			if cdef[1] == "boss":
+				boss = c
 			c.state = "exit"
 			c.alert = alert_level()
 			_layout())
+
+
+## Patrouille de routine (campagne) : une voiture de police entre par l'est, longe lentement le boulevard, marque
+## un temps d'arrêt à hauteur de `look_at` (le rassemblement, par ex.) puis repart et quitte le quartier par l'ouest.
+## Elle n'appartient pas au dispositif (ni renfort, ni fourgon d'interpellation). Renvoie la voiture.
+func patrol_pass(look_at: Variant = null, pause := 6.0, spd := 4.2) -> PoliceVehicle:
+	var lane := LANE_IN
+	var stop_x := 0.0
+	if look_at is Vector3:
+		stop_x = clampf((look_at as Vector3).x, -80.0, 80.0)
+	# un cordon en travers de la chaussée : la patrouille part de derrière lui
+	var x0 := 118.0
+	if not cops.is_empty() and line_c.x < 112.0:
+		x0 = line_c.x - 6.0
+	stop_x = minf(stop_x, x0 - 10.0)
+	var v := PoliceVehicle.new()
+	v.crowd = crowd
+	v.name = "Patrouille"
+	v.position = Vector3(x0, 0.0, lane)
+	v.rotation.y = PI / 2.0
+	add_child(v)
+	v.build("car")
+	v.set_lights(false)
+	var leg1: Array[Vector3] = [Vector3(stop_x + 6.0, 0.0, lane), Vector3(stop_x, 0.0, lane)]
+	v.drive(leg1, PI / 2.0, spd)
+	v.parked.connect(func():
+		if v.get_meta("leaving", false):
+			if crowd:
+				crowd.remove_obstacle(v)
+				crowd.nav_dirty()
+			v.queue_free()
+			return
+		_later(pause, func():
+			if not is_instance_valid(v) or v.burning:
+				return
+			if crowd:
+				crowd.remove_obstacle(v)
+				crowd.nav_dirty()
+			v.set_meta("leaving", true)
+			var leg2: Array[Vector3] = [Vector3(-60.0, 0.0, lane), Vector3(-125.0, 0.0, lane)]
+			v.drive(leg2, PI / 2.0, spd * 1.6)))
+	return v
 
 
 func _later(dt: float, cb: Callable) -> void:
@@ -224,35 +287,50 @@ func _layout() -> void:
 
 
 func _on_stage_up(s: int) -> void:
+	if not enabled:
+		return
+	s = mini(s, max_stage)
+	if s <= stage:
+		return
 	stage = s
 	_alert_all(alert_level())
 	get_tree().call_group("crowd", "on_event", "police_stage", {"stage": s, "pos": line_c})
 	var announce := func(t: String): get_tree().call_group("hud", "announce", t)
+	# sans cordon de départ, le commissaire arrive avec le premier renfort (c'est lui qui fait les sommations)
+	var chief: Array = [["boss", "boss"]] if (boss == null or not is_instance_valid(boss)) and not _boss_sent else []
+	_boss_sent = _boss_sent or not chief.is_empty()
 	match s:
 		1:
-			_send_vehicle("car", [["shield", "patrol"], ["shield", "patrol"]], 1)
+			_send_vehicle("car", chief + [["shield", "patrol"], ["shield", "patrol"]], 1)
 			_say_mega(0)
 		2:
 			mode = "advance"
-			_send_vehicle("truck", [["shield", "line"], ["shield", "line"], ["lbd", "support"], ["shield", "line"], ["grenadier", "support"]], 2)
-			_say_mega(1)
+			_send_vehicle("truck", chief + [["shield", "line"], ["shield", "line"], ["lbd", "support"], ["shield", "line"], ["grenadier", "support"]], 2)
 			_set_all_lights(true)
 		3:
 			mode = "push"
-			_send_vehicle("truck", [["shield", "line"], ["shield", "line"], ["arrester", "team"], ["arrester", "team"], ["shield", "line"], ["lbd", "support"]], 3)
+			_send_vehicle("truck", chief + [["shield", "line"], ["shield", "line"], ["arrester", "team"], ["arrester", "team"], ["shield", "line"], ["lbd", "support"]], 3)
 			_later(6.0, func(): _send_vehicle("car", [["spray", "team"], ["arrester", "team"]], 3))
-			_say_mega(2)
+			if _som_step >= SOMMATIONS.size():
+				_say_mega(4)
 		4:
 			mode = "push"
-			_send_vehicle("truck", [["shield", "line"], ["shield", "line"], ["shield", "line"], ["grenadier", "support"], ["lbd", "support"]], 4)
+			_send_vehicle("truck", chief + [["shield", "line"], ["shield", "line"], ["shield", "line"], ["grenadier", "support"], ["lbd", "support"]], 4)
 			_later(5.0, func(): _send_vehicle("car", [["arrester", "team"], ["arrester", "team"]], 4))
-			_say_mega(3)
+			if _som_step >= SOMMATIONS.size():
+				_say_mega(5)
 			_gas_cd = minf(_gas_cd, 4.0)
 			_charge_cd = minf(_charge_cd, 8.0)
+	# dispersion : les sommations réglementaires précèdent tout usage de la force
+	if s >= 2 and _som_step < 0:
+		_som_step = 0
+		_som_t = 1.5
 
 
 func _on_stage_down(s: int) -> void:
-	stage = s
+	if not enabled:
+		return
+	stage = mini(s, max_stage)
 	_alert_all(alert_level())
 	if s <= 1:
 		mode = "hold"
@@ -273,9 +351,54 @@ func _set_all_lights(on: bool) -> void:
 			v.set_lights(on, on and v.siren_on)   # un renfort encore en route garde sa sirène
 
 
-func _say_mega(i: int) -> void:
+func _say_mega(i: int) -> bool:
 	if boss != null and is_instance_valid(boss) and not boss.busy():
 		boss.speak_mega(clampi(i, 0, 5))
+		return true
+	return false
+
+
+# =================================================================== sommations
+## Sommations réglementaires au haut-parleur avant la dispersion : [réplique de pol_mega_*, sous-titre]
+const SOMMATIONS := [
+	[1, "Première sommation : obéissance à la loi. Dispersez-vous."],
+	[2, "Deuxième sommation : obéissance à la loi. Dispersez-vous."],
+	[3, "Dernière sommation : nous allons faire usage de la force."],
+]
+const SOMMATION_GAP := 11.0        # secondes entre deux sommations
+var _som_step := -1                # -1 : pas commencées ; SOMMATIONS.size() : faites
+var _som_t := 0.0
+var _force_at := INF               # instant à partir duquel la dispersion par la force est permise
+var _boss_sent := false
+
+
+## La police peut-elle disperser par la force (gaz, charge, LBD) ? Seulement après les sommations.
+func force_allowed() -> bool:
+	return _t >= _force_at
+
+
+func _update_sommations(delta: float) -> void:
+	if _som_step < 0 or _som_step >= SOMMATIONS.size():
+		return
+	_som_t -= delta
+	if _som_t > 0.0:
+		return
+	var sm: Array = SOMMATIONS[_som_step]
+	# le commissaire au porte-voix ; s'il est hors d'état, un autre agent de la ligne s'en charge
+	var spk: Cop = boss if boss != null and is_instance_valid(boss) and boss.state != "down" else null
+	if spk == null:
+		var free := _free_cops(["shield", "grenadier", "lbd"])
+		spk = free[0] if not free.is_empty() else null
+	if spk == null or spk.busy() or spk.state == "exit":
+		_som_t = 1.0              # personne de disponible : on réessaie un peu plus tard
+		return
+	spk.speak_mega(int(sm[0]))
+	get_tree().call_group("hud", "announce", "HAUT-PARLEUR — « %s »" % str(sm[1]), Color(0.75, 0.85, 1.0), 4.5)
+	get_tree().call_group("crowd", "on_event", "police_sommation", {"n": _som_step + 1, "last": _som_step == SOMMATIONS.size() - 1, "pos": line_c})
+	_som_step += 1
+	_som_t = SOMMATION_GAP
+	if _som_step >= SOMMATIONS.size():
+		_force_at = _t + 4.0
 
 
 # =================================================================== événements reçus
@@ -659,25 +782,27 @@ func _police_tick(delta: float) -> void:
 	_update_help(delta)
 	_follow_vehicles(delta)
 	# de retour au calme, la ligne se replie vers le cordon d'origine
-	if stage <= 1 and mode == "hold" and line_c.x < STREET_X - 0.5 and tension != null and tension.value < 0.12:
+	if stage <= 1 and mode == "hold" and line_c.x < street_x - 0.5 and tension != null and tension.value < 0.12:
 		_calm_t += delta
 		if _calm_t > 25.0:
 			mode = "retreat"
 			get_tree().call_group("crowd", "on_event", "police_retreat", {"pos": line_c})
 	else:
 		_calm_t = 0.0
-	if stage >= 1:
+	_update_sommations(delta)
+	if stage >= 1 and (_som_step < 0 or _som_step >= SOMMATIONS.size()):
 		_mega_cd -= delta
 		if _mega_cd <= 0.0:
 			_mega_cd = _rng.randf_range(34.0, 55.0)
 			_som = (_som + 1) % 6
-			_say_mega(_som if stage < 3 else 3 + (_som % 3))
-	if stage >= 2:
+			# avant la dispersion : avertissements ; ensuite : rappel de la dernière sommation, ordres d'évacuation
+			_say_mega([0, 4][_som % 2] if _som_step < 0 else [3, 4, 5][_som % 3])
+	if stage >= 2 and force_allowed():
 		_gas_cd -= delta * (1.0 + danger)          # sous les tirs on répond au gaz, à distance
 		if _gas_cd <= 0.0:
 			_gas_cd = _rng.randf_range(18.0, 32.0) / (1.0 + 0.35 * float(stage - 2))
 			_do_gas()
-	if stage >= 3:
+	if stage >= 3 and force_allowed():
 		_charge_cd -= delta
 		if _charge_cd <= 0.0:
 			_charge_cd = _rng.randf_range(26.0, 48.0) / (1.0 + 0.3 * float(stage - 3))
@@ -732,7 +857,7 @@ func _update_line(delta: float) -> void:
 	if under_fire:
 		# très exposé : on se replie une fois de quelques mètres, hors de portée, puis on tient
 		if danger > 0.88 and is_nan(_fallback_x):
-			_fallback_x = minf(line_c.x + 6.0, STREET_X)
+			_fallback_x = minf(line_c.x + 6.0, street_x)
 			_boss_signal("halt")
 		_adv_goal = _fallback_x if not is_nan(_fallback_x) else line_c.x
 		_adv_cd = maxf(_adv_cd, 3.0)
@@ -756,12 +881,12 @@ func _update_line(delta: float) -> void:
 				_boss_signal("fwd")
 			_move_line(delta, 1.25)
 		"retreat":
-			_adv_goal = minf(line_c.x + 6.0, STREET_X)
+			_adv_goal = minf(line_c.x + 6.0, street_x)
 			_move_line(delta, 1.5)
-			if line_c.x >= STREET_X - 0.1:
+			if line_c.x >= street_x - 0.1:
 				mode = "hold"
 	# la ligne se resserre autour du centre de la foule en s'approchant
-	var spread := clampf((STREET_X - line_c.x) / 32.0, 0.0, 1.0)
+	var spread := clampf((street_x - line_c.x) / 32.0, 0.0, 1.0)
 	line_c.z = lerpf(ROAD_Z, -1.5, spread)
 	_alert_t -= delta
 	if _alert_t <= 0.0:

@@ -80,6 +80,43 @@ static func _body(id: String) -> String:
 				+ "<ellipse cx=\"31\" cy=\"24\" rx=\"12\" ry=\"3.2\" fill=\"#B82519\"/>"
 				+ "<path d=\"M31 24 C31 15 39 18 41 11\" stroke=\"C\" stroke-width=\"2.8\" fill=\"none\" stroke-linecap=\"round\"/>"
 				+ "<path d=\"M42 2 L44 8 L50 10 L44 12 L42 18 L40 12 L34 10 L40 8 Z\" fill=\"Y\"/>")
+		"phone":
+			return ("<rect x=\"18\" y=\"4\" width=\"28\" height=\"56\" rx=\"5.5\" fill=\"C\"/>"
+				+ "<rect x=\"21.5\" y=\"10.5\" width=\"21\" height=\"41\" rx=\"1.5\" fill=\"K\"/>"
+				+ "<rect x=\"28\" y=\"6.6\" width=\"8\" height=\"1.8\" rx=\"0.9\" fill=\"K\" opacity=\"0.5\"/>"
+				+ "<circle cx=\"32\" cy=\"55.6\" r=\"2.1\" fill=\"K\" opacity=\"0.45\"/>"
+				+ "<path d=\"M25 29 V25 H29 M35 25 H39 V29 M39 37 V41 H35 M29 41 H25 V37\" stroke=\"Y\" stroke-width=\"2.2\" fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
+				+ "<circle cx=\"27\" cy=\"15.5\" r=\"2.6\" fill=\"R\"/>"
+				+ "<rect x=\"30.5\" y=\"14\" width=\"9\" height=\"3\" rx=\"1.5\" fill=\"C\" opacity=\"0.7\"/>")
+		"tracts":
+			return ("<g transform=\"rotate(-14 32 34)\"><rect x=\"13\" y=\"11\" width=\"30\" height=\"42\" rx=\"2\" fill=\"#CFC6B3\"/></g>"
+				+ "<g transform=\"rotate(-4 32 34)\"><rect x=\"15.5\" y=\"10\" width=\"30\" height=\"42\" rx=\"2\" fill=\"#E2DACA\"/></g>"
+				+ "<g transform=\"rotate(8 32 34)\"><rect x=\"18\" y=\"9\" width=\"30\" height=\"42\" rx=\"2\" fill=\"C\"/>"
+				+ "<rect x=\"21\" y=\"13\" width=\"24\" height=\"9\" rx=\"1\" fill=\"R\"/>"
+				+ "<path d=\"M22.5 28 H43.5 M22.5 33 H43.5 M22.5 38 H37 M22.5 43 H41\" stroke=\"K\" stroke-opacity=\"0.45\" stroke-width=\"2.2\" stroke-linecap=\"round\"/></g>")
+		"poster":
+			return ("<rect x=\"7\" y=\"7\" width=\"32\" height=\"45\" rx=\"1.5\" fill=\"Y\"/>"
+				+ "<path d=\"M12.5 15.5 H33.5 M12.5 22 H29\" stroke=\"K\" stroke-width=\"4.2\" stroke-linecap=\"round\"/>"
+				+ "<path d=\"M12.5 32 H33 M12.5 37 H27 M12.5 42 H30\" stroke=\"K\" stroke-opacity=\"0.5\" stroke-width=\"2\" stroke-linecap=\"round\"/>"
+				+ "<g transform=\"rotate(32 47 43)\"><rect x=\"43\" y=\"20\" width=\"8\" height=\"20\" rx=\"3\" fill=\"#B07A45\"/>"
+				+ "<rect x=\"38.5\" y=\"39\" width=\"17\" height=\"5\" rx=\"1\" fill=\"#BDB5A5\"/>"
+				+ "<rect x=\"38.5\" y=\"43\" width=\"17\" height=\"13\" rx=\"2\" fill=\"C\"/>"
+				+ "<path d=\"M42 46 V54 M47 46 V54 M52 46 V54\" stroke=\"K\" stroke-opacity=\"0.25\" stroke-width=\"1.4\"/></g>")
+		"mega_tool":
+			return ("<path d=\"M8 26 H18 L43 12 V52 L18 38 H8 Z\" fill=\"C\" stroke=\"C\" stroke-width=\"3\" stroke-linejoin=\"round\"/>"
+				+ "<path d=\"M34.5 17.2 L39 14.7 V49.3 L34.5 46.8 Z\" fill=\"R\"/>"
+				+ "<rect x=\"6.5\" y=\"27\" width=\"5\" height=\"10\" rx=\"1.5\" fill=\"K\"/>"
+				+ "<path d=\"M18.5 39 L22.5 54 H29.5 L25.5 39\" fill=\"#BDB5A5\"/>"
+				+ "<path d=\"M50 24 Q56 32 50 40 M55 18 Q64 32 55 46\" stroke=\"Y\" stroke-width=\"4\" fill=\"none\" stroke-linecap=\"round\"/>")
+		"spray":
+			return ("<rect x=\"15\" y=\"23\" width=\"23\" height=\"37\" rx=\"4\" fill=\"R\"/>"
+				+ "<rect x=\"15\" y=\"31\" width=\"23\" height=\"4\" fill=\"C\"/>"
+				+ "<rect x=\"18.5\" y=\"37\" width=\"3.5\" height=\"16\" rx=\"1.7\" fill=\"#fff\" opacity=\"0.35\"/>"
+				+ "<path d=\"M16.5 23.5 Q26.5 14 36.5 23.5 Z\" fill=\"#BDB5A5\"/>"
+				+ "<rect x=\"23\" y=\"11\" width=\"7\" height=\"8\" rx=\"1.5\" fill=\"C\"/>"
+				+ "<rect x=\"29.5\" y=\"12.5\" width=\"4.5\" height=\"3\" rx=\"1\" fill=\"C\"/>"
+				+ "<g fill=\"Y\"><circle cx=\"41\" cy=\"13\" r=\"2.3\"/><circle cx=\"47\" cy=\"9\" r=\"1.8\"/><circle cx=\"48\" cy=\"16\" r=\"2.5\"/>"
+				+ "<circle cx=\"54.5\" cy=\"11.5\" r=\"1.6\"/><circle cx=\"55\" cy=\"19\" r=\"2.1\"/><circle cx=\"42.5\" cy=\"19.5\" r=\"1.5\"/></g>")
 		"hand":
 			return ("<path d=\"M20 34 V18 a3.5 3.5 0 0 1 7 0 V30 V12 a3.5 3.5 0 0 1 7 0 V30 V15 a3.5 3.5 0 0 1 7 0 V32 V22 a3.5 3.5 0 0 1 7 0 V42 C48 52 42 58 34 58 C26 58 22 54 16 46 L10 38 a3.6 3.6 0 0 1 5.5 -4.6 Z\" fill=\"C\"/>")
 		# ---------------------------------------------------------------- signalétique (blanc)
@@ -165,9 +202,10 @@ static func tex(id: String, px := 64) -> Texture2D:
 	return t
 
 
-## Identifiant d'icône de chaque outil (1 à 6)
+## Identifiant d'icône de chaque outil (numéro d'objet du joueur : 0 mains libres, 1 à 6 d'origine, 7 à 11 kit)
 static func tool_icon(item: int) -> String:
-	return ["hand", "mortar", "stone", "fire", "flare", "petard_s", "petard_m"][clampi(item, 0, 6)]
+	const IDS := ["hand", "mortar", "stone", "fire", "flare", "petard_s", "petard_m", "phone", "tracts", "poster", "mega_tool", "spray"]
+	return IDS[clampi(item, 0, IDS.size() - 1)]
 
 
 ## Pictogramme de chaque geste de la roue (identifiant de Player.WHEEL)

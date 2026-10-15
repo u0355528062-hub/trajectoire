@@ -397,6 +397,21 @@ func react(pose: String, dur: float, look_at_p: Vector3, opt := {}) -> bool:
 	return true
 
 
+## Le joueur lui tend un tract : un manifestant est déjà convaincu (« déjà eu ! ») — "already", ou "" s'il est occupé
+func offer_tract(from: Vector3) -> String:
+	if busy():
+		return ""
+	react("wave" if _rng.randf() < 0.5 else "talk", 1.6, from + Vector3.UP * 1.5, {"voice": "ouais", "voice_p": 0.5, "loud": false})
+	return "already"
+
+
+## Le joueur lui parle : il se tourne vers lui et répond quelques secondes ; false s'il est occupé
+func talk_to(from: Vector3, sec := 3.0) -> bool:
+	if busy():
+		return false
+	return react("talk", sec, from + Vector3.UP * 1.5, {"voice": "talk", "voice_p": 0.8, "loud": false, "prm": {"two": _rng.randf() < 0.5}})
+
+
 ## Objet rangé dans `data` ; null s'il a été libéré depuis (évite « assign invalid previously freed instance »)
 func dnode(key: String) -> Node:
 	var v: Variant = data.get(key)

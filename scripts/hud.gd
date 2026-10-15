@@ -3,15 +3,22 @@ extends CanvasLayer
 ## séquence de tir, invites contextuelles (souris, F, E), pile de messages, aide des touches repliable
 ## qui s'efface seule, puce de vue, réticule de visée, vignettage et flou de visée.
 
-const TOOL_NAMES := ["MAINS LIBRES", "MORTIER D'ARTIFICE", "PIERRES", "BRIQUET + DÉCHETS", "FUMIGÈNE", "PÉTARDS · PETITS", "PÉTARDS · MOYENS"]
+const TOOL_NAMES := ["MAINS LIBRES", "MORTIER D'ARTIFICE", "PIERRES", "BRIQUET + DÉCHETS", "FUMIGÈNE", "PÉTARDS · PETITS", "PÉTARDS · MOYENS",
+	"TÉLÉPHONE", "TRACTS", "AFFICHES + COLLE", "MÉGAPHONE", "BOMBE DE PEINTURE"]
 const TOOL_HINTS := ["Molette ou 1 à 6 : choisir un outil", "Vise au clic droit : la trajectoire s'affiche", "Vise au clic droit, puis lance",
 	"Dépose le journal (ou un déchet ramassé avec E), puis allume", "Craque-le, brandis-le, lance-le",
-	"Allume la mèche, vise, lance… vite !", "Plus fort, plus long : fait craquer les vitres"]
+	"Allume la mèche, vise, lance… vite !", "Plus fort, plus long : fait craquer les vitres",
+	"Cadre au clic droit · clic : photo · maintenu : filmer", "E devant un passant : lui tendre un tract",
+	"Morris, panneau libre : autorisé · mur : amende", "Un slogan : la foule reprend si elle est là",
+	"Maintiens le clic face au mur : vandalisme"]
 const HELP_SECS := 12.0          # aide dépliée au départ, puis repliée
 const CHIP_SECS := 7.0           # puce « H Commandes » visible encore un moment, puis effacée
 const MAX_TOASTS := 3
 
 var _slots: Array[ToolSlot] = []
+var _slot_row: HBoxContainer
+var _items: Array = [1, 2, 3, 4, 5, 6]     # outils autorisés (numéros d'objet), dans l'ordre des touches
+var _help_tools: HBoxContainer
 var _item := 1
 var _hint: Label
 var _shells: ShellRow
@@ -57,7 +64,8 @@ var _pet_max := [0, 12, 6]
 ## Case d'outil : icône vectorielle, numéro de touche, pastille de munitions.
 ## Sélectionnée : papier crème, ombre rouge décalée, légère élévation et rebond.
 class ToolSlot extends Control:
-	var index := 1
+	var index := 1           # touche (1..9)
+	var item := 1            # numéro d'objet du joueur
 	var icon: Texture2D
 	var selected := false
 	var count_text := ""
@@ -66,9 +74,10 @@ class ToolSlot extends Control:
 	var bump := 0.0
 	var _hl := 0.0
 
-	func _init(i: int) -> void:
-		index = i
-		icon = UiIcons.tex(UiIcons.tool_icon(i), 112)
+	func _init(key: int, it: int) -> void:
+		index = key
+		item = it
+		icon = UiIcons.tex(UiIcons.tool_icon(it), 112)
 		custom_minimum_size = Vector2(SLOT_SIZE, SLOT_SIZE)
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 
@@ -183,7 +192,10 @@ func bind(player: Player) -> void:
 		_pet = [0, a, b]
 		_pet_max = [0, am, bm]
 		_refresh())
+	player.kit_changed.connect(_refresh)
+	player.tools_changed.connect(_build_slots)
 	_player = player
+	_build_slots(player.tool_items)
 	_on_item(player.current_item)
 
 
@@ -325,10 +337,11 @@ func _build_dock(root: Control) -> void:
 	row.add_theme_constant_override("separation", 8)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	panel.add_child(row)
-	for i in 6:
-		var s := ToolSlot.new(i + 1)
-		_slots.append(s)
-		row.add_child(s)
+	_slot_row = HBoxContainer.new()
+	_slot_row.add_theme_constant_override("separation", 8)
+	_slot_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(_slot_row)
+	_build_slots(_items)
 	var sep := ColorRect.new()
 	sep.color = UiStyle.LINE
 	sep.custom_minimum_size = Vector2(1, 0)
@@ -380,6 +393,40 @@ func _build_dock(root: Control) -> void:
 	_bar.modulate.a = 0.0
 	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	info.add_child(_bar)
+
+
+## Barre d'outils construite d'après les outils autorisés : touche k -> k-ième outil
+func _build_slots(items: Array) -> void:
+	_items = items.duplicate()
+	for sl in _slots:
+		sl.queue_free()
+	_slots.clear()
+	if _slot_row == null:
+		return
+	for k in mini(_items.size(), 9):
+		var sl := ToolSlot.new(k + 1, int(_items[k]))
+		_slots.append(sl)
+		_slot_row.add_child(sl)
+	_slot_row.visible = not _slots.is_empty()
+	_refresh_help_keys()
+	if _name:
+		_refresh()
+
+
+## Touches d'outils de l'aide (« 1 – n »)
+func _refresh_help_keys() -> void:
+	if _help_tools == null:
+		return
+	for c in _help_tools.get_children():
+		c.queue_free()
+	var n := mini(_items.size(), 9)
+	if n <= 0:
+		_help_tools.add_child(UiStyle.label("—", 13, UiStyle.PAPER_MUTE, "bold"))
+		return
+	_help_tools.add_child(UiStyle.keycap("1", 13))
+	if n > 1:
+		_help_tools.add_child(UiStyle.label("–", 13, UiStyle.PAPER_MUTE, "bold"))
+		_help_tools.add_child(UiStyle.keycap(str(n), 13))
 
 
 func _wrap_prompt(content: Control) -> PanelContainer:
@@ -459,6 +506,10 @@ func _build_help(root: Control) -> void:
 		keys.custom_minimum_size.x = 112
 		keys.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var ks: Array = r[0]
+		if ks.size() == 2 and ks[0] == "1":
+			_help_tools = keys
+			_refresh_help_keys()
+			ks = []
 		for i in ks.size():
 			if ks.size() == 2 and ks[0] == "1":
 				keys.add_child(UiStyle.keycap(ks[i], 13))
@@ -614,6 +665,8 @@ func _refresh() -> void:
 	var n := 0
 	var m := 0
 	var infinite := false
+	var kt: KitTool = _player.kit_tool(_item) if _player else null
+	var empty_now := false
 	match _item:
 		1:
 			n = _ammo
@@ -629,32 +682,51 @@ func _refresh() -> void:
 	if _item == 0:
 		_count.text = ""
 		_cmax.text = ""
+	elif kt != null:
+		var cp := kt.count_pair()
+		_count.text = str(cp[0])
+		_cmax.text = str(cp[1])
+		empty_now = kt.is_empty()
 	elif infinite:
 		_count.text = "∞"
 		_cmax.text = ""
 	else:
 		_count.text = str(n)
 		_cmax.text = "/ %d" % m if m > 0 else ""
-	_count.add_theme_color_override("font_color", UiStyle.RED if (not infinite and _item != 0 and n <= 0) else UiStyle.PAPER)
-	var counts := [str(_ammo), "", "", str(_flares), str(_pet[1]), str(_pet[2])]
-	var empties := [_ammo <= 0, false, false, _flares <= 0, _pet[1] <= 0, _pet[2] <= 0]
-	for i in _slots.size():
-		var s := _slots[i]
-		s.selected = _item == i + 1
-		s.count_text = counts[i]
-		s.empty = empties[i]
+		empty_now = n <= 0
+	_count.add_theme_color_override("font_color", UiStyle.RED if empty_now else UiStyle.PAPER)
+	for s in _slots:
+		s.selected = _item == s.item
+		var skt: KitTool = _player.kit_tool(s.item) if _player else null
+		match s.item:
+			1:
+				s.count_text = str(_ammo)
+				s.empty = _ammo <= 0
+			4:
+				s.count_text = str(_flares)
+				s.empty = _flares <= 0
+			5, 6:
+				s.count_text = str(_pet[s.item - 4])
+				s.empty = _pet[s.item - 4] <= 0
+			_:
+				s.count_text = skt.count_text() if skt else ""
+				s.empty = skt.is_empty() if skt else false
 		s.queue_redraw()
-	_name.text = TOOL_NAMES[clampi(_item, 0, 6)]
+	_name.text = TOOL_NAMES[clampi(_item, 0, TOOL_NAMES.size() - 1)]
 	_shells.visible = _item == 1
-	_hint.text = TOOL_HINTS[clampi(_item, 0, 6)]
+	_hint.text = TOOL_HINTS[clampi(_item, 0, TOOL_HINTS.size() - 1)]
+	if _item == 0:
+		var nn := mini(_items.size(), 9)
+		_hint.text = "Molette ou 1 à %d : choisir un outil" % nn if nn > 1 else ("Molette ou 1 : prendre l'outil" if nn == 1 else "Mains libres")
 
 
 func _on_item(i: int) -> void:
 	_item = i
 	_selected = i != 0
 	_refresh()
-	if i > 0 and i <= _slots.size():
-		_slots[i - 1].bump = 1.0
+	for sl in _slots:
+		if sl.item == i:
+			sl.bump = 1.0
 
 
 func _on_ammo(count: int, maximum: int) -> void:

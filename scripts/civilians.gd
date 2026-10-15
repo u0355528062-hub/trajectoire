@@ -25,6 +25,12 @@ var _spawn_cd := 0.0
 var _upd_t := 0.0
 var _next_idx := 600
 var _populated := false
+var density := 1.0                 # réglage du monde (WorldSetup « civilians.density », 0..1,5) : passants voulus × density
+
+
+## Plafond de passants simultanés selon la densité
+func max_active() -> int:
+	return roundi(MAX_ACTIVE * density)
 
 
 func setup(c: Crowd, p: Police, pl: Player) -> void:
@@ -239,7 +245,7 @@ func _spawn(cam: Camera3D, mid_route := false) -> bool:
 	w.position = Vector3(start.x, crowd.ground_y(start), start.z)
 	_add(w)
 	# un couple ou deux amis : le second marche à côté du premier
-	if stage() <= 1 and w.kind in ["walker", "shopper", "elder", "dog"] and _rng.randf() < 0.18 and walkers.size() < MAX_ACTIVE:
+	if stage() <= 1 and w.kind in ["walker", "shopper", "elder", "dog"] and _rng.randf() < 0.18 and walkers.size() < max_active():
 		var c := _make(start)
 		c.age = w.age
 		c.outfit = CivilKit.outfit(_rng, c.female, c.age)
@@ -279,10 +285,10 @@ func _physics_process(delta: float) -> void:
 	if not _populated:
 		_populated = true
 		var tries := 0
-		while walkers.size() < 9 and tries < 40:
+		while walkers.size() < roundi(9 * density) and tries < 40:
 			_spawn(cam, true)
 			tries += 1
-	var target: int = TARGET[clampi(st, 0, 4)]
+	var target: int = roundi(TARGET[clampi(st, 0, 4)] * density)
 	var clouds := get_tree().get_nodes_in_group("gas_clouds")
 	var excess := walkers.size() - target
 	for i in range(walkers.size() - 1, -1, -1):
@@ -310,7 +316,7 @@ func _physics_process(delta: float) -> void:
 			elif dd < g.radius + 5.0 and w.state not in ["flee", "gassed"]:
 				w.startle(g.global_position, 0.35)
 	_spawn_cd -= dt
-	if _spawn_cd <= 0.0 and walkers.size() < mini(target, MAX_ACTIVE):
+	if _spawn_cd <= 0.0 and walkers.size() < mini(target, max_active()):
 		_spawn_cd = _rng.randf_range(1.5, 3.5) * (1.0 + st)
 		_spawn(cam)
 
