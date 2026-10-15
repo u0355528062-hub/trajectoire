@@ -207,27 +207,23 @@ func _on_parked(v: PoliceVehicle, crew: Array) -> void:
 
 ## Patrouille de routine (campagne) : une voiture de police entre par l'est, longe lentement le boulevard, marque
 ## un temps d'arrêt à hauteur de `look_at` (le rassemblement, par ex.) puis repart et quitte le quartier par l'ouest.
-## Elle n'appartient pas au dispositif (ni renfort, ni fourgon d'interpellation). Renvoie la voiture.
+## Un cordon barre la chaussée : elle arrive par la rue des Cerisiers et fait demi-tour devant la ligne
+## (itinéraire : Quartier.patrol_route). Elle n'appartient pas au dispositif (ni renfort, ni fourgon d'interpellation).
 func patrol_pass(look_at: Variant = null, pause := 6.0, spd := 4.2) -> PoliceVehicle:
-	var lane := LANE_IN
 	var stop_x := 0.0
 	if look_at is Vector3:
 		stop_x = clampf((look_at as Vector3).x, -80.0, 80.0)
-	# un cordon en travers de la chaussée : la patrouille part de derrière lui
-	var x0 := 118.0
-	if not cops.is_empty() and line_c.x < 112.0:
-		x0 = line_c.x - 6.0
-	stop_x = minf(stop_x, x0 - 10.0)
+	var line_x := line_c.x if (not cops.is_empty() or (enabled and cordon)) and line_c.x < 112.0 else 999.0
+	var route := Quartier.patrol_route(stop_x, line_x, LANE_IN)
 	var v := PoliceVehicle.new()
 	v.crowd = crowd
 	v.name = "Patrouille"
-	v.position = Vector3(x0, 0.0, lane)
-	v.rotation.y = PI / 2.0
+	v.position = route["start"]
+	v.rotation.y = float(route["yaw"])
 	add_child(v)
 	v.build("car")
 	v.set_lights(false)
-	var leg1: Array[Vector3] = [Vector3(stop_x + 6.0, 0.0, lane), Vector3(stop_x, 0.0, lane)]
-	v.drive(leg1, PI / 2.0, spd)
+	v.drive(route["leg1"], float(route["park_yaw"]), spd)
 	v.parked.connect(func():
 		if v.get_meta("leaving", false):
 			if crowd:
@@ -242,8 +238,7 @@ func patrol_pass(look_at: Variant = null, pause := 6.0, spd := 4.2) -> PoliceVeh
 				crowd.remove_obstacle(v)
 				crowd.nav_dirty()
 			v.set_meta("leaving", true)
-			var leg2: Array[Vector3] = [Vector3(-60.0, 0.0, lane), Vector3(-125.0, 0.0, lane)]
-			v.drive(leg2, PI / 2.0, spd * 1.6)))
+			v.drive(route["leg2"], PI / 2.0, spd * float(route["leg2_k"]))))
 	return v
 
 

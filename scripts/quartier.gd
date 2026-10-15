@@ -38,32 +38,43 @@ const TREE_ROWS := [-2.3, -12.2]                      # alignements de platanes 
 const TREE_SKIP := [Vector2(-3.5, 3.5), Vector2(40.0, 60.0)]   # pas d'arbre : devant l'abribus, au barrage de police
 
 # --- lieux nommés de l'histoire (campagne) : ids stables utilisés par les chapitres (scripts/story/*.gd).
-# Positions au sol ; le module Carte les ajuste aux bâtiments réels (voir docs/CAMPAGNE.md § « Lieux »).
+# Positions au sol, sur le trottoir devant la bonne façade (vitrines : voir MapStory.STOREFRONTS, à ~3 m de la façade),
+# toujours praticables (grille de navigation, hors obstacles : tools/tests/campaign_map.gd).
 const SPOTS := {
 	"depart": Vector3(0.0, 0.0, 0.0),            # point de départ d'origine du joueur
-	"square": Vector3(-24.0, 0.0, 14.0),         # square (rassemblement des premiers jours)
-	"metro": Vector3(15.0, 0.0, 10.5),           # sortie du métro
+	"square": Vector3(-24.0, 0.0, 14.0),         # square des Tanneurs (rassemblement des premiers jours)
+	"metro": Vector3(15.0, 0.0, 8.6),            # sortie du métro (devant l'édicule, pas dans la trémie)
 	"kiosque": Vector3(28.0, 0.0, 11.5),
 	"morris": Vector3(-6.0, 0.0, 12.0),          # colonne Morris (affiches)
 	"wallace": Vector3(6.5, 0.0, -17.0),
 	"abribus": Vector3(0.0, 0.0, -15.0),
-	"parking": Vector3(-27.0, 0.0, -19.0),
+	"parking": Vector3(-29.0, 0.0, -17.2),          # allée du parking, devant les places
 	"velib": Vector3(18.0, 0.0, -14.0),
-	"bar_qg": Vector3(-12.0, 0.0, 16.0),         # café-bar « Le Zinc » de Jo (QG)
-	"boulangerie": Vector3(8.0, 0.0, 16.5),
-	"supermarche": Vector3(34.0, 0.0, -23.5),    # supérette / supermarché (étiquettes de prix)
-	"banque": Vector3(-4.0, 0.0, -23.5),
-	"pharmacie": Vector3(22.0, 0.0, 16.5),
+	"bar_qg": Vector3(-10.8, 0.0, 16.5),         # café-bar « Le Zinc » de Jo (QG), entre les tables de sa terrasse
+	"boulangerie": Vector3(11.7, 0.0, 16.0),
+	"supermarche": Vector3(40.0, 0.0, -23.0),    # supérette « Le Panier du Coin » (étiquettes de prix en vitrine)
+	"banque": Vector3(-3.5, 0.0, -23.0),         # Banque Hexa
+	"pharmacie": Vector3(17.9, 0.0, 16.0),
 	"carrefour_ouest": Vector3(-50.0, 0.0, -7.4),
 	"rue_nord": Vector3(-50.0, 0.0, 40.0),       # rue adjacente nord (rue des Cerisiers)
 	"rue_nord_fond": Vector3(-50.0, 0.0, 70.0),
-	"rue_sud": Vector3(-77.0, 0.0, -45.0),       # rue adjacente sud (rue de la Forge)
-	"rue_sud_fond": Vector3(-77.0, 0.0, -75.0),
-	"station_service": Vector3(-77.0, 0.0, -70.0),
+	"rue_sud": Vector3(-78.0, 0.0, -45.0),       # rue adjacente sud (rue de la Forge)
+	"rue_sud_fond": Vector3(-78.0, 0.0, -75.0),
+	"station_service": Vector3(-85.0, 0.0, -63.0), # station Carbura (rue de la Forge, côté ouest) : piste devant les pompes
 	"cordon": Vector3(54.0, 0.0, -7.4),          # ligne de police d'origine (en travers du boulevard)
-	"parvis_mairie": Vector3(92.0, 0.0, -7.4),   # parvis de la mairie (bout est du boulevard)
-	"mairie": Vector3(102.0, 0.0, -7.4),
+	"parvis_mairie": Vector3(96.0, 0.0, 8.3),    # parvis de la mairie (bout est du boulevard, côté nord)
+	"mairie": Vector3(102.5, 0.0, 8.3),          # devant la porte de la mairie (façade x = BLVD_END)
 }
+
+# --- station-service Carbura : terrain ouvert côté ouest de la rue de la Forge (x0, z0, largeur, profondeur)
+const STATION := Rect2(-96.0, -80.0, 14.0, 28.0)
+# --- mairie d'arrondissement : façade tournée vers -X en x = BLVD_END, de z = MAIRIE_Z0 à NORTH_Z
+const MAIRIE_Z0 := -2.4
+
+# --- sol praticable (piétons) : boulevard, rues adjacentes, station, prolongements derrière les fronts transversaux
+const WALK_RECTS := [Rect2(-105.0, -26.0, 210.0, 45.0), Rect2(-56.0, 19.0, 12.0, 56.0), Rect2(-82.0, -80.0, 10.0, 54.0),
+	Rect2(-96.0, -80.0, 14.0, 28.0), Rect2(105.0, -12.4, 60.0, 10.0), Rect2(-165.0, -12.4, 60.0, 10.0)]
+const ROOF_H := 27.0                  # au-dessus, plus aucun immeuble (caméra libre)
 
 
 ## Position d'un lieu nommé (erreur explicite si l'id n'existe pas)
@@ -99,3 +110,86 @@ static func reserved(p: Vector3, margin := 0.5) -> bool:
 		if Vector2((c as Vector3).x, (c as Vector3).z).distance_to(q) < 2.5 + margin:
 			return true
 	return false
+
+
+## Le point (au sol) est-il sur le sol praticable du quartier (rue, trottoir, station) ?
+static func walkable(p: Vector3, margin := 0.0) -> bool:
+	var q := Vector2(p.x, p.z)
+	for r in WALK_RECTS:
+		if (r as Rect2).grow(-margin).has_point(q):
+			return true
+	return false
+
+
+## Le point est-il à l'air libre (pas dans un immeuble) ? Au-dessus des toits, tout est libre.
+static func open_air(p: Vector3, margin := 0.3) -> bool:
+	return p.y > ROOF_H or walkable(p, margin)
+
+
+## Ramène un point au sol praticable le plus proche (personnages scriptés : rues adjacentes, station, mairie)
+static func walk_clamp(p: Vector3, margin := 0.35) -> Vector3:
+	if walkable(p, margin):
+		return p
+	var best := p
+	var bd := INF
+	for r in WALK_RECTS:
+		var g := (r as Rect2).grow(-margin)
+		var q := Vector3(clampf(p.x, g.position.x, g.end.x), p.y, clampf(p.z, g.position.y, g.end.y))
+		var d := Vector2(q.x - p.x, q.z - p.z).length_squared()
+		if d < bd:
+			bd = d
+			best = q
+	return best
+
+
+## Point de caméra autour d'une cible qui ne tombe jamais dans un immeuble : un plan prévu « derrière » une façade
+## est pris en miroir de l'autre côté de la cible (même distance, même hauteur, on filme la façade de face) ; à défaut,
+## la caméra se rapproche de la cible jusqu'à l'air libre.
+static func camera_point(target: Vector3, p: Vector3) -> Vector3:
+	if open_air(p):
+		return p
+	var off := p - target
+	for m in [Vector3(off.x, off.y, -off.z), Vector3(-off.x, off.y, off.z), Vector3(-off.x, off.y, -off.z)]:
+		var q: Vector3 = target + m
+		if open_air(q) and open_air(target + m * 0.5):
+			return q
+	for i in range(1, 20):
+		var q := target + off * (1.0 - float(i) / 20.0)
+		if open_air(q):
+			return q
+	return target + Vector3(0.0, maxf(off.y, 1.6), 0.0)
+
+
+## Itinéraire de la patrouille de passage (Police.patrol_pass). Sans cordon : elle entre par l'est et repart par
+## l'ouest. Un cordon barre la chaussée (`cordon_x` < 112) : elle descend la rue des Cerisiers, remonte le boulevard
+## (voie vers +X) jusqu'à `stop_x` (toujours devant la ligne), fait demi-tour sur la largeur de la chaussée (au pas :
+## rayon de braquage ~2,2 m) et repart vers l'ouest. À l'ouest de x = -58, des voitures sont garées des deux côtés :
+## on y roule au milieu de la chaussée. Renvoie {"start", "yaw", "leg1", "park_yaw", "leg2", "leg2_k" (vitesse)}.
+static func patrol_route(stop_x: float, cordon_x: float, lane_in: float) -> Dictionary:
+	var mid_w := -48.0                 # à l'ouest de x = -60 : voitures garées des deux côtés
+	var out_leg: Array[Vector3] = []
+	if cordon_x >= 112.0:
+		stop_x = clampf(stop_x, -40.0, 80.0)
+		out_leg.append(Vector3(mid_w, 0.0, lane_in))
+		out_leg.append(Vector3(mid_w - 10.0, 0.0, ROAD_Z))
+		out_leg.append(Vector3(-125.0, 0.0, ROAD_Z))
+		var in_leg: Array[Vector3] = [Vector3(stop_x + 6.0, 0.0, lane_in), Vector3(stop_x, 0.0, lane_in)]
+		return {"start": Vector3(118.0, 0.0, lane_in), "yaw": PI / 2.0, "park_yaw": PI / 2.0, "leg2_k": 1.6,
+			"leg1": in_leg, "leg2": out_leg}
+	var lane_out := ROAD_Z1 - 1.75     # voie vers +X (côté nord)
+	var sx: float = (SIDE_NORTH[0] + SIDE_NORTH[1]) * 0.5 + 1.5
+	stop_x = maxf(minf(stop_x, cordon_x - 16.0), sx + 14.0)
+	var leg1: Array[Vector3] = [Vector3(sx, 0.0, 30.0), Vector3(sx, 0.0, ROAD_Z1 + 2.5), Vector3(sx + 4.0, 0.0, lane_out),
+		Vector3(stop_x - 6.0, 0.0, lane_out), Vector3(stop_x, 0.0, lane_out)]
+	var c := Vector3(stop_x + 7.0, 0.0, ROAD_Z + 0.15)
+	var r := 2.45
+	out_leg.append(Vector3(stop_x + 3.5, 0.0, c.z + r - 0.35))
+	for i in 5:
+		var t := PI * float(i) / 4.0
+		out_leg.append(c + Vector3(sin(t) * r, 0.0, cos(t) * r))
+	out_leg.append(Vector3(c.x - 4.0, 0.0, lane_in))
+	out_leg.append(Vector3(mid_w, 0.0, lane_in))
+	out_leg.append(Vector3(mid_w - 10.0, 0.0, ROAD_Z))
+	out_leg.append(Vector3(-125.0, 0.0, ROAD_Z))
+	return {"start": Vector3(sx, 0.0, float(SIDE_NORTH[2]) - 4.0), "yaw": 0.0, "park_yaw": -PI / 2.0, "leg2_k": 0.8,
+		"leg1": leg1, "leg2": out_leg}

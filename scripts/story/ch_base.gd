@@ -18,11 +18,12 @@ func kit(tool: String) -> bool:
 	return ResourceLoader.exists(KIT % tool)
 
 
-## Point de caméra autour d'une cible : à `dist` m, `h` m de haut, `yaw` degrés (0 = côté +Z)
+## Point de caméra autour d'une cible : à `dist` m, `h` m de haut, `yaw` degrés (0 = côté +Z). Jamais dans un
+## immeuble : un point prévu derrière une façade est pris en miroir devant elle (Quartier.camera_point).
 func cam(target: Variant, dist: float, h: float, yaw: float) -> Vector3:
 	var p := pos_of(target)
 	var a := deg_to_rad(yaw)
-	return p + Vector3(sin(a) * dist, h, cos(a) * dist)
+	return Quartier.camera_point(p, p + Vector3(sin(a) * dist, h, cos(a) * dist))
 
 
 ## Point à `d` m d'une cible, décalé (pour placer quelqu'un à côté d'un lieu ou d'un personnage)

@@ -121,6 +121,23 @@ func height() -> float:
 
 
 # =================================================================== matériaux partagés
+static var _mip := {}
+
+
+## Texture avec mipmaps : les textures du dépôt sont importées sans (fichiers .import non versionnés) ; sans
+## mipmaps, le grain des façades scintille au loin. Calculées une fois au chargement (normales renormalisées).
+static func mip_tex(path: String, normal := false) -> Texture2D:
+	if _mip.has(path):
+		return _mip[path]
+	var t: Texture2D = load(path)
+	var img := t.get_image() if t != null else null
+	if img != null and not img.has_mipmaps() and not img.is_compressed():
+		img.generate_mipmaps(normal)
+		t = ImageTexture.create_from_image(img)
+	_mip[path] = t
+	return t
+
+
 static func mat(key: String) -> Material:
 	if _mats.has(key):
 		return _mats[key]
@@ -129,10 +146,12 @@ static func mat(key: String) -> Material:
 	match key:
 		"stone", "plaster", "brick", "slate", "zinc", "tiles":
 			var tex: String = {"stone": "stone", "plaster": "plaster", "brick": "brick", "slate": "slate", "zinc": "zinc", "tiles": "slate"}[key]
-			m.albedo_texture = load("res://assets/paris/%s_a.png" % tex)
+			m.albedo_texture = mip_tex("res://assets/paris/%s_a.png" % tex)
 			m.normal_enabled = true
-			m.normal_texture = load("res://assets/paris/%s_n.png" % tex)
-			m.normal_scale = {"stone": 0.9, "plaster": 0.6, "brick": 1.0, "slate": 0.8, "zinc": 1.0, "tiles": 0.8}[key]
+			m.normal_texture = mip_tex("res://assets/paris/%s_n.png" % tex, true)
+			# relief modéré et filtrage anisotrope (avec les mipmaps des textures) : pas de grain qui scintille au loin
+			m.normal_scale = {"stone": 0.55, "plaster": 0.4, "brick": 0.7, "slate": 0.6, "zinc": 0.6, "tiles": 0.6}[key]
+			m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 			m.roughness = {"stone": 0.86, "plaster": 0.92, "brick": 0.9, "slate": 0.62, "zinc": 0.4, "tiles": 0.75}[key]
 			if key == "zinc":
 				m.metallic = 0.55
@@ -144,7 +163,7 @@ static func mat(key: String) -> Material:
 			m.roughness = 0.38
 			m.metallic = 0.7
 		"glass", "glass_lit", "glass_dim":
-			m.albedo_texture = load("res://assets/paris/win_atlas.png")
+			m.albedo_texture = mip_tex("res://assets/paris/win_atlas.png")
 			m.roughness = 0.05
 			m.metallic_specular = 1.0
 			if key == "glass":
@@ -153,7 +172,7 @@ static func mat(key: String) -> Material:
 			else:
 				m.albedo_color = Color(0.45, 0.45, 0.45)
 				m.emission_enabled = true
-				m.emission_texture = load("res://assets/paris/win_atlas.png")
+				m.emission_texture = mip_tex("res://assets/paris/win_atlas.png")
 				m.emission = Color(1.0, 0.82, 0.6)
 				m.emission_energy_multiplier = 1.2 if key == "glass_lit" else 0.16
 		"railing":
@@ -496,6 +515,8 @@ func _ground_floor(len: float, bays: Array[float], main: bool) -> void:
 			continue
 		clean.append(o)
 	openings = clean
+	if main:
+		_story_fronts(openings)
 	# maçonnerie : trumeaux pleine hauteur, impostes au-dessus des ouvertures
 	var x0 := 0.0
 	for o in openings:
@@ -509,7 +530,7 @@ func _ground_floor(len: float, bays: Array[float], main: bool) -> void:
 	for o in openings:
 		match o[3]:
 			"shop":
-				_shop_opening(o[4], o[1] - o[0], o[2])
+				_shop_opening(o[4], o[1] - o[0], o[2], o[5] if o.size() > 5 else {})
 			"door":
 				_door(o[4], o[1] - o[0], o[2])
 			"fake":
@@ -988,9 +1009,40 @@ func _flat_roof(y: float) -> void:
 
 
 # ------------------------------------------------------------------ ouvertures du rez-de-chaussée
-func _shop_opening(cx: float, w: float, oh: float) -> void:
+## Vitrines de l'histoire (MapStory.STOREFRONTS) : l'ouverture la plus proche de l'abscisse voulue devient la vraie
+## boutique (supérette, café de Jo, banque…) avec son nom ; une porte d'immeuble n'est jamais prise.
+func _story_fronts(openings: Array) -> void:
+	var a := global_transform * Vector3.ZERO
+	var e := global_transform * Vector3(width, 0, 0)
+	var n := global_basis.z
+	if absf(n.z) < 0.9:
+		return
+	for id: String in MapStory.STOREFRONTS:
+		var sf: Dictionary = MapStory.STOREFRONTS[id]
+		var x: float = sf["x"]
+		if bool(sf["north"]) != (n.z < 0.0) or x < minf(a.x, e.x) or x > maxf(a.x, e.x):
+			continue
+		var best := -1
+		var bd := INF
+		for i in openings.size():
+			var o: Array = openings[i]
+			var d := absf((global_transform * Vector3(o[4], 0, 0)).x - x)
+			if o[3] != "door" and d < bd:
+				bd = d
+				best = i
+		if best >= 0:
+			openings[best][3] = "shop"
+			var st := sf.duplicate()
+			st["id"] = id
+			openings[best].resize(5)
+			openings[best].append(st)
+
+
+func _shop_opening(cx: float, w: float, oh: float, story := {}) -> void:
 	var shop := Shop.new()
 	shop.kind = Shop.pick_kind(_rng)
+	if not story.is_empty():
+		shop.kind = story["kind"]
 	shop.width = w
 	shop.depth = SHOP_DEPTH
 	shop.height = oh
@@ -998,18 +1050,21 @@ func _shop_opening(cx: float, w: float, oh: float) -> void:
 	shop.building = self
 	shop.position = _xf * Vector3(cx, 0.0, 0.0)
 	shop.seed_v = _rng.randi()
+	if story.is_empty():
+		shop.kind = MapStory.plain_kind(shop.kind, shop.seed_v)
 	shop.lit = absf(global_position.x) < 120.0
-	shop.frontage = _frontage(cx, w, oh, shop.kind, shop.seed_v)
+	shop.frontage = _frontage(cx, w, oh, shop.kind, shop.seed_v, story)
 	add_child(shop)
 	shop_nodes.append(shop)
 
 
 ## Devanture : boiserie peinte (classique), moderne (cadre alu, caisson lumineux) ou pierre (banque)
-func _frontage(cx: float, w: float, oh: float, kind: String, sv: int) -> Dictionary:
+func _frontage(cx: float, w: float, oh: float, kind: String, sv: int, story := {}) -> Dictionary:
 	var r := RandomNumberGenerator.new()
 	r.seed = sv
 	var st := Shop.frontage_style(kind, r)
 	var col: Color = Shop.frontage_color(kind, st, r)
+	col = story.get("color", col)
 	var fr := {"style": st, "color": col, "sign_y": oh + 0.3, "sign_z": 0.22, "sign_w": w + 0.3, "awning": false, "lit": false}
 	match st:
 		"boiserie":
@@ -1028,6 +1083,7 @@ func _frontage(cx: float, w: float, oh: float, kind: String, sv: int) -> Diction
 				_detail = false
 			fr["sign_z"] = 0.25
 			fr["awning"] = r.randf() < 0.55
+			fr["awning"] = bool(story.get("awning", fr["awning"]))
 		"pierre":
 			for s: float in [-1.0, 1.0]:
 				box("stone", Vector3(0.45, oh + 0.6, 0.18), Vector3(cx + s * (w * 0.5 + 0.2), (oh + 0.6) * 0.5, 0.06), Color(0.92, 0.9, 0.86), Basis(), NO_BACK)
@@ -1044,6 +1100,7 @@ func _frontage(cx: float, w: float, oh: float, kind: String, sv: int) -> Diction
 	# store banne : le nom est imprimé sur le lambrequin (par la boutique)
 	if fr["awning"]:
 		var ac: Color = [Color(0.55, 0.08, 0.08), Color(0.08, 0.32, 0.18), Color(0.08, 0.16, 0.38), Color(0.72, 0.56, 0.18), Color(0.2, 0.2, 0.22)][r.randi() % 5]
+		ac = story.get("awning_color", ac)
 		var drop := 1.6
 		var ay := oh - 0.05
 		box("cloth", Vector3(w + 0.4, 0.04, drop), Vector3(cx, ay - drop * 0.22, drop * 0.45 + 0.2), ac, Basis(Vector3.RIGHT, 0.45), 0)
@@ -1051,6 +1108,9 @@ func _frontage(cx: float, w: float, oh: float, kind: String, sv: int) -> Diction
 		fr["awning_y"] = ay - drop * 0.43 - 0.15
 		fr["awning_z"] = drop * 0.9 + 0.22
 	fr["xf"] = _xf
+	if not story.is_empty():
+		fr["name"] = story["name"]
+		fr["story"] = story["id"]
 	return fr
 
 
@@ -1058,6 +1118,7 @@ func _frontage(cx: float, w: float, oh: float, kind: String, sv: int) -> Diction
 func _fake_shop(cx: float, w: float, oh: float) -> void:
 	var kind := Shop.pick_kind(_rng)
 	var sv := _rng.randi()
+	kind = MapStory.plain_kind(kind, sv)
 	var fr := _frontage(cx, w, oh, kind, sv)
 	var cell := _rng.randi() % 16
 	quad("glass_dim" if _rng.randf() < 0.45 else "glass", Vector3(cx, 0.42 + (oh - 0.42) * 0.5, -0.3), w - 0.1, oh - 0.42, Rect2(float(cell % 8) / 8.0, 0.5, 1.0 / 8.0, 0.25), Color(0.42, 0.4, 0.38))
@@ -1067,6 +1128,7 @@ func _fake_shop(cx: float, w: float, oh: float) -> void:
 func _closed_shop(cx: float, w: float, oh: float) -> void:
 	var kind := Shop.pick_kind(_rng)
 	var sv := _rng.randi()
+	kind = MapStory.plain_kind(kind, sv)
 	var fr := _frontage(cx, w, oh, kind, sv)
 	var v := _rng.randi() % 4
 	quad("rideau", Vector3(cx, (oh - 0.42) * 0.5 + 0.42, -0.1), w, oh - 0.42, Rect2(float(v) / 4.0, 0, 0.25, 1.0))
