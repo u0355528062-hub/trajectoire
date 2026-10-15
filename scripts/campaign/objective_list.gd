@@ -26,8 +26,8 @@ func _ready() -> void:
 	grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	offset_left = -24.0 - WIDTH
 	offset_right = -24.0
-	offset_top = 150.0
-	offset_bottom = 150.0
+	offset_top = 172.0
+	offset_bottom = 172.0
 	custom_minimum_size.x = WIDTH
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	modulate.a = 0.0
