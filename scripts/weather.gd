@@ -39,6 +39,7 @@ func setup(t_id: String, w_id: String, t: Dictionary, w: Dictionary) -> void:
 func _ready() -> void:
 	if rain > 0.0:
 		_build_rain()
+		add_child(StoryAudio.rain_player(rain))     # son de la pluie (assets/audio/story/amb_pluie)
 	apply_settings()
 	set_process(rain > 0.0)
 	# le reste du monde est construit après l'éclairage : on l'habille une fois la scène prête

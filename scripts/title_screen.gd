@@ -22,6 +22,7 @@ var _hidden: Array = []              # calques d'interface masqués pendant l'ac
 var _frozen: Array = []              # nœuds suspendus pendant l'accueil (joueur, tension)
 var _t := 0.0
 var _focus_btn: Button
+var _music: AudioStreamPlayer        # thème de l'accueil (assets/audio/story/mus_theme.ogg)
 var _cols := {}                      # colonnes de boutons : "main", "campaign", "sandbox"
 var _col_name := "main"
 
@@ -51,6 +52,15 @@ func _ready() -> void:
 	UiStyle.apply_theme(get_tree())
 	_build()
 	_freeze_world.call_deferred()
+	var th := StoryAudio.get_stream("mus_theme")
+	if th:
+		Settings.ensure_buses()
+		_music = AudioStreamPlayer.new()
+		_music.stream = th
+		_music.bus = StoryAudio.BUS
+		_music.volume_db = -10.0
+		add_child(_music)
+		_music.play()
 
 
 # =================================================================== monde en arrière-plan
@@ -361,6 +371,8 @@ func _start() -> void:
 	var tw := create_tween().set_parallel(true)
 	tw.tween_property(_content, "modulate:a", 0.0, 0.35)
 	tw.tween_property(_root, "modulate:a", 0.0, 0.9).set_delay(0.2)
+	if _music:
+		tw.tween_property(_music, "volume_db", -45.0, 1.0)
 	if _cam and to:
 		tw.tween_property(_cam, "global_transform", to.global_transform, 1.0).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
 		tw.tween_property(_cam, "fov", to.fov, 1.0)
