@@ -19,6 +19,8 @@ var waypoint := Vector3.INF     # repère à l'écran (Vector3.INF : aucun)
 var optional := false
 var age := 0.0                  # secondes depuis la création
 var hold_t := 0.0               # temps passé dans la zone (type « hold »)
+var fail_reason := ""           # raison de l'échec ("timer", "tension"…)
+var follow := ""                # id de personnage suivi par le repère (objectif « talk » sans repère fixe)
 
 
 func is_active() -> bool:
@@ -46,8 +48,34 @@ func fail(reason := "") -> void:
 	if not is_active():
 		return
 	state = "failed"
+	fail_reason = reason
 	failed.emit(reason)
 
 
 func set_waypoint(p: Vector3) -> void:
 	waypoint = p
+	follow = ""
+
+
+## Type d'objectif (spec["type"], "manual" par défaut)
+func kind() -> String:
+	return str(spec.get("type", "manual"))
+
+
+## Secondes restantes avant l'expiration du minuteur (-1 : pas de minuteur)
+func time_left() -> float:
+	if not spec.has("timer"):
+		return -1.0
+	return maxf(float(spec["timer"]) - age, 0.0)
+
+
+## Avancement 0..1 (compteur, temps tenu dans la zone, ou temps écoulé pour « survive »)
+func ratio() -> float:
+	if state == "done":
+		return 1.0
+	match kind():
+		"hold":
+			return clampf(hold_t / maxf(float(spec.get("sec", 30.0)), 0.01), 0.0, 1.0)
+		"survive":
+			return clampf(age / maxf(float(spec.get("timer", 1.0)), 0.01), 0.0, 1.0)
+	return clampf(float(progress) / float(maxi(target, 1)), 0.0, 1.0)
