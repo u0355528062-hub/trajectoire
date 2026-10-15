@@ -28,7 +28,8 @@ void fragment() {
 	vec4 m = texture(garment_m, UV);
 	vec3 base = color.rgb;
 	vec3 wa = texture(weave_a, UV * weave_scale).rgb;
-	base = mix(base, base * wa * 3.0, weave_albedo);
+	vec3 wm = max(textureLod(weave_a, vec2(0.5), 12.0).rgb, vec3(0.002));
+	base = mix(base, base * wa / wm, weave_albedo);
 	base = mix(base, trim_color.rgb, m.g * trim_mix);
 	base = mix(base, wear_color.rgb, clamp(m.b * wear_amount, 0.0, 1.0));
 	float sp = m.a * special_on;

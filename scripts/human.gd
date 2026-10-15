@@ -26,11 +26,15 @@ const HAIR_SHADER := preload("res://assets/character/hair.gdshader")
 const EYES := {
 	"male_a": "hazel", "male_b": "dark", "male_c": "dark", "male_d": "blue", "male_e": "brown",
 	"female_a": "green", "female_b": "dark", "female_c": "dark", "female_d": "brown",
+	"male_f": "dark", "male_g": "brown", "male_h": "blue", "male_i": "grey", "female_e": "brown", "female_f": "hazel",
 }
+const HAIR_CURLY := {"male_b": true, "male_e": true, "male_f": true, "female_f": true}
 const HAIR_COLOR := {
 	"male_a": Color(0.13, 0.085, 0.06), "male_b": Color(0.04, 0.035, 0.03), "male_c": Color(0.04, 0.035, 0.035),
 	"male_d": Color(0.36, 0.34, 0.32), "male_e": Color(0.05, 0.04, 0.03), "female_a": Color(0.3, 0.18, 0.1),
 	"female_b": Color(0.03, 0.025, 0.02), "female_c": Color(0.03, 0.03, 0.03), "female_d": Color(0.12, 0.07, 0.04),
+	"male_f": Color(0.03, 0.025, 0.02), "male_g": Color(0.035, 0.03, 0.025), "male_h": Color(0.56, 0.54, 0.51),
+	"male_i": Color(0.3, 0.29, 0.28), "female_e": Color(0.06, 0.04, 0.03), "female_f": Color(0.72, 0.7, 0.67),
 }
 
 var model: Node3D
@@ -129,10 +133,46 @@ func _ready() -> void:
 	skeleton = _find_skeleton(inst)
 	_apply_materials(inst)
 	_cache_bones()
+	_add_accessories()
 	_whoosh = AudioStreamPlayer3D.new()
 	_whoosh.stream = Sfx.get_stream(&"kick_whoosh")
 	_whoosh.volume_db = -6.0
 	add_child(_whoosh)
+
+
+## Accessoires portés demandés par la tenue : caméra en bandoulière ("camera"), écharpe tricolore ("sash")
+func _add_accessories() -> void:
+	var s := hscale()
+	if outfit.get("camera", false):
+		var cam := Props.camera()
+		attach("spine02", cam, Vector3(-0.05, -0.04, 0.2) * s, Basis(Vector3.RIGHT, deg_to_rad(18)))
+	if outfit.get("sash", false):
+		var band := MeshInstance3D.new()
+		var tm := TorusMesh.new()
+		tm.inner_radius = 0.165
+		tm.outer_radius = 0.19
+		tm.rings = 24
+		tm.ring_segments = 6
+		band.mesh = tm
+		band.material_override = _sash_mat()
+		band.scale = Vector3(1.15, 0.2, 1.12) * s
+		attach("spine03", band, Vector3(0.0, 0.06, 0.035) * s, Basis(Vector3.BACK, deg_to_rad(52)))
+
+
+## Tissu tricolore (bandes bleu-blanc-rouge sur la largeur de l'écharpe)
+func _sash_mat() -> Material:
+	return _cached("sash", func() -> Material:
+		var img := Image.create(4, 3, false, Image.FORMAT_RGB8)
+		var cols := [Color(0.05, 0.12, 0.42), Color(0.88, 0.88, 0.86), Color(0.72, 0.06, 0.08)]
+		for y in 3:
+			for x in 4:
+				img.set_pixel(x, y, cols[y])
+		var m := StandardMaterial3D.new()
+		m.albedo_texture = ImageTexture.create_from_image(img)
+		m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		m.roughness = 0.75
+		m.uv1_scale = Vector3(1.0, 3.0, 1.0)
+		return m)
 
 
 ## Ombres portées du personnage (coupées au loin par la foule pour alléger le rendu)
@@ -189,24 +229,29 @@ func _garment(garment: String, color: Color, p: Dictionary) -> ShaderMaterial:
 
 
 func _cloth(kind: String, color: Color) -> Material:
-	return _cached(kind + str(color), func() -> Material:
+	var key := kind + str(color) + (variant if kind == "hair" and HAIR_CURLY.has(variant) else "")
+	return _cached(key, func() -> Material:
 		match kind:
 			"fleece": # sweat molletonné : côtes, cordons, poche kangourou, duvet en lumière rasante
 				return _garment("hoodie", color, {"weave_scale": 7.0, "weave_depth": 0.35, "rough": 0.93, "sheen": 0.22,
 					"trim_color": color.darkened(0.12), "trim_mix": 1.0, "special_color": Color(0.62, 0.6, 0.56),
 					"special_metal": 0.7, "garment_depth": 1.0})
+			"knit_top": # pull fin (même coupe que le sweat, sans poche ni cordons)
+				return _garment("tshirt", color, {"weave_scale": 8.0, "weave_depth": 0.45, "rough": 0.95, "sheen": 0.18,
+					"trim_color": color.darkened(0.1), "trim_mix": 1.0, "special_on": 0.0})
 			"tee": # jersey de coton
 				return _garment("tshirt", color, {"weave_scale": 11.0, "weave_depth": 0.2, "rough": 0.9, "sheen": 0.1,
 					"trim_color": color.darkened(0.08), "trim_mix": 1.0, "special_on": 0.0})
 			"puffer": # doudoune en nylon : piqûres, zip métallique
 				return _garment("jacket", color, {"weave": "nylon_n.png", "weave_scale": 6.0, "weave_depth": 0.25,
-					"rough": 0.48, "sheen": 0.04, "trim_color": color.darkened(0.25), "trim_mix": 1.0,
+					"rough": 0.6, "sheen": 0.04, "trim_color": color.darkened(0.25), "trim_mix": 1.0,
 					"special_color": Color(0.32, 0.32, 0.33), "special_metal": 0.8})
 			"denim": # jean brut : sergé indigo, surpiqûres dorées, usure claire aux cuisses et aux plis
-				return _garment("jeans", color, {"weave": "denim_n.png", "weave_scale": 3.0, "weave_depth": 0.35,
-					"weave_a": "denim_a.png", "weave_albedo": 1.0, "rough": 0.9,
-					"trim_color": Color(0.72, 0.5, 0.22), "trim_mix": 1.0,
-					"wear_color": Color(0.42, 0.5, 0.62) * color, "wear_amount": 0.75, "special_on": 0.0})
+				var ind := Color(0.16, 0.21, 0.33) * color
+				return _garment("jeans", ind, {"weave": "denim_n.png", "weave_scale": 9.0, "weave_depth": 0.3,
+					"weave_a": "denim_a.png", "weave_albedo": 0.25, "rough": 0.9,
+					"trim_color": Color(0.62, 0.42, 0.18), "trim_mix": 1.0,
+					"wear_color": Color(0.36, 0.43, 0.55) * color, "wear_amount": 0.75, "special_on": 0.0})
 			"chino": # pantalon de toile ou jogging sombre : coutures ton sur ton, sans usure
 				return _garment("jeans", color, {"weave": "denim_n.png", "weave_scale": 5.0, "weave_depth": 0.18,
 					"rough": 0.88, "trim_color": color.lightened(0.08), "trim_mix": 0.6,
@@ -218,7 +263,7 @@ func _cloth(kind: String, color: Color) -> Material:
 			"medic": # gilet de street medic : blanc, croix rouges devant et dans le dos
 				return _garment("vest", Color(0.86, 0.86, 0.84), {"weave": "canvas_n.png", "weave_scale": 8.0,
 					"weave_depth": 0.2, "rough": 0.75, "wear_color": Color(0.7, 0.71, 0.72), "wear_amount": 0.0,
-					"special_color": Color(0.72, 0.05, 0.05), "trim_color": Color(0.72, 0.05, 0.05), "trim_mix": 1.0})
+					"special_color": Color(0.72, 0.05, 0.05), "trim_color": Color(0.8, 0.8, 0.78), "trim_mix": 1.0})
 			"knit":
 				return _std(color, 0.96, "knit_n.png", 0.2, 6.0)
 			"cotton":
@@ -237,7 +282,7 @@ func _cloth(kind: String, color: Color) -> Material:
 				b.uv1_scale = Vector3(3, 3, 1)
 				return b
 			"shoes":
-				var sh := _std(color, 0.62, "canvas_n.png", 0.12, 6.0)
+				var sh := _std(color, 0.78, "canvas_n.png", 0.3, 6.0)
 				sh.vertex_color_use_as_albedo = true
 				return sh
 			"hair":
@@ -246,6 +291,12 @@ func _cloth(kind: String, color: Color) -> Material:
 				h.set_shader_parameter("color", color)
 				h.set_shader_parameter("strands", _tex("hair_strands.png"))
 				h.set_shader_parameter("strands_n", _tex("hair_strands_n.png"))
+				if HAIR_CURLY.has(variant): # cheveux crépus ou bouclés : mèches courtes, peu de reflet
+					h.set_shader_parameter("curl", 1.0)
+					h.set_shader_parameter("tiling", Vector2(14.0, 10.0))
+					h.set_shader_parameter("aniso", 0.15)
+					h.set_shader_parameter("rough", 0.8)
+					h.set_shader_parameter("spec", 0.2)
 				return h
 		return _std(color, 0.9))
 
@@ -268,9 +319,6 @@ func _eyes(iris: String) -> Material:
 		m.albedo_texture = _tex("eye_" + iris + ".png")
 		m.roughness = 0.08
 		m.metallic_specular = 0.7
-		m.clearcoat_enabled = true
-		m.clearcoat = 1.0
-		m.clearcoat_roughness = 0.03
 		return m)
 
 
@@ -288,9 +336,9 @@ func _apply_materials(root: Node) -> void:
 		head_item = ""
 	if face == "balaclava":
 		head_item = "" if head_item == "cap" else head_item
-	var top_kind := {"hoodie": "fleece", "jacket": "puffer", "tshirt": "tee"}.get(top, "fleece") as String
+	var top_kind := {"hoodie": "fleece", "jacket": "puffer", "tshirt": "tee", "sweater": "knit_top"}.get(top, "fleece") as String
 	var top_mat := _cloth(top_kind, o["top_color"])
-	var hood_mat := _cloth({"hoodie": "knit", "jacket": "nylon", "tshirt": "cotton"}.get(top, "knit") as String, o["top_color"])
+	var hood_mat := _cloth({"hoodie": "knit", "jacket": "nylon"}.get(top, "cotton") as String, o["top_color"])
 	# cheveux de la couleur cuite dans la peau (sourcils, barbe, racines) ; la tenue ne l'impose
 	# que pour les cheveux gris des personnes âgées ou si elle le demande ("hair_force")
 	var hair_col: Color = HAIR_COLOR.get(variant, Color(0.12, 0.08, 0.05))
@@ -312,7 +360,7 @@ func _apply_materials(root: Node) -> void:
 	}
 	var visible_set := {
 		"Body": true, "Head": true, "Eyes": true, "Jeans": true, "Shoes": true,
-		"Hoodie": top == "hoodie", "Hood": hood, "Jacket": top == "jacket", "Tshirt": top == "tshirt",
+		"Hoodie": top == "hoodie" or top == "sweater", "Hood": hood, "Jacket": top == "jacket", "Tshirt": top == "tshirt",
 		"Vest": o["vest"] and top != "jacket",
 		"Beanie": head_item == "beanie", "Cap": head_item == "cap", "CapBrim": head_item == "cap",
 		"Balaclava": face == "balaclava", "Bandana": face == "bandana",

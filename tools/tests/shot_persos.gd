@@ -125,6 +125,11 @@ func _run() -> void:
 		var hp := h.head_world()
 		aim(hp + Vector3(0.18, 0.02, 0.62), hp + Vector3(0, -0.02, 0), 30.0)
 		await shot("visage_" + id)
+	for id in ["nadia", "presentatrice", "jo"]:
+		var h2: Human = by_id[id]
+		var hp2 := h2.head_world()
+		aim(hp2 + Vector3(-0.55, 0.12, 0.35), hp2 + Vector3(0, -0.03, 0), 34.0)
+		await shot("profil_" + id)
 	# plans taille
 	var mid := ((by_id["sam"] as Human).global_position + (by_id["ines"] as Human).global_position) * 0.5
 	aim(mid + Vector3(0, 1.3, 2.9), mid + Vector3(0, 1.2, 0), 42.0)

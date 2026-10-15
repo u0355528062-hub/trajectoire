@@ -219,7 +219,7 @@ def bake_skin(path, Pb, Nb, TV, TT, VT, ctx, size=2048, seed=1):
             ang = np.arctan2(y - 1.693, (x - sx * 0.064) * sx)
             wr += (0.5 + 0.5 * np.sin(ang * 9.0)) ** 8 * smooth(0.004, 0.012, dd) * smooth(0.026, 0.012, dd) * (sx * x > 0.05)
         wr *= face
-        col *= (1 - 0.14 * age * wr)[:, None]
+        col *= (1 - 0.08 * age * wr * (0.4 + 0.6 * n_mid))[:, None]
     else:
         wr = np.zeros(n)
 
@@ -284,7 +284,7 @@ def bake_skin(path, Pb, Nb, TV, TT, VT, ctx, size=2048, seed=1):
     if bd > 0:
         zone = face & (y < 1.668) & (z > 0.03) & (ax < 0.085)
         zone |= head_zone & (y < 1.6) & (P[:, 1] > ctx["neck_y"] + 0.03) & (N[:, 1] < 0.2) & (z > -0.02)
-        dens = smooth(1.672, 1.645, y) * (1 - lip) * smooth(0.085, 0.066, ax)
+        dens = smooth(1.672, 1.645, y) * (1 - lip) * smooth(0.085, 0.066, ax) * smooth(ctx["neck_y"] + 0.03, ctx["neck_y"] + 0.08, P[:, 1])
         # joues hautes dégarnies, moustache dense
         dens = np.maximum(dens * smooth(1.66, 1.63, y + 0.03 * (ax > 0.04)), 0)
         must = smooth(0.0095, 0.004, np.abs(y - (TG.M_REF_Y + 0.0145))) * smooth(0.03, 0.022, ax)
@@ -319,9 +319,9 @@ def bake_skin(path, Pb, Nb, TV, TT, VT, ctx, size=2048, seed=1):
     hy = hy + ctx.get("hairline", 0.0) + 0.003 * (fbm3(P + 4.4, 120.0, 2) - 0.5)
     ear = np.sqrt((ax - 0.082) ** 2 + (y - 1.675) ** 2 + (z - 0.04) ** 2)
     scalp = smooth(hy - 0.004, hy + 0.008, y) * smooth(0.03, 0.04, ear) * (y < 1.86) * head_zone
-    if ctx.get("bald", 0.0) > 0:  # tonsure / calvitie sur le dessus
-        top = smooth(1.79, 1.81, y) * smooth(0.02, 0.06, z + 0.0)
-        scalp *= 1.0 - ctx["bald"] * np.clip(top + smooth(1.8, 1.83, y), 0, 1)
+    if ctx.get("bald", 0.0) > 0:  # calvitie sur le dessus (même zone que la coupe « dégarni »)
+        crown = np.maximum(smooth(1.762, 1.778, y), smooth(1.735, 1.75, y) * smooth(-0.015, 0.02, z))
+        scalp *= 1.0 - ctx["bald"] * crown
     dots = smooth(0.45, 0.7, vnoise3(P + 9.1, 2200.0))
     root_col = hair_col * (0.55 + 0.35 * dots[:, None]) * 0.9 + base * 0.1 * (1 - dots[:, None])
     k_scalp = ctx.get("scalp_k", 0.92)
@@ -369,7 +369,7 @@ def write_eyes(out, size=512):
             front = r < 1.0
             ang = np.arctan2(dy, dx)
             # blanc de l'œil : rosé et plus sombre vers les bords, vaisseaux fins
-            scl = np.array([0.86, 0.82, 0.78])[None, None, :] * (1.0 - 0.28 * smooth(0.55, 1.0, r))[..., None]
+            scl = np.array([0.52, 0.49, 0.46])[None, None, :] * (1.0 - 0.45 * smooth(0.45, 1.0, r))[..., None]
             ves = (np.abs(np.sin(ang * 23.0 + 3.0 * np.sin(r * 9.0))) < 0.05) * smooth(0.65, 0.95, r) * 0.35
             scl = scl * (1 - ves[..., None]) + np.array([0.7, 0.25, 0.22]) * ves[..., None]
             # iris (rayon ~0.48 de la sphère), fibres radiales, anneau limbique sombre, pupille
@@ -545,8 +545,8 @@ def bake_garments(out, Pb, Nb, TV, TT, VT, head, lm, tris, size=2048, msize=1024
         fold_p = np.sin((Y * 1.0 + np.abs(X) * 0.8) * 2 * np.pi / 0.03 + 2 * noise) * pit
         h += 0.0022 * fold_p
         waist = smooth(hip_y + 0.18, hip_y + 0.06, Y) * ~is_armv
-        fold_w = np.sin(Y * 2 * np.pi / 0.045 + 4 * noise + 0.6 * np.sin(X * 25)) * waist * (0.5 + 0.5 * (np.abs(ta) < 1.2))
-        h += 0.0025 * fold_w
+        fold_w = np.sin(Y * 2 * np.pi / 0.05 + 9 * noise + 1.5 * np.sin(X * 18)) * waist * (0.3 + 0.7 * noise)
+        h += 0.0014 * fold_w
         shade *= 1.0 - 0.15 * np.clip(-(fold_w * waist + fold_p) , 0, 1)
         # poche kangourou : trapèze sur le ventre, ouvertures sur les côtés
         if pocket:
@@ -721,7 +721,7 @@ def bake_garments(out, Pb, Nb, TV, TT, VT, head, lm, tris, size=2048, msize=1024
         u, v = np.abs(X - cx), np.abs(Y - cy)
         return ((u < s) & (v < s * 0.33) | (u < s * 0.33) & (v < s)) * mask
     cross = np.maximum(cross, cross_at(0.0, hip_y + 0.31, 0.075, np.abs(ta) > 2.3))
-    cross = np.maximum(cross, cross_at(0.075, hip_y + 0.32, 0.03, (np.abs(ta) < 1.0) & (X > 0)))
+    cross = np.maximum(cross, cross_at(0.08, hip_y + 0.3, 0.045, (np.abs(ta) < 1.0) & (X > 0)))
     # bande « velcro » d'ouverture devant
     vel = smooth(0.012, 0.009, np.where(np.abs(ta) < 1.0, np.abs(X), 1.0))
     h += 0.0005 * vel

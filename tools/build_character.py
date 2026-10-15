@@ -18,23 +18,38 @@ SHIFT = 0.022  # épaisseur de semelle : le sol (y=0) est le dessous des baskets
 VARIANTS = {
     # nom : sexe, origines, âge (0 jeune -> 1 âgé), muscle/poids (-1..1), taille, couleurs
     "male_a":   dict(sex="male", race={"caucasian": 1.0}, old=0.0, muscle=0.38, weight=0.0, height=1.80,
-                     skin=(0.80, 0.58, 0.47), hair=(0.13, 0.085, 0.06), beard=0.5),
+                     skin=(0.80, 0.58, 0.47), hair=(0.13, 0.085, 0.06), beard=0.5, hairstyle="court"),
     "male_b":   dict(sex="male", race={"african": 1.0}, old=0.0, muscle=0.2, weight=0.35, height=1.83,
-                     skin=(0.34, 0.22, 0.16), hair=(0.04, 0.035, 0.03), beard=0.75, lip=(0.36, 0.2, 0.2)),
+                     skin=(0.34, 0.22, 0.16), hair=(0.04, 0.035, 0.03), beard=0.75, lip=(0.36, 0.2, 0.2), hairstyle="afro"),
     "male_c":   dict(sex="male", race={"asian": 1.0}, old=0.0, muscle=-0.2, weight=-0.3, height=1.71,
-                     skin=(0.82, 0.64, 0.5), hair=(0.04, 0.035, 0.035), beard=0.15),
+                     skin=(0.82, 0.64, 0.5), hair=(0.04, 0.035, 0.035), beard=0.15, hairstyle="court"),
     "male_d":   dict(sex="male", race={"caucasian": 1.0}, old=0.45, muscle=0.0, weight=0.3, height=1.76,
-                     skin=(0.82, 0.6, 0.5), hair=(0.36, 0.34, 0.32), beard=1.0),
+                     skin=(0.82, 0.6, 0.5), hair=(0.36, 0.34, 0.32), beard=1.0, hairstyle="court"),
     "male_e":   dict(sex="male", race={"african": 0.5, "caucasian": 0.5}, old=0.0, muscle=0.55, weight=0.0, height=1.78,
-                     skin=(0.55, 0.37, 0.27), hair=(0.05, 0.04, 0.03), beard=0.6, lip=(0.45, 0.25, 0.24)),
+                     skin=(0.55, 0.37, 0.27), hair=(0.05, 0.04, 0.03), beard=0.6, lip=(0.45, 0.25, 0.24), hairstyle="afro"),
     "female_a": dict(sex="female", race={"caucasian": 1.0}, old=0.0, muscle=0.0, weight=0.0, height=1.66,
                      skin=(0.85, 0.65, 0.55), hair=(0.30, 0.18, 0.10), longhair=True, lip=(0.68, 0.32, 0.33)),
     "female_b": dict(sex="female", race={"african": 1.0}, old=0.0, muscle=0.1, weight=0.15, height=1.69,
                      skin=(0.38, 0.25, 0.19), hair=(0.03, 0.025, 0.02), longhair=True, lip=(0.42, 0.22, 0.22)),
     "female_c": dict(sex="female", race={"asian": 1.0}, old=0.0, muscle=-0.2, weight=-0.2, height=1.60,
-                     skin=(0.86, 0.68, 0.56), hair=(0.03, 0.03, 0.03), longhair=True, lip=(0.66, 0.34, 0.34)),
+                     skin=(0.86, 0.68, 0.56), hair=(0.03, 0.03, 0.03), longhair=True, lip=(0.66, 0.34, 0.34),
+                     hair_extra="carre"),
     "female_d": dict(sex="female", race={"caucasian": 0.6, "african": 0.4}, old=0.1, muscle=0.0, weight=0.0, height=1.70,
-                     skin=(0.66, 0.46, 0.35), hair=(0.12, 0.07, 0.04), longhair=True, lip=(0.52, 0.27, 0.26)),
+                     skin=(0.66, 0.46, 0.35), hair=(0.12, 0.07, 0.04), longhair=True, lip=(0.52, 0.27, 0.26),
+                     hair_extra="chignon"),
+    # personnages d'histoire (voir scripts/story/BIBLE.md et scripts/story/cast_looks.gd)
+    "male_f":   dict(sex="male", race={"african": 1.0}, old=0.0, muscle=0.3, weight=-0.2, height=1.79,   # Sam, 24 ans, livreur
+                     skin=(0.40, 0.26, 0.19), hair=(0.03, 0.025, 0.02), beard=0.3, lip=(0.38, 0.21, 0.2), hairstyle="afro"),
+    "male_g":   dict(sex="male", race={"caucasian": 0.8, "african": 0.2}, old=0.0, muscle=0.15, weight=-0.15, height=1.76,  # Karim
+                     skin=(0.70, 0.50, 0.38), hair=(0.035, 0.03, 0.025), beard=0.6, lip=(0.55, 0.3, 0.28), hairstyle="court"),
+    "male_h":   dict(sex="male", race={"caucasian": 1.0}, old=0.65, muscle=0.2, weight=0.6, height=1.75,   # Jo, 62 ans
+                     skin=(0.80, 0.58, 0.49), hair=(0.56, 0.54, 0.51), beard=0.9, hairstyle="degarni", bald=1.0, moles=8),
+    "male_i":   dict(sex="male", race={"caucasian": 1.0}, old=0.45, muscle=0.0, weight=0.2, height=1.81,   # commissaire, 52 ans
+                     skin=(0.79, 0.6, 0.5), hair=(0.3, 0.29, 0.28), beard=0.12, hairstyle="court", hairline=0.006),
+    "female_e": dict(sex="female", race={"caucasian": 0.8, "african": 0.2}, old=0.3, muscle=0.0, weight=0.3, height=1.64,  # Nadia, 45 ans
+                     skin=(0.70, 0.50, 0.39), hair=(0.06, 0.04, 0.03), longhair=True, lip=(0.52, 0.28, 0.27), hair_extra="chignon"),
+    "female_f": dict(sex="female", race={"caucasian": 1.0}, old=0.85, muscle=-0.2, weight=0.35, height=1.57,  # Mme Ferreira, 74 ans
+                     skin=(0.82, 0.64, 0.55), hair=(0.72, 0.7, 0.67), hairstyle="boucles", lip=(0.6, 0.38, 0.38), moles=10),
 }
 
 V0, VT, faces = load_obj(MH + "3dobjs/base.obj")
@@ -316,42 +331,121 @@ def build_variant(name, sp):
     cloth["Hood"] = shell(Y > neck1_y - 0.04, 0.03 + 0.012 * smooth(1.70, 1.82, ry) + 0.01 * smooth(0.06, 0.0, rz),
                           [(np.array([0, neck1_y - 0.035, 0]), (0, 1, 0))], drop=face_open)
 
-    # ---- cheveux longs (femmes) : calotte + queue de cheval
+    # ---- cheveux : calotte selon la coupe (UV le long des mèches, bord effilé), queue de cheval, chignon, carré
     extra = {}
     hy = 1.775 - 0.115 * np.clip((0.16 - rz) / 0.2, 0, 1) - 0.045 * np.clip((np.abs(rx) - 0.04) / 0.04, 0, 1)
-    if sp.get("longhair"):
-        earz = np.sqrt((np.abs(rx) - 0.082) ** 2 + (ry - 1.675) ** 2 + (rz - 0.04) ** 2)
-        hairm = head_v & (ry > hy - 0.004) & (earz > 0.03)
-        cloth["Hair"] = shell(hairm, 0.008 + 0.01 * smooth(1.72, 1.84, ry), hfun=lambda P: (ref(P)[:, 1] - (1.775 - 0.115 * np.clip((0.16 - ref(P)[:, 2]) / 0.2, 0, 1) - 0.045 * np.clip((np.abs(ref(P)[:, 0]) - 0.04) / 0.04, 0, 1))) * hscale)
-        # queue de cheval : tube effilé qui part de l'arrière du crâne
-        top = eye + np.array([0, 0.045, -0.135]) * hscale
-        pts = [top + np.array([0, -i * 0.035, -0.018 * np.sin(i * 0.4)]) * hscale for i in range(9)]
-        rings = []
-        K = 14
-        for i, c in enumerate(pts):
-            r = (0.03 if i < 2 else 0.026 * (1 - i / 10.0) + 0.006) * hscale
-            for k in range(K):
-                a = 2 * np.pi * k / K
-                rings.append(c + np.array([np.cos(a) * r, 0, np.sin(a) * r * 0.8]))
-        Pp = np.array(rings)
+    style = sp.get("hairstyle", "long" if sp.get("longhair") else "court")
+    skull = eye + np.array([0.0, 0.035, -0.07]) * hscale
+    def hair_uv(P):
+        D = P - skull
+        u = np.arctan2(D[:, 0], D[:, 2]) / (2 * np.pi)
+        v = np.arccos(np.clip(D[:, 1] / np.maximum(np.linalg.norm(D, axis=1), 1e-9), -1, 1)) / np.pi
+        return u, v
+    def hair_shell(mask, off, hfun=None):
+        Pc, tv, _ = shell(mask, off, hfun=hfun, smooth_it=3, min_off=0.8)
+        Nc = vertex_normals(Pc, tv)
+        e = np.sort(np.concatenate([tv[:, [0, 1]], tv[:, [1, 2]], tv[:, [2, 0]]]), axis=1)
+        uq, cnt = np.unique(e, axis=0, return_counts=True)
+        bv = np.unique(uq[cnt == 1].reshape(-1))
+        corners = tv.reshape(-1)
+        u, v = hair_uv(Pc[corners])
+        u = u.reshape(-1, 3)
+        wrap = (u.max(1) - u.min(1) > 0.5)[:, None] & (u < 0)
+        u = np.where(wrap, u + 1.0, u).reshape(-1)
+        key = corners * 2 + wrap.reshape(-1)
+        uk, inv = np.unique(key, return_inverse=True)
+        vert = uk // 2
+        first = np.zeros(len(uk), dtype=np.int64); first[inv] = np.arange(len(key))
+        UV = np.stack([u[first], v[first]], 1)
+        Q = Pc[vert]
+        d = np.full(len(Q), 1e9)
+        for i0 in range(0, len(bv), 200):
+            d = np.minimum(d, np.sqrt(((Q[:, None, :] - Pc[bv[i0:i0 + 200]][None, :, :]) ** 2).sum(-1)).min(1))
+        C = np.ones((len(Q), 4)); C[:, 3] = np.clip(d / (0.028 * hscale), 0, 1)
+        return (Q, Nc[vert], UV, JV[vert], WV[vert], inv.reshape(-1, 3), C)
+    def tube(pts, radii, K=16, squash=0.8, tip=None):
+        """Mèche épaisse (queue de cheval, chignon) : anneaux avec couture dupliquée pour l'UV."""
+        rings, uvs = [], []
+        length = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(np.array(pts), axis=0), axis=1))])
+        for i, (c, r) in enumerate(zip(pts, radii)):
+            for k in range(K + 1):
+                a_ = 2 * np.pi * k / K
+                rings.append(c + np.array([np.cos(a_) * r, 0, np.sin(a_) * r * squash]))
+                uvs.append([k / K, 0.25 + length[i] / hscale * 4.0])
+        Pt = np.array(rings); UVt = np.array(uvs)
         tris = []
         for i in range(len(pts) - 1):
             for k in range(K):
-                a = i * K + k; b = i * K + (k + 1) % K; c = (i + 1) * K + k; d = (i + 1) * K + (k + 1) % K
-                tris += [[a, c, b], [b, c, d]]
-        tip = len(Pp)
-        Pp = np.vstack([Pp, pts[-1] + np.array([0, -0.02 * hscale, 0])])
-        last = (len(pts) - 1) * K
-        for k in range(K):
-            tris.append([last + k, tip, last + (k + 1) % K])
+                a_ = i * (K + 1) + k; b_ = a_ + 1; c_ = a_ + K + 1; d_ = c_ + 1
+                tris += [[a_, c_, b_], [b_, c_, d_]]
+        C = np.ones((len(Pt), 4))
+        if tip is not None:
+            t0 = len(Pt)
+            Pt = np.vstack([Pt, tip]); UVt = np.vstack([UVt, [0.5, UVt[-1, 1] + 0.1]]); C = np.vstack([C, [1, 1, 1, 0.0]])
+            last = (len(pts) - 1) * (K + 1)
+            for k in range(K):
+                tris.append([last + k, t0, last + k + 1])
         tris = np.array(tris)
-        N = vertex_normals(Pp, tris)
+        N = vertex_normals(Pt, tris)
         cen = np.array(pts).mean(0)
-        if (N * (Pp - cen)).sum() < 0:
-            tris = tris[:, ::-1]; N = vertex_normals(Pp, tris)
-        UVp = np.stack([np.arctan2(Pp[:, 2] - cen[2], Pp[:, 0]) / np.pi, (Pp[:, 1] - cen[1]) * 6], 1)
-        J, W = nearest_weights(Pp, rigid="head")
-        extra["Ponytail"] = (Pp, N, UVp, J, W, tris, None)
+        if (N * (Pt - cen)).sum() < 0:
+            tris = tris[:, ::-1]; N = vertex_normals(Pt, tris)
+        J, W = nearest_weights(Pt, rigid="head")
+        return (Pt, N, UVt, J, W, tris, C)
+    earz = np.sqrt((np.abs(rx) - 0.082) ** 2 + (ry - 1.675) ** 2 + (rz - 0.04) ** 2)
+    hairm = head_v & (ry > hy - 0.004) & (earz > 0.03)
+    top_ = smooth(1.72, 1.84, ry)
+    offs = {
+        "court": 0.0035 + 0.008 * top_ - 0.0015 * smooth(0.05, 0.08, np.abs(rx)),
+        "afro": 0.004 + 0.015 * top_ + 0.003 * smooth(1.70, 1.76, ry),
+        "degarni": np.full(len(Pb), 0.003),
+        "long": 0.008 + 0.01 * top_,
+        "boucles": 0.012 + 0.013 * top_,
+    }
+    if style in offs:
+        m_ = hairm
+        if style in ("long", "boucles"):  # cheveux longs : jusqu'à la nuque derrière les oreilles
+            m_ = head_v & (ry > hy - 0.004 - 0.06 * np.clip(-rz / 0.08, 0, 1) * (np.abs(rx) < 0.07)) & (earz > 0.03)
+        if style == "degarni":
+            m_ = hairm & ~((ry > 1.79) | ((ry > 1.765) & (rz > 0.02)))
+        extra["Hair"] = hair_shell(m_, offs[style] * hscale / 1.0, hfun=None)
+    hx = sp.get("hair_extra", "queue" if sp.get("longhair") else "")
+    if hx == "queue":
+        top = eye + np.array([0, 0.045, -0.135]) * hscale
+        pts = [top + np.array([0, -i * 0.035, -0.018 * np.sin(i * 0.4)]) * hscale for i in range(9)]
+        radii = [(0.03 if i < 2 else 0.026 * (1 - i / 10.0) + 0.006) * hscale for i in range(9)]
+        extra["Ponytail"] = tube(pts, radii, tip=pts[-1] + np.array([0, -0.02 * hscale, 0]))
+    elif hx == "chignon":
+        c0 = eye + np.array([0, 0.035, -0.205]) * hscale
+        pts = [c0 + np.array([0, 0.034 - i * 0.0085, -0.004 * np.sin(np.pi * i / 8)]) * hscale for i in range(9)]
+        radii = [max(0.002, 0.036 * np.sin(np.pi * i / 8)) * hscale for i in range(9)]
+        extra["Ponytail"] = tube(pts, radii, K=18, squash=0.75)
+    elif hx == "carre":
+        # carré : rideau de mèches autour de la tête, ouvert sur le visage, jusqu'au menton
+        K, L = 24, 8
+        rings, uvs = [], []
+        for i in range(L + 1):
+            t = i / L
+            yv = eye[1] + (0.035 - 0.115 * t) * hscale
+            r = (0.094 + 0.016 * t) * hscale
+            for k in range(K + 1):
+                a_ = np.radians(-118 + 236 * k / K)   # 0 = derrière
+                rings.append([skull[0] + np.sin(a_) * r, yv, skull[2] - np.cos(a_) * r * 1.05])
+                uvs.append([k / K * 1.5, 0.45 + t * 0.6])
+        Pt = np.array(rings); tris = []
+        for i in range(L):
+            for k in range(K):
+                a_ = i * (K + 1) + k; b_ = a_ + 1; c_ = a_ + K + 1; d_ = c_ + 1
+                tris += [[a_, b_, c_], [b_, d_, c_]]
+        tris = np.array(tris)
+        N = vertex_normals(Pt, tris)
+        if (N * (Pt - skull)).sum() < 0:
+            tris = tris[:, ::-1]; N = vertex_normals(Pt, tris)
+        C = np.ones((len(Pt), 4))
+        C[-(K + 1):, 3] = 0.0                       # pointes effilées
+        C[:, 3] = np.minimum(C[:, 3], np.tile(np.clip(np.minimum(np.arange(K + 1), K - np.arange(K + 1)) / 2.0, 0, 1), L + 1))
+        J, W = nearest_weights(Pt, rigid="head")
+        extra["Ponytail"] = (Pt, N, np.array(uvs), J, W, tris, C)
 
     # ---- visière de casquette
     brim_c = eye + np.array([0.0, 0.052, 0.035]) * hscale
@@ -525,8 +619,8 @@ def build_variant(name, sp):
         Ps, Ns, UVs, Js, Ws, Ts = [], [], [], [], [], []
         base = 0
         for sx, bone, icen in ((1, "eye.L", (0.29, 0.70)), (-1, "eye.R", (0.70, 0.29))):
-            c = pos[np.sign(pos[:, 0]) == sx].mean(0) + np.array([0, 0, 0.0015])
-            r = 0.0108 * hscale
+            c = pos[np.sign(pos[:, 0]) == sx].mean(0) + np.array([0, 0, 0.0004])
+            r = 0.0102 * hscale
             nlat, nlon = 14, 22
             for i in range(nlat + 1):
                 th = np.pi * i / nlat
