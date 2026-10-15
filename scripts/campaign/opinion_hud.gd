@@ -33,7 +33,7 @@ func _ready() -> void:
 	layer = 31
 	add_to_group("campaign")
 	_root = Control.new()
-	_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.modulate.a = 0.0
 	add_child(_root)
@@ -91,7 +91,7 @@ func _ready() -> void:
 	_pips.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	bot.add_child(_pips)
 	_chips = Control.new()
-	_chips.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_chips.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_chips.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_chips)
 	_sync(true)

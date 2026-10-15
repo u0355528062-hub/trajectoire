@@ -10,7 +10,7 @@ func _ready() -> void:
 	var e := NewsTexts.ending(ending_id)
 	backdrop(Color(UiStyle.RED, 0.3) if ending_id != "essoufflement" else Color(UiStyle.PAPER, 0.12))
 	var c := CenterContainer.new()
-	c.set_anchors_preset(Control.PRESET_FULL_RECT)
+	c.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(c)
 	var v := vbox(c, 14)

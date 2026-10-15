@@ -12,7 +12,7 @@ var tracker: ObjectiveTracker
 
 
 func _ready() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
@@ -24,7 +24,8 @@ func _process(_d: float) -> void:
 func project(cam: Camera3D, wp: Vector3) -> Array:
 	var behind := cam.is_position_behind(wp)
 	var sp := cam.unproject_position(wp)
-	var on := not behind and sp.x > MARGIN and sp.x < size.x - MARGIN and sp.y > MARGIN and sp.y < size.y - MARGIN
+	var vs := get_viewport_rect().size
+	var on := not behind and sp.x > MARGIN and sp.x < vs.x - MARGIN and sp.y > MARGIN and sp.y < vs.y - MARGIN
 	return [sp, on, behind]
 
 
@@ -79,7 +80,7 @@ func _pin(sp: Vector2, dist: float, col: Color, a: float, o: Objective, t: float
 
 
 func _edge(sp: Vector2, behind: bool, dist: float, col: Color, a: float, t: float) -> void:
-	var c := size * 0.5
+	var c := get_viewport_rect().size * 0.5
 	var dir := sp - c
 	if behind:
 		dir = -dir

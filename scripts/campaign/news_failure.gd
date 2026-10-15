@@ -12,7 +12,7 @@ func _ready() -> void:
 	backdrop(Color(UiStyle.RED, 0.55))
 	var f := NewsTexts.failure(reason)
 	var c := CenterContainer.new()
-	c.set_anchors_preset(Control.PRESET_FULL_RECT)
+	c.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(c)
 	var v := vbox(c, 18)

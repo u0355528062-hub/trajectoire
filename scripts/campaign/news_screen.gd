@@ -10,7 +10,7 @@ var _buttons: Array = []
 
 
 func _init() -> void:
-	set_anchors_preset(Control.PRESET_FULL_RECT)
+	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	process_mode = Node.PROCESS_MODE_ALWAYS
 
@@ -23,14 +23,14 @@ func _process(delta: float) -> void:
 func backdrop(tint: Color, a := 0.97) -> void:
 	var bg := ColorRect.new()
 	bg.color = Color(UiStyle.INK, a)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bg)
 	var ht := TextureRect.new()
 	ht.texture = UiStyle.halftone_tex()
 	ht.stretch_mode = TextureRect.STRETCH_TILE
 	ht.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	ht.set_anchors_preset(Control.PRESET_FULL_RECT)
+	ht.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	ht.modulate = Color(1, 1, 1, 0.035)
 	ht.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(ht)
@@ -38,7 +38,7 @@ func backdrop(tint: Color, a := 0.97) -> void:
 	edge.texture = UiStyle.edge_tex()
 	edge.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	edge.stretch_mode = TextureRect.STRETCH_SCALE
-	edge.set_anchors_preset(Control.PRESET_FULL_RECT)
+	edge.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	edge.modulate = tint
 	edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(edge)

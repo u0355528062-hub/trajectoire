@@ -16,7 +16,7 @@ func _ready() -> void:
 	backdrop(Color(UiStyle.RED, 0.22))
 	var vs := get_viewport_rect().size
 	var m := MarginContainer.new()
-	m.set_anchors_preset(Control.PRESET_FULL_RECT)
+	m.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for k in ["margin_left", "margin_right"]:
 		m.add_theme_constant_override(k, 28)
 	m.add_theme_constant_override("margin_top", 20)
