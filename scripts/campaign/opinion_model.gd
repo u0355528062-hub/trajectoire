@@ -240,10 +240,10 @@ func _on_clip(d: Dictionary) -> void:
 	if key == null:
 		_anon += 1
 		key = "x%d" % _anon
-	var rec: Dictionary = clips.get(key, {})
-	if rec.is_empty():
+	if not clips.has(key):
 		Campaign.count("rushes")
-		clips[key] = rec
+		clips[key] = {"published": false}
+	var rec: Dictionary = clips[key]
 	if not bool(d.get("published", false)) or bool(rec.get("published", false)):
 		return
 	rec["published"] = true
