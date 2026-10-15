@@ -147,17 +147,34 @@ static func walk_clamp(p: Vector3, margin := 0.35) -> Vector3:
 ## la caméra se rapproche de la cible jusqu'à l'air libre.
 static func camera_point(target: Vector3, p: Vector3) -> Vector3:
 	if open_air(p):
-		return p
+		return below_trees(p, target)
 	var off := p - target
 	for m in [Vector3(off.x, off.y, -off.z), Vector3(-off.x, off.y, off.z), Vector3(-off.x, off.y, -off.z)]:
 		var q: Vector3 = target + m
 		if open_air(q) and open_air(target + m * 0.5):
-			return q
+			return below_trees(q, target)
 	for i in range(1, 20):
 		var q := target + off * (1.0 - float(i) / 20.0)
 		if open_air(q):
-			return q
+			return below_trees(q, target)
 	return target + Vector3(0.0, maxf(off.y, 1.6), 0.0)
+
+
+## Une caméra dans le feuillage des platanes du boulevard (alignements TREE_ROWS) passe sous les branches, ou
+## au-dessus des houppiers pour un plan déjà haut ; sous les branches, on s'écarte de l'alignement des troncs.
+static func below_trees(p: Vector3, target := Vector3.ZERO) -> Vector3:
+	if p.y > 3.4 and p.y < 22.5 and absf(p.x) < BLVD_END:
+		for row in TREE_ROWS:
+			var dz := p.z - float(row)
+			if absf(dz) < 4.5:
+				if p.y >= 12.0:
+					p.y = 23.0
+				else:
+					p.y = 3.2
+					if absf(dz) < 1.6:
+						p.z = float(row) + (1.6 if target.z > p.z else -1.6)
+				break
+	return p
 
 
 ## Itinéraire de la patrouille de passage (Police.patrol_pass). Sans cordon : elle entre par l'est et repart par

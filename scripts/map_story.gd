@@ -22,7 +22,7 @@ const PRICES := [["LAIT 1 L", "1,39 €"], ["PÂTES 500 g", "1,89 €"], ["HUILE
 	["ŒUFS × 12", "4,29 €"], ["BEURRE 250 g", "3,19 €"]]
 const SLATE := ["PROMOS", "Pommes 3,90 €/kg", "Tomates 4,50 €/kg", "Pain de mie 2,35 €"]
 ## Panneaux d'affichage libre : position au sol (x, z) et lacet (le panneau regarde son +Z local)
-const BOARDS := [[Vector2(-39.0, 17.7), PI], [Vector2(27.0, -24.9), 0.0], [Vector2(-45.0, 30.0), -PI * 0.5]]
+const BOARDS := [[Vector2(-39.0, 17.7), PI], [Vector2(27.0, -24.9), 0.0], [Vector2(-45.2, 40.0), -PI * 0.5]]
 
 ## Commerces uniques dans l'histoire : ailleurs, une boutique tirée au sort de ce type devient un autre commerce
 const UNIQUE := ["pharmacie", "banque", "superette"]
@@ -69,11 +69,11 @@ static func price_card(parent: Node3D, product: String, price: String, pos: Vect
 	n.add_to_group("price_tags")
 	parent.add_child(n)
 	var q := QuadMesh.new()
-	q.size = Vector2(0.34, 0.24)
+	q.size = Vector2(0.44, 0.3)
 	var card := _mesh(n, q, mat(bg, 0.8, 0.12), Vector3.ZERO)
 	card.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	label(n, product, 0.0021, Color(0.08, 0.08, 0.1), Vector3(0, 0.065, 0.004), 40)
-	label(n, price, 0.0042, Color(0.75, 0.04, 0.04), Vector3(0, -0.035, 0.004), 48)
+	label(n, product, 0.0024, Color(0.08, 0.08, 0.1), Vector3(0, 0.085, 0.004), 40)
+	label(n, price, 0.0052, Color(0.75, 0.04, 0.04), Vector3(0, -0.04, 0.004), 48)
 	return n
 
 
@@ -101,8 +101,8 @@ static func _superette(shop: Shop) -> void:
 	label(root, "NOS PRIX AU 1er MARS", 0.0034, Color(0.1, 0.42, 0.24), Vector3(0, top, -0.25), 56)
 	var cols := 3
 	for i in PRICES.size():
-		var cx := (float(i % cols) - (cols - 1) * 0.5) * minf(0.95, (shop.width - 0.6) / cols)
-		var cy := top - 0.42 - float(i / cols) * 0.34
+		var cx := (float(i % cols) - (cols - 1) * 0.5) * clampf((shop.width - 0.6) / cols, 0.5, 0.95)
+		var cy := top - 0.45 - float(i / cols) * 0.4
 		price_card(root, PRICES[i][0], PRICES[i][1], Vector3(cx, cy, -0.25))
 	# chevalet sur le trottoir : ardoise des promos (prix au kilo)
 	var ch := Node3D.new()
@@ -116,7 +116,7 @@ static func _superette(shop: Shop) -> void:
 		box(ch, Vector3(0.62, 1.0, 0.03), wood, Vector3(0, 0.5, s * 0.17), Vector3(s * 0.33, 0, 0))
 	box(ch, Vector3(0.54, 0.74, 0.012), mat(Color(0.08, 0.09, 0.09), 0.9), Vector3(0, 0.56, 0.19), Vector3(-0.33, 0, 0))
 	for k in SLATE.size():
-		var lab := label(ch, SLATE[k], 0.0026 if k == 0 else 0.0019, Color(0.95, 0.95, 0.9), Vector3(0, 0.82 - k * 0.13, 0.27 - k * 0.043), 44)
+		var lab := label(ch, SLATE[k], 0.0019 if k == 0 else 0.00125, Color(0.95, 0.95, 0.9), Vector3(0, 0.82 - k * 0.13, 0.27 - k * 0.043), 44)
 		lab.rotation.x = -0.33
 	# étal de fruits (cagettes renversables)
 	for i in 2:

@@ -122,6 +122,7 @@ func _row(start: Vector3, dir: Vector3, length: float, opts: Dictionary) -> void
 		if opts.get("blvd", false) and absf(mid.x) < SHOP_ZONE and buildings.size() % 3 != 2:
 			b.shops = 1 if b.width < 15.0 else 2
 		b.shop_ok = opts.get("blvd", false) or _rng.randf() < 0.5 and not opts.get("mairie", false)
+		b.civic = opts.get("mairie", false)
 		if key != "":
 			var n: int = _num.get(key + str(opts.get("odd", false)), 1 if opts.get("odd", false) else 2)
 			b.number = n

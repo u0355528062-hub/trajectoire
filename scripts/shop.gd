@@ -260,8 +260,12 @@ static func make_sign(parent: Node3D, k: String, sv: int, fr: Dictionary, pos: V
 		tc = Color(0.62, 0.5, 0.22)
 	elif col.get_luminance() > 0.5:
 		tc = Color(0.12, 0.1, 0.08)
-	var px := minf(0.0062, (w - 0.3) / maxf(float(text.length()) * 52.0, 1.0))
+	# capitales grasses (moderne) plus larges : on réserve ~64 px par lettre pour ne jamais déborder du caisson
+	var px := minf(0.0062, (w - 0.3) / maxf(float(text.length()) * (64.0 if st == "moderne" else 52.0), 1.0))
 	var lab := _lab(text, font, 96, px, tc, st != "moderne")
+	if st == "moderne":
+		lab.outline_size = 10              # lettres lisibles même sur un caisson clair et lumineux
+		lab.outline_modulate = col.darkened(0.55) if tc.get_luminance() > 0.5 else col.lightened(0.5)
 	lab.position = pos + basis * Vector3(0, y + (0.06 if SUBTITLES.has(k) else 0.0), z)
 	lab.basis = basis
 	parent.add_child(lab)

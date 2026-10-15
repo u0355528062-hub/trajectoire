@@ -2,8 +2,10 @@ extends SceneTree
 ## Captures du module Carte (rendu) : chaque lieu de l'histoire, de jour puis de nuit, en une seule exécution, avec
 ## les plans de chapitre qui posaient problème (caméra calée sur un lieu, passée par Quartier.camera_point).
 ##   tools/dev/gd --render --path . --resolution 1280x720 -s tools/tests/shot_carte.gd -- <dossier> [matin nuit …]
+##   [vues=zinc,mairie]
 var out := "/tmp/carte"
 var cam: Camera3D
+var only: PackedStringArray = []          # « vues=zinc,mairie » : seulement ces vues
 
 ## [nom, lieu, distance, hauteur, lacet (degrés, 0 = côté +Z), hauteur visée]
 const VIEWS := [
@@ -39,6 +41,8 @@ func _initialize() -> void:
 	for i in a.size():
 		if i == 0:
 			out = a[0]
+		elif a[i].begins_with("vues="):
+			only = a[i].substr(5).split(",")
 		else:
 			tods.append(a[i])
 	if tods.is_empty():
@@ -67,6 +71,8 @@ func _run(tods: Array[String]) -> void:
 		cam.far = 600.0
 		main.add_child(cam)
 		for v in VIEWS:
+			if not only.is_empty() and not only.has(v[0]):
+				continue
 			var t := Quartier.spot(v[1])
 			var y := deg_to_rad(float(v[4]))
 			var p := Quartier.camera_point(t, t + Vector3(sin(y) * float(v[2]), float(v[3]), cos(y) * float(v[2])))

@@ -72,7 +72,11 @@ func _ready() -> void:
 	# balcon et drapeaux tricolores
 	var by := building.h0 + 0.05
 	MapStory.box(self, Vector3(W - 0.6, 0.15, 0.9), stone, Vector3(cx, by, D + 0.45))
-	MapStory.box(self, Vector3(W - 0.6, 0.8, 0.05), MapStory.mat(Color(0.08, 0.08, 0.09), 0.5), Vector3(cx, by + 0.48, D + 0.88))
+	var iron := MapStory.mat(Color(0.08, 0.08, 0.09), 0.5)
+	MapStory.box(self, Vector3(W - 0.6, 0.05, 0.06), iron, Vector3(cx, by + 0.95, D + 0.88))
+	var nb := 22
+	for k in nb + 1:
+		MapStory.box(self, Vector3(0.025, 0.8, 0.025), iron, Vector3(cx - (W - 0.7) * 0.5 + (W - 0.7) * float(k) / nb, by + 0.48, D + 0.88))
 	for s in [-1.0, 1.0]:
 		_flag(Vector3(cx + s * 2.6, by + 0.9, D + 0.85), s)
 	# fronton triangulaire et horloge

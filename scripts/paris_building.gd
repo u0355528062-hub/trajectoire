@@ -35,6 +35,7 @@ var left_h := 0.0            # hauteur du voisin de gauche (0 : aucun) → pigno
 var right_h := 0.0
 var street_name := ""        # plaque de rue (immeubles d'angle)
 var number := 0              # numéro sur la porte
+var civic := false           # bâtiment public (mairie) : fenêtres au rez-de-chaussée, aucune boutique
 
 var shop_nodes: Array = []   # Shop
 ## Places pour les habitants (balcons, fenêtres) en repère local : [{"local": Transform3D, "kind", "floor"}] ;
@@ -505,7 +506,7 @@ func _ground_floor(len: float, bays: Array[float], main: bool) -> void:
 			var r := _rng.randf()
 			var t := "closed" if r < 0.3 else "fake"
 			if not shop_ok:
-				t = "window" if r < 0.65 else "closed"
+				t = "window" if r < 0.65 or civic else "closed"
 			var top_o: float = oh if t != "window" else h0 - 1.0
 			openings.append([cx - (step - 0.7) * 0.5, cx + (step - 0.7) * 0.5, top_o, t, cx])
 	openings.sort_custom(func(a, b): return a[0] < b[0])

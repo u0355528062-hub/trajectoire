@@ -167,7 +167,7 @@ func _check_kit() -> void:
 		_fail("totem de prix de la station : %d" % totem)
 	if tracts < 1:
 		_fail("pas de pile de tracts au QG")
-	if boards < 2:
+	if boards < MapStory.BOARDS.size():
 		_fail("panneaux d'affichage libre : %d" % boards)
 	for b in root.get_tree().get_nodes_in_group("affichage_libre"):
 		if not b is CollisionObject3D:

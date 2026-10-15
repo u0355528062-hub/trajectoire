@@ -133,7 +133,7 @@ func _totem(p: Vector3, crowd: Crowd) -> void:
 		var face := Node3D.new()
 		face.rotation.y = 0.0 if s > 0.0 else PI
 		t.add_child(face)
-		var b := MapStory.label(face, BRAND, 0.0055, Color(1, 1, 1), Vector3(0, 4.2, 0.18), 96)
+		var b := MapStory.label(face, BRAND, 0.0028, Color(1, 1, 1), Vector3(0, 4.2, 0.18), 96)
 		b.shaded = false
 		for i in PRICES.size():
 			var row := Node3D.new()
