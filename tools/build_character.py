@@ -8,15 +8,17 @@ sys.path.insert(0, os.path.dirname(__file__))
 import numpy as np
 from mh_lib import *
 import textures_gen as TG
+import char_textures as CT
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "assets", "character")
 os.makedirs(OUT, exist_ok=True)
+GARMENT_REF = "male_a"  # les textures de vêtements (UV du corps, communes) sont cuites sur ce corps
 SHIFT = 0.022  # épaisseur de semelle : le sol (y=0) est le dessous des baskets
 
 VARIANTS = {
     # nom : sexe, origines, âge (0 jeune -> 1 âgé), muscle/poids (-1..1), taille, couleurs
     "male_a":   dict(sex="male", race={"caucasian": 1.0}, old=0.0, muscle=0.38, weight=0.0, height=1.80,
-                     skin=(0.80, 0.58, 0.47), hair=(0.13, 0.085, 0.06), beard=0.5, tex=2048),
+                     skin=(0.80, 0.58, 0.47), hair=(0.13, 0.085, 0.06), beard=0.5),
     "male_b":   dict(sex="male", race={"african": 1.0}, old=0.0, muscle=0.2, weight=0.35, height=1.83,
                      skin=(0.34, 0.22, 0.16), hair=(0.04, 0.035, 0.03), beard=0.75, lip=(0.36, 0.2, 0.2)),
     "male_c":   dict(sex="male", race={"asian": 1.0}, old=0.0, muscle=-0.2, weight=-0.3, height=1.71,
@@ -555,7 +557,21 @@ def build_variant(name, sp):
                  "freckles": 1.0 if np.mean(sp["skin"]) > 0.6 else 0.0,
                  "elbows": [head["lowerarm01.L"], head["lowerarm01.R"]],
                  "knees": [head["lowerleg01.L"], head["lowerleg01.R"]]})
-    TG.bake_skin(os.path.join(OUT, f"skin_{name}.png"), Pb, Nb, TV, TT, VT, sctx, size=sp.get("tex", 1024))
+    sctx.update({"eyes": [head["eye.L"], head["eye.R"]], "hands": [head["wrist.L"], head["wrist.R"]],
+                 "age": sp.get("old", 0.0), "brow_col": sp.get("brow_col", sp["hair"]), "bald": sp.get("bald", 0.0),
+                 "hairline": sp.get("hairline", 0.0), "moles": sp.get("moles", 4),
+                 "freckles": sp.get("freckles", 0.0)})
+    CT.bake_skin(os.path.join(OUT, f"skin_{name}.png"), Pb, Nb, TV, TT, VT, sctx, size=sp.get("tex", 2048),
+                 seed=sum(map(ord, name)))
+    if name == GARMENT_REF and "--no-garments" not in sys.argv:
+        rows = {tuple(r): i for i, r in enumerate(TV.tolist())}
+        tris = {}
+        for nm in ("Hoodie", "Tshirt", "Jacket", "Jeans", "Vest"):
+            m = np.zeros(len(TV), bool)
+            m[[rows[tuple(r)] for r in cloth[nm][1].tolist()]] = True
+            tris[nm] = m
+        lm = {"hip_y": hip_y, "waist_y": waist_y, "neck1_y": neck1_y, "foot_y": foot_y, "shoulder_x": shoulder_x}
+        CT.bake_garments(OUT, Pb, Nb, TV, TT, VT, head, lm, tris)
 
     # ---------------------------------------------------------------- glTF
     g = Gltf()
@@ -612,8 +628,9 @@ def build_variant(name, sp):
 
 
 if __name__ == "__main__":
-    shutil.copy(MH + "eyes/materials/brown_eye.png", os.path.join(OUT, "eye_brown.png"))
+    CT.write_eyes(OUT)
+    CT.write_hair_textures(OUT)
     TG.write_cloth_textures(OUT)
-    names = sys.argv[1:] or list(VARIANTS)
+    names = [a for a in sys.argv[1:] if not a.startswith("--")] or list(VARIANTS)
     for nm in names:
         build_variant(nm, VARIANTS[nm])
