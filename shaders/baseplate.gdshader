@@ -134,8 +134,8 @@ void fragment() {
 	if (wetness > 0.0) {
 		// tout le sol est imbibé : matériaux poreux assombris, film d'eau qui lisse la surface
 		float wk = wetness * mix(1.0, 0.55, float(kind == 3));
-		alb *= 1.0 - 0.3 * wk;
-		rough = mix(rough, rough * 0.4 + 0.08, wk);
+		alb *= 1.0 - 0.38 * wk;
+		rough = mix(rough, rough * 0.5 + 0.12, wk);
 		nm = mix(nm, vec3(0.5, 0.5, 1.0), wk * 0.35);
 		if (rain > 0.0) {
 			// ronds de gouttes (deux couches décalées), seulement près de la caméra

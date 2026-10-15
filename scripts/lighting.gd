@@ -81,8 +81,8 @@ const TOD := {
 	},
 	"nuit": {
 		"sun": Vector2(38.0, -60.0), "sun_col": Color(0.62, 0.72, 1.0), "sun_e": 0.1, "sun_ang": 0.5,
-		"fill": Vector2(50.0, 120.0), "fill_col": Color(0.3, 0.4, 0.8), "fill_e": 0.06,
-		"amb": Color(0.25, 0.27, 0.34), "amb_e": 1.15, "exp": 1.5,
+		"fill": Vector2(72.0, 120.0), "fill_col": Color(1.0, 0.8, 0.6), "fill_e": 0.22,
+		"amb": Color(0.3, 0.31, 0.38), "amb_e": 1.15, "exp": 1.5,
 		"fog": Color(0.25, 0.22, 0.22), "fog_d": 0.0012, "fog_sun": 0.0, "aerial": 0.3,
 		"vfog_d": 0.004, "vfog_alb": Color(0.7, 0.7, 0.72), "vfog_em": Color(0.035, 0.025, 0.02), "vfog_em_e": 0.6, "vfog_aniso": 0.4,
 		"contrast": 1.08, "sat": 1.0,
@@ -90,7 +90,7 @@ const TOD := {
 			"ground_color": Color(0.04, 0.035, 0.035), "star_amount": 0.3, "cloud_cover": 0.45, "cloud_lit": Color(0.2, 0.19, 0.2),
 			"cloud_shade": Color(0.07, 0.06, 0.07), "halo_color": Color(0.6, 0.7, 1.0), "halo_k": 0.04, "glare_color": Color(0.7, 0.8, 1.0),
 			"glare_k": 0.15, "disc_color": Color(0.9, 0.92, 1.0), "disc_k": 1.6, "city_glow": Color(0.14, 0.1, 0.075)},
-		"lamps": true, "win": Vector2(1.4, 0.34), "rain_col": Color(0.7, 0.66, 0.62),
+		"lamps": true, "win": Vector2(0.85, 0.22), "rain_col": Color(0.7, 0.66, 0.62),
 	},
 }
 
@@ -255,8 +255,11 @@ static func _weather_sky(sp: Dictionary, w: Dictionary, fog: Color) -> void:
 	sp["horizon_color"] = (sp["horizon_color"] as Color).lerp(fog * k, desat * 0.5)
 	sp["cloud_lit"] = _desat(sp["cloud_lit"], desat) * k * 0.92
 	sp["cloud_shade"] = _desat(sp["cloud_shade"], desat) * k
-	for key in ["halo_k", "glare_k", "disc_k"]:
-		sp[key] = float(sp[key]) * (1.0 - float(w["overcast"]) * 0.8)
+	sp["city_glow"] = _desat(sp["city_glow"], desat * 0.5)
+	var oc := float(w["overcast"])
+	for key in ["halo_k", "glare_k"]:
+		sp[key] = float(sp[key]) * (1.0 - oc * 0.8)
+	sp["disc_k"] = float(sp["disc_k"]) * pow(1.0 - oc, 2.0)    # disque noyé dans le couvert, reste une lueur
 
 
 static func _desat(c: Color, k: float) -> Color:
