@@ -37,7 +37,7 @@ static func build(world: Node3D, crowd_ref: Crowd) -> Streetscape:
 
 # ------------------------------------------------------------------ matériaux partagés
 static func tex(f: String) -> Texture2D:
-	return load(DIR + f)
+	return ParisBuilding.mip_tex(DIR + f, f.ends_with("_n.png"))
 
 
 static func tmat(key: String, albedo: String, normal := "", uv_scale := Vector3.ONE, rough := 0.8, tint := Color(1, 1, 1), triplanar := false) -> StandardMaterial3D:
@@ -71,7 +71,8 @@ static func ground_material() -> ShaderMaterial:
 	m.set_shader_parameter("roads", roads.map(func(r): return _rect4(r)))
 	m.set_shader_parameter("road_count", roads.size())
 	# pavés : abords du métro, parvis du kiosque, entrée du square
-	var paved := [Rect2(Quartier.METRO.x - 4.0, 9.6, 8.0, 7.6), Rect2(Quartier.KIOSK.x - 3.2, 10.6, 6.4, 5.4), Rect2(Quartier.SQUARE.position.x - 2.6, 12.6, 2.6, 2.8)]
+	var paved := [Rect2(Quartier.METRO.x - 4.0, 9.6, 8.0, 7.6), Rect2(Quartier.KIOSK.x - 3.2, 10.6, 6.4, 5.4), Rect2(Quartier.SQUARE.position.x - 2.6, 12.6, 2.6, 2.8),
+		Rect2(Quartier.BLVD_END - 9.0, Quartier.MAIRIE_Z0 + 2.0, 9.0, Quartier.NORTH_Z - Quartier.MAIRIE_Z0 - 2.0)]   # parvis de la mairie
 	m.set_shader_parameter("paved", paved.map(func(r): return _rect4(r)))
 	m.set_shader_parameter("paved_count", paved.size())
 	m.set_shader_parameter("stab", [_rect4(Quartier.SQUARE)])
@@ -115,6 +116,7 @@ func _build_all() -> void:
 	crossings = crosswalk_xs()
 	_sample_route()
 	_reserve_existing()
+	_reserve_story()
 	_build_lowered()
 	_build_curbs()
 	_build_markings()
@@ -125,6 +127,68 @@ func _build_all() -> void:
 	_build_traffic_lights()
 	_build_bollards()
 	_build_furniture()
+	MapStory.build_boards(self, crowd, find_spot)
+	_build_night_lights()
+
+
+## Lieux de l'histoire : on n'y pose pas de mobilier (terrasse du Zinc, étal de la supérette, chaque lieu nommé)
+func _reserve_story() -> void:
+	take(Vector2(-10.8, 17.4), 5.2)
+	take(Vector2(40.0, -24.4), 3.0)
+	for id: String in Quartier.SPOTS:
+		var p: Vector3 = Quartier.SPOTS[id]
+		if p.z < Quartier.ROAD_Z0 or p.z > Quartier.ROAD_Z1:
+			take(Vector2(p.x, p.z), 1.2)
+
+
+## Éclairage public de nuit : deux alignements en quinconce le long des bordures du boulevard et des deux côtés
+## des rues adjacentes (en plus des lampadaires existants : on ne double pas un lampadaire à moins de 9 m).
+## Lumières sans ombre, estompées au loin (coût limité).
+func _build_night_lights() -> void:
+	var have: Array[Vector2] = []
+	for n in get_parent().get_children() + get_children():
+		if n is LampPost:
+			have.append(Vector2((n as Node3D).position.x, (n as Node3D).position.z))
+	var want: Array = []
+	var x := -96.0
+	while x <= 96.0:
+		want.append([Vector2(x, Quartier.ROAD_Z1 + 0.6), PI])
+		want.append([Vector2(x + 11.0, Quartier.ROAD_Z0 - 0.6), 0.0])
+		x += 22.0
+	var nr := side_road(Quartier.SIDE_NORTH, true)
+	var sr := side_road(Quartier.SIDE_SOUTH, false)
+	for z in [27.0, 43.0, 59.0, 71.0]:
+		want.append([Vector2(nr.position.x - 0.6, z), PI * 0.5])
+		want.append([Vector2(nr.end.x + 0.6, z + 8.0), -PI * 0.5])
+	for z in [-33.0, -49.0, -65.0, -77.0]:
+		want.append([Vector2(sr.position.x - 0.6, z - 8.0), PI * 0.5])
+		want.append([Vector2(sr.end.x + 0.6, z), -PI * 0.5])
+	for lp in want:
+		var p0: Vector2 = lp[0]
+		var near := false
+		for h in have:
+			if h.distance_to(p0) < 9.0:
+				near = true
+				break
+		if near:
+			continue
+		var sp: Variant = find_spot(p0, 0.3, true)
+		if sp == null:
+			continue
+		var p: Vector2 = sp
+		var lamp := LampPost.new()
+		lamp.crowd = crowd
+		lamp.position = Vector3(p.x, 0, p.y)
+		lamp.rotation.y = lp[1]
+		add_child(lamp)
+		lamp.set_process(false)          # lanterne LED : pas de vacillement à recalculer à chaque image
+		var l: OmniLight3D = lamp._light
+		l.distance_fade_enabled = true
+		l.distance_fade_begin = 55.0
+		l.distance_fade_length = 20.0
+		take(p, 0.4)
+		have.append(p)
+		count("lampadaire")
 
 
 func count(kind: String, n := 1) -> void:
@@ -622,7 +686,7 @@ func _build_furniture() -> void:
 	for bp in [[Vector2(-23.5, -1.2), 0.0, true], [Vector2(21.0, -1.2), 0.0, true], [Vector2(-60.0, 1.0), 0.0, true],
 			[Vector2(66.0, 1.2), 0.0, true], [Vector2(-25.0, -13.1), PI, false], [Vector2(24.0, -13.1), PI, false],
 			[Vector2(9.3, -18.6), -PI * 0.5, false], [Vector2(-64.0, -13.2), PI, false], [Vector2(80.0, -13.2), PI, false],
-			[Vector2(-12.0, 17.6), PI, false], [Vector2(8.5, 17.6), PI, false]]:
+			[Vector2(2.0, 17.6), PI, false], [Vector2(6.5, 17.6), PI, false]]:
 		var sp: Variant = find_spot(bp[0], 0.9)
 		if sp != null:
 			var p: Vector2 = sp

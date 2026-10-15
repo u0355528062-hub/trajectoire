@@ -1179,6 +1179,9 @@ func resolve(n: Actor, p: Vector3) -> Vector3:
 	# passants : tout le quartier (trottoirs, rues adjacentes), pas seulement la zone de la manifestation
 	if n is Passerby:
 		return Passerby.street_clamp(p)
+	# personnages de l'histoire : tout le sol praticable (rues adjacentes, station-service, parvis de la mairie)
+	if n is StoryActor:
+		return Quartier.walk_clamp(p)
 	# les façades : personne ne traverse les murs (sauf les pilleurs dans une boutique ouverte)
 	var zlo := ParisStreet.SOUTH_Z + 0.35
 	var zhi := ParisStreet.NORTH_Z - 0.35

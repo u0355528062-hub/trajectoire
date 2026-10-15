@@ -1,12 +1,17 @@
 class_name NavGrid
 extends RefCounted
 ## Grille de navigation (A* C++ d'AStarGrid2D) sur la baseplate : obstacles fixes (abribus, véhicules garés,
-## lampadaires...) rasterisés en cellules bloquées ; chemins lissés par visibilité directe.
+## lampadaires...) rasterisés en cellules bloquées ; chemins lissés par visibilité directe. Les immeubles sont
+## bloqués d'office (seuls le sol praticable du quartier et l'intérieur des boutiques sont libres) : un chemin vers
+## une rue adjacente passe par le carrefour, jamais à travers un pâté de maisons.
 
 const CELL := 0.7
-var origin := Vector2(-52.0, -34.0)
-var size := Vector2i(180, 100)
+## Tout le quartier praticable : boulevard, rues adjacentes, station-service, parvis de la mairie (Quartier.WALK_RECTS)
+var origin := Vector2(-108.0, -82.0)
+var size := Vector2i(309, 228)
 var astar := AStarGrid2D.new()
+## Intérieurs ouverts en plus du sol praticable (boutiques envahissables) : rectangles monde (x, z)
+static var open_rects: Array[Rect2] = []
 
 
 func _init() -> void:
@@ -17,6 +22,18 @@ func _init() -> void:
 	astar.default_compute_heuristic = AStarGrid2D.HEURISTIC_OCTILE
 	astar.default_estimate_heuristic = AStarGrid2D.HEURISTIC_OCTILE
 	astar.update()
+
+
+## Déclare un intérieur praticable (boutique) : pris en compte au prochain `clear()`
+static func add_open(r: Rect2) -> void:
+	open_rects.append(r)
+
+
+## Rectangle monde -> rectangle de cellules (cellules dont le centre est dedans)
+func _cells(r: Rect2) -> Rect2i:
+	var a := Vector2i(ceili((r.position.x - origin.x) / CELL - 0.5), ceili((r.position.y - origin.y) / CELL - 0.5))
+	var b := Vector2i(floori((r.end.x - origin.x) / CELL - 0.5), floori((r.end.y - origin.y) / CELL - 0.5))
+	return Rect2i(a, b - a + Vector2i.ONE).intersection(astar.region)
 
 
 func cell(p: Vector3) -> Vector2i:
@@ -31,8 +48,13 @@ func inside(c: Vector2i) -> bool:
 	return c.x >= 0 and c.y >= 0 and c.x < size.x and c.y < size.y
 
 
+## Remet la grille à son état fixe : les immeubles sont bloqués, le sol praticable et les boutiques libres
 func clear() -> void:
-	astar.fill_solid_region(astar.region, false)
+	astar.fill_solid_region(astar.region, true)
+	for r in Quartier.WALK_RECTS:
+		astar.fill_solid_region(_cells(r), false)
+	for i in range(open_rects.size() - 1, -1, -1):
+		astar.fill_solid_region(_cells(open_rects[i]), false)
 
 
 ## Rectangle orienté (centre monde, demi-dimensions locales x/z, lacet) élargi de `margin`

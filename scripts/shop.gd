@@ -33,6 +33,12 @@ func _ready() -> void:
 	_build_window()
 	_build_sign()
 	_furnish()
+	# l'intérieur est praticable pour la grille de navigation (pilleurs, fuite par une vitrine brisée)
+	var a := to_global(Vector3(-width * 0.5, 0, 0.2))
+	var b := to_global(Vector3(width * 0.5, 0, -depth + 0.3))
+	NavGrid.add_open(Rect2(Vector2(minf(a.x, b.x), minf(a.z, b.z)), Vector2(absf(a.x - b.x), absf(a.z - b.z))))
+	if frontage.has("story"):
+		MapStory.dress_shop(self, str(frontage["story"]))
 
 
 func is_open() -> bool:
@@ -171,7 +177,7 @@ const NAMES := {
 	"pharmacie": ["Pharmacie du Boulevard", "Pharmacie Centrale", "Pharmacie de la Place"],
 	"superette": ["Marché Express", "Épicerie du Coin", "Proxi Marché", "Supérette 7/7"],
 	"boutique": ["Atelier Margaux", "Maison Clément", "Les Filles du Faubourg", "Mode & Co"],
-	"cafe": ["Café de la Mairie", "Le Zinc", "Le Bistrot des Amis", "Brasserie du Boulevard", "Le Petit Comptoir"],
+	"cafe": ["Café de la Mairie", "Le Saint-Jean", "Le Bistrot des Amis", "Brasserie du Boulevard", "Le Petit Comptoir"],
 	"tabac": ["Le Balto", "Tabac de la Mairie", "Tabac Presse du Boulevard"],
 	"fleuriste": ["Fleurs de Lise", "L'Atelier Floral", "Au Jardin de Paris"],
 	"librairie": ["Librairie Les Mots Passants", "Le Livre Ouvert", "Librairie du Faubourg"],
@@ -239,7 +245,7 @@ static func make_sign(parent: Node3D, k: String, sv: int, fr: Dictionary, pos: V
 	var xf: Transform3D = fr.get("xf", Transform3D())
 	var basis := xf.basis
 	var st: String = fr.get("style", "boiserie")
-	var name := shop_name(k, sv)
+	var name: String = fr.get("name", shop_name(k, sv))
 	var w: float = fr.get("sign_w", 4.0)
 	var y: float = fr.get("sign_y", 4.0)
 	var z: float = fr.get("sign_z", 0.25)
@@ -254,8 +260,12 @@ static func make_sign(parent: Node3D, k: String, sv: int, fr: Dictionary, pos: V
 		tc = Color(0.62, 0.5, 0.22)
 	elif col.get_luminance() > 0.5:
 		tc = Color(0.12, 0.1, 0.08)
-	var px := minf(0.0062, (w - 0.3) / maxf(float(text.length()) * 52.0, 1.0))
+	# capitales grasses (moderne) plus larges : on réserve ~64 px par lettre pour ne jamais déborder du caisson
+	var px := minf(0.0062, (w - 0.3) / maxf(float(text.length()) * (64.0 if st == "moderne" else 52.0), 1.0))
 	var lab := _lab(text, font, 96, px, tc, st != "moderne")
+	if st == "moderne":
+		lab.outline_size = 10              # lettres lisibles même sur un caisson clair et lumineux
+		lab.outline_modulate = col.darkened(0.55) if tc.get_luminance() > 0.5 else col.lightened(0.5)
 	lab.position = pos + basis * Vector3(0, y + (0.06 if SUBTITLES.has(k) else 0.0), z)
 	lab.basis = basis
 	parent.add_child(lab)
@@ -388,7 +398,7 @@ func _furnish() -> void:
 				_item(Vector3(-hw * 0.45 + float(i) * hw * 0.9, 0, -2.0), Vector3(0.7, 0.75, 0.7), Color(0.3, 0.2, 0.12), [Color(0.9, 0.9, 0.9)])   # tables
 				_item(Vector3(-hw * 0.45 + float(i) * hw * 0.9 + 0.55, 0, -2.0), Vector3(0.4, 0.9, 0.4), Color(0.18, 0.12, 0.08), [])            # chaises
 			_item(Vector3(-hw + 0.4, 0, -d + 1.6), Vector3(0.45, 1.9, 0.45), Color(0.25, 0.15, 0.1), [Color(0.3, 0.6, 0.25), Color(0.6, 0.15, 0.15)])  # étagère à bouteilles
-			if kind == "cafe":
+			if kind == "cafe" and not frontage.has("story"):
 				# terrasse : guéridons et chaises cannées sur le trottoir
 				for i in 2:
 					var ox := -hw * 0.5 + float(i) * hw
