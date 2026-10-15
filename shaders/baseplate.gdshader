@@ -136,7 +136,7 @@ void fragment() {
 		float wk = wetness * mix(1.0, 0.55, float(kind == 3));
 		alb *= 1.0 - 0.38 * wk;
 		rough = mix(rough, rough * 0.5 + 0.12, wk);
-		nm = mix(nm, vec3(0.5, 0.5, 1.0), wk * 0.35);
+		nm = mix(nm, vec3(0.5, 0.5, 1.0), wk * 0.6);   // film d'eau : moins de scintillement du grain
 		if (rain > 0.0) {
 			// ronds de gouttes (deux couches décalées), seulement près de la caméra
 			vec2 rip = vec2(0.0);

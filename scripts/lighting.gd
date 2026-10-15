@@ -99,7 +99,7 @@ const WEATHER := {
 	"sec": {},
 	"bruine": {"cover": 0.85, "overcast": 0.6, "cloud_scale": 0.75, "desat": 0.5, "sky_k": 0.85, "sun_k": 0.35, "shadow": 0.5,
 		"amb_k": 1.1, "fog_d": 0.0025, "vfog_d": 0.008, "sat_k": 0.9, "wet": 0.55, "rain": 0.35},
-	"pluie": {"cover": 1.0, "overcast": 0.95, "cloud_scale": 0.6, "desat": 0.75, "sky_k": 0.6, "sun_k": 0.15, "shadow": 0.2,
+	"pluie": {"cover": 1.0, "overcast": 0.95, "cloud_scale": 0.6, "desat": 0.75, "sky_k": 0.8, "sun_k": 0.15, "shadow": 0.2,
 		"amb_k": 1.05, "fog_d": 0.004, "vfog_d": 0.012, "sat_k": 0.85, "wet": 1.0, "rain": 1.0},
 	"brume": {"cover": 0.9, "overcast": 0.75, "cloud_scale": 0.7, "desat": 0.6, "sky_k": 0.9, "sun_k": 0.4, "shadow": 0.4,
 		"amb_k": 1.1, "fog_d": 0.008, "vfog_d": 0.02, "sat_k": 0.88, "wet": 0.25, "rain": 0.0, "mist": true},
