@@ -61,7 +61,7 @@ func _draw() -> void:
 	_presenter(w * 0.33, h)
 	# bureau
 	var desk := PackedVector2Array([Vector2(0, h * 0.8), Vector2(w, h * 0.77), Vector2(w, h), Vector2(0, h)])
-	draw_colored_polygon(desk, Color(0.06, 0.06, 0.09))
+	_poly(desk, Color(0.06, 0.06, 0.09))
 	draw_line(Vector2(0, h * 0.8), Vector2(w, h * 0.77), UiStyle.RED, maxf(h * 0.008, 2.0), true)
 	# logo et horloge
 	var lf := UiStyle.font("caps")
@@ -112,7 +112,7 @@ func _presenter(cx: float, h: float) -> void:
 	var jacket := Color(0.14, 0.17, 0.29)
 	var hy := 0.33 * u
 	# cheveux (arrière) : carré plongeant
-	draw_colored_polygon(_ellipse(Vector2(cx, hy + 0.01 * u), Vector2(0.092 * u, 0.105 * u), 0.0, TAU), hair)
+	_oval(Vector2(cx, hy + 0.01 * u), Vector2(0.092 * u, 0.105 * u), hair)
 	draw_rect(Rect2(Vector2(cx - 0.092 * u, hy), Vector2(0.184 * u, 0.12 * u)), hair)
 	# cou
 	draw_rect(Rect2(Vector2(cx - 0.03 * u, hy + 0.06 * u), Vector2(0.06 * u, 0.12 * u)), skin_d)
@@ -121,26 +121,26 @@ func _presenter(cx: float, h: float) -> void:
 	var jac := PackedVector2Array([Vector2(cx - 0.26 * u, u), Vector2(cx - 0.235 * u, top + 0.1 * u), Vector2(cx - 0.17 * u, top + 0.015 * u),
 		Vector2(cx - 0.04 * u, top - 0.005 * u), Vector2(cx, top + 0.12 * u), Vector2(cx + 0.04 * u, top - 0.005 * u),
 		Vector2(cx + 0.17 * u, top + 0.015 * u), Vector2(cx + 0.235 * u, top + 0.1 * u), Vector2(cx + 0.26 * u, u)])
-	draw_colored_polygon(jac, jacket)
-	draw_colored_polygon(PackedVector2Array([Vector2(cx - 0.04 * u, top - 0.005 * u), Vector2(cx + 0.04 * u, top - 0.005 * u), Vector2(cx, top + 0.12 * u)]), UiStyle.PAPER)
-	draw_colored_polygon(PackedVector2Array([Vector2(cx - 0.028 * u, top - 0.004 * u), Vector2(cx + 0.028 * u, top - 0.004 * u), Vector2(cx, top + 0.05 * u)]), skin_d)
+	_poly(jac, jacket)
+	_poly(PackedVector2Array([Vector2(cx - 0.04 * u, top - 0.005 * u), Vector2(cx + 0.04 * u, top - 0.005 * u), Vector2(cx, top + 0.12 * u)]), UiStyle.PAPER)
+	_poly(PackedVector2Array([Vector2(cx - 0.028 * u, top - 0.004 * u), Vector2(cx + 0.028 * u, top - 0.004 * u), Vector2(cx, top + 0.05 * u)]), skin_d)
 	# revers de la veste
 	draw_line(Vector2(cx - 0.04 * u, top), Vector2(cx - 0.012 * u, top + 0.16 * u), Color(0.08, 0.1, 0.18), maxf(u * 0.006, 1.5), true)
 	draw_line(Vector2(cx + 0.04 * u, top), Vector2(cx + 0.012 * u, top + 0.16 * u), Color(0.08, 0.1, 0.18), maxf(u * 0.006, 1.5), true)
 	# micro-cravate
 	draw_circle(Vector2(cx - 0.05 * u, top + 0.06 * u), 0.008 * u, Color(0.05, 0.05, 0.06))
 	# visage
-	draw_colored_polygon(_ellipse(Vector2(cx, hy), Vector2(0.066 * u, 0.086 * u), 0.0, TAU), skin)
+	_oval(Vector2(cx, hy), Vector2(0.066 * u, 0.086 * u), skin)
 	# frange en biais
 	var fr := _ellipse(Vector2(cx, hy - 0.004 * u), Vector2(0.074 * u, 0.094 * u), PI * 1.02, PI * 1.98)
-	fr.append(Vector2(cx + 0.07 * u, hy - 0.035 * u))
-	fr.append(Vector2(cx - 0.01 * u, hy - 0.05 * u))
-	fr.append(Vector2(cx - 0.07 * u, hy - 0.01 * u))
-	draw_colored_polygon(fr, hair)
+	fr.append(Vector2(cx + 0.072 * u, hy))
+	fr.append(Vector2(cx + 0.02 * u, hy - 0.04 * u))
+	fr.append(Vector2(cx - 0.06 * u, hy - 0.02 * u))
+	_poly(fr, hair)
 	# mèches sur les côtés
-	draw_colored_polygon(PackedVector2Array([Vector2(cx - 0.074 * u, hy - 0.02 * u), Vector2(cx - 0.058 * u, hy - 0.01 * u),
+	_poly(PackedVector2Array([Vector2(cx - 0.074 * u, hy - 0.02 * u), Vector2(cx - 0.058 * u, hy - 0.01 * u),
 		Vector2(cx - 0.06 * u, hy + 0.09 * u), Vector2(cx - 0.09 * u, hy + 0.11 * u)]), hair)
-	draw_colored_polygon(PackedVector2Array([Vector2(cx + 0.074 * u, hy - 0.02 * u), Vector2(cx + 0.058 * u, hy - 0.01 * u),
+	_poly(PackedVector2Array([Vector2(cx + 0.074 * u, hy - 0.02 * u), Vector2(cx + 0.058 * u, hy - 0.01 * u),
 		Vector2(cx + 0.06 * u, hy + 0.09 * u), Vector2(cx + 0.09 * u, hy + 0.11 * u)]), hair)
 	# yeux (clignement), sourcils, bouche
 	var blink := fmod(_t, 4.3) < 0.12
@@ -150,15 +150,30 @@ func _presenter(cx: float, h: float) -> void:
 		if blink:
 			draw_line(Vector2(ex - 0.008 * u, ey), Vector2(ex + 0.008 * u, ey), Color(0.15, 0.08, 0.06), maxf(u * 0.004, 1.0))
 		else:
-			draw_colored_polygon(_ellipse(Vector2(ex, ey), Vector2(0.0075 * u, 0.0055 * u), 0.0, TAU), Color(0.12, 0.07, 0.05))
+			_oval(Vector2(ex, ey), Vector2(0.0075 * u, 0.0055 * u), Color(0.12, 0.07, 0.05))
 		draw_line(Vector2(ex - 0.011 * u, ey - 0.017 * u), Vector2(ex + 0.011 * u, ey - 0.019 * u), hair, maxf(u * 0.004, 1.0), true)
 	var open := 0.0
 	if talking:
 		open = absf(sin(_t * 11.0)) * 0.6 + absf(sin(_t * 17.0)) * 0.4
 	var my := hy + 0.048 * u
-	draw_colored_polygon(_ellipse(Vector2(cx, my), Vector2(0.014 * u, (0.0025 + 0.007 * open) * u), 0.0, TAU), Color(0.5, 0.2, 0.2))
+	_oval(Vector2(cx, my), Vector2(0.014 * u, (0.0025 + 0.007 * open) * u), Color(0.5, 0.2, 0.2))
 	draw_circle(Vector2(cx - 0.066 * u, hy + 0.02 * u), 0.005 * u, UiStyle.PAPER)
 	draw_circle(Vector2(cx + 0.066 * u, hy + 0.02 * u), 0.005 * u, UiStyle.PAPER)
+
+
+## Polygone plein ; ignoré s'il est dégénéré (la triangulation échouerait)
+func _poly(pts: PackedVector2Array, col: Color) -> void:
+	if pts.size() >= 3 and not Geometry2D.triangulate_polygon(pts).is_empty():
+		draw_colored_polygon(pts, col)
+
+
+## Ovale plein (cercle mis à l'échelle : pas de triangulation, sûr même tout petit)
+func _oval(c: Vector2, r: Vector2, col: Color) -> void:
+	if r.x <= 0.01 or r.y <= 0.01:
+		return
+	draw_set_transform(c, 0.0, Vector2(1.0, r.y / r.x))
+	draw_circle(Vector2.ZERO, r.x, col)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 func _ellipse(c: Vector2, r: Vector2, a0: float, a1: float, n := 28) -> PackedVector2Array:
