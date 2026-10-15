@@ -5,6 +5,7 @@ shader_type spatial;
 
 uniform vec3 paint : source_color = vec3(0.93, 0.93, 0.89);
 uniform float wear = 0.32;
+uniform float wetness : hint_range(0.0, 1.0) = 0.0;  // peinture mouillée : un peu plus sombre et brillante
 
 varying vec3 wpos;
 
@@ -33,9 +34,9 @@ void fragment() {
 	float lane = min(abs(p.y + 9.15), abs(p.y + 5.65));
 	float track = smoothstep(0.35, 0.0, abs(lane - 0.8)) * 0.18;
 	float a = smoothstep(wear + track, wear + track + 0.06, n);
-	ALBEDO = paint * (0.82 + 0.18 * vnoise(p * 11.0));
+	ALBEDO = paint * (0.82 + 0.18 * vnoise(p * 11.0)) * (1.0 - 0.12 * wetness);
 	ALPHA = a;
 	ALPHA_SCISSOR_THRESHOLD = 0.5;
-	ROUGHNESS = 0.5;
+	ROUGHNESS = mix(0.5, 0.18, wetness);
 	SPECULAR = 0.45;
 }
