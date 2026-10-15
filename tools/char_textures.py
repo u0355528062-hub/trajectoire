@@ -607,7 +607,7 @@ def bake_garments(out, Pb, Nb, TV, TT, VT, head, lm, tris, size=2048, msize=1024
     shade *= 1.0 - 0.3 * _ridge(zip_d - 0.004, 0.0015)
     cuffj = (np.abs(bx) > sh_x + 0.05) & (by < neck_y - 0.1)
     elastic = (d < 0.025) * (cuffj | (by < hip_y + 0.05))
-    h += 0.0006 * elastic * (0.5 + 0.5 * np.sin(np.where(is_armv, a_a * a_r, ta * tr) * 2 * np.pi / 0.006))
+    h += 0.0003 * elastic * (0.5 + 0.5 * np.sin(np.where(is_armv, a_a * a_r, ta * tr) * 2 * np.pi / 0.006))
     trim = np.maximum(trim, elastic * 0.8)
     h += 0.001 * smooth(0.004, 0.0, d); shade *= 1.0 - 0.25 * smooth(0.007, 0.0, d)
     sd = np.where(is_armv, np.abs(a_a) * a_r, side_arc)
@@ -721,7 +721,7 @@ def bake_garments(out, Pb, Nb, TV, TT, VT, head, lm, tris, size=2048, msize=1024
         u, v = np.abs(X - cx), np.abs(Y - cy)
         return ((u < s) & (v < s * 0.33) | (u < s * 0.33) & (v < s)) * mask
     cross = np.maximum(cross, cross_at(0.0, hip_y + 0.31, 0.075, np.abs(ta) > 2.3))
-    cross = np.maximum(cross, cross_at(0.08, hip_y + 0.3, 0.045, (np.abs(ta) < 1.0) & (X > 0)))
+    cross = np.maximum(cross, cross_at(0.1, hip_y + 0.3, 0.03, (np.abs(ta) < 1.0) & (X > 0)))
     # bande « velcro » d'ouverture devant
     vel = smooth(0.012, 0.009, np.where(np.abs(ta) < 1.0, np.abs(X), 1.0))
     h += 0.0005 * vel
