@@ -34,6 +34,8 @@ var _hot := -1
 var _skip := false
 var _line_on := false
 var _sub_hold := false            # la dernière réplique reste affichée pendant le choix qui suit
+var _hold_t := 0.0
+var _sub_y := 0.87                # bas des sous-titres (plus haut en jeu, au-dessus de la barre d'outils)
 var _line_serial := 0
 var _band_a := 0.0
 var _sub_a := 0.0
@@ -402,7 +404,7 @@ func choose(prompt: String, options: Array, timer := 0.0) -> int:
 	_timer_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_timer_bar.visible = timer > 0.0
 	tw.add_child(_timer_bar)
-	var top := 0.71 if _sub_hold else 0.85
+	var top := _sub_y - (0.16 if (_sub_hold or _line_on) else 0.02)
 	_choice_root.anchor_top = top
 	_choice_root.anchor_bottom = top
 	_choice_root.visible = true
@@ -513,6 +515,19 @@ func _cine_on() -> bool:
 # ------------------------------------------------------------------ boucle
 func _process(delta: float) -> void:
 	# apparition / disparition douce du sous-titre et du voile
+	if _sub_hold and not _choosing:
+		_hold_t += delta
+		if _hold_t > 1.0:
+			_sub_hold = false        # aucun choix n'a suivi : on n'oublie pas le sous-titre à l'écran
+	else:
+		_hold_t = 0.0
+	var y := 0.87 if _cine_on() else 0.8
+	if not is_equal_approx(_sub_y, y):
+		_sub_y = move_toward(_sub_y, y, delta * 0.4)
+		_sub.anchor_top = _sub_y
+		_sub.anchor_bottom = _sub_y
+		_barks_box.anchor_top = _sub_y - 0.21
+		_barks_box.anchor_bottom = _sub_y - 0.21
 	var want := 1.0 if _line_on else (0.8 if _sub_hold else 0.0)
 	_sub_a = move_toward(_sub_a, want, delta * (8.0 if _line_on else 5.0))
 	_sub.modulate.a = _sub_a

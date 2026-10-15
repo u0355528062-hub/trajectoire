@@ -218,7 +218,7 @@ func _run() -> void:
 	await _frames(30)
 	_check(nadia.seated(), "assise")
 	var from := nadia.global_position
-	nadia.walk(from + Vector3(0, 0, 4.0))
+	nadia.walk(Quartier.spot(dest))     # lieu déjà atteint plus haut : accessible
 	await _frames(3)
 	_check(from.distance_to(nadia.global_position) < 0.05, "ne glisse pas en se relevant")
 	await _frames(120)
@@ -241,8 +241,9 @@ func _capture() -> void:
 	var ui := director.dialogue
 	var player: Player = director.player
 	var p0 := player.global_position
-	var fwd := Vector3(0, 0, 1)
-	var side := Vector3(1, 0, 0)
+	var cf := -player.camera.global_basis.z
+	var fwd := Vector3(cf.x, 0, cf.z).normalized()
+	var side := fwd.cross(Vector3.UP).normalized()
 	var nadia := director.cast.spawn("nadia", p0 + fwd * 3.0)
 	var karim := director.cast.spawn("karim", p0 + fwd * 3.0 + side * 1.6)
 	nadia.face_target(p0)
@@ -250,12 +251,13 @@ func _capture() -> void:
 	await _wait(1.0)
 	# 1. plan de dialogue : contrechamp sur Nadia par-dessus l'épaule de Sam, bandes noires, réplique, choix
 	cine.begin()
-	var eye := p0 + Vector3(-0.45, 1.68, -0.55)
+	var eye := p0 + Vector3.UP * 1.68 - fwd * 0.55 - side * 0.45
 	cine.shot({"from": eye, "to": eye + Vector3(0.1, 0, 0.25), "look": "nadia", "dur": 30.0, "fov": 38, "dof": -1, "shake": 0.3})
 	await _wait(1.0)
 	ui.play_line("nadia", "On était douze, l'an dernier. Aujourd'hui, regarde autour de toi : ils sont tous là.", {"keep": true, "look": "sam"})
 	await _wait(1.2)
 	ui.advance()
+	await _wait(0.2)
 	ui.advance()
 	await _wait(0.3)
 	ui.choose("Que réponds-tu ?", ["Je suis là. Dis-moi quoi faire.", "Je passe juste, Nadia.", "Et si on bloquait le boulevard ?"], 12.0)
@@ -264,7 +266,7 @@ func _capture() -> void:
 	ui._pick(0)
 	await _wait(0.5)
 	# 2. carton de titre sur un plan large
-	cine.shot({"from": p0 + Vector3(-8, 4.5, -6), "to": p0 + Vector3(-6, 4.0, -6), "look": p0 + Vector3(0, 1.2, 4), "dur": 30.0, "fov": 45})
+	cine.shot({"from": p0 - fwd * 6.0 - side * 8.0 + Vector3.UP * 4.5, "to": p0 - fwd * 6.0 - side * 6.0 + Vector3.UP * 4.0, "look": p0 + fwd * 4.0 + Vector3.UP * 1.2, "dur": 30.0, "fov": 45})
 	cine.title_card("On était douze", "Jeudi 9 mars — 18 h 40\nLe square", 3.0)
 	await _wait(1.4)
 	await _shot("pres_2.png")
