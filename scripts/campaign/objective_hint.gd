@@ -20,9 +20,13 @@ func _ready() -> void:
 	st.border_width_left = 4
 	st.border_color = UiStyle.YELLOW
 	add_theme_stylebox_override("panel", st)
-	set_anchors_preset(Control.PRESET_CENTER_TOP)
+	anchor_left = 0.5
+	anchor_right = 0.5
+	anchor_top = 0.0
+	anchor_bottom = 0.0
 	grow_horizontal = Control.GROW_DIRECTION_BOTH
-	offset_top = 214
+	offset_top = 214.0
+	offset_bottom = 214.0
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	modulate.a = 0.0
 	visible = false
@@ -46,10 +50,12 @@ func show_text(text: String, sec := 5.0) -> void:
 	var f := UiStyle.font("regular")
 	var w := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x
 	_label.custom_minimum_size.x = clampf(w + 2.0, 160.0, MAX_W)
-	size = Vector2.ZERO
-	offset_left = 0
-	offset_right = 0
+	offset_left = 0.0
+	offset_right = 0.0
+	offset_top = 214.0
+	offset_bottom = 214.0
 	visible = true
+	reset_size()
 	if _a > 0.3:
 		UiStyle.pop(self, 1.04, 0.25)
 

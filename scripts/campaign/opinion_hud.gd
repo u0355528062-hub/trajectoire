@@ -44,10 +44,13 @@ func _ready() -> void:
 	st.content_margin_top = 10
 	st.content_margin_bottom = 12
 	_panel.add_theme_stylebox_override("panel", st)
-	_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_panel.anchor_left = 1.0
+	_panel.anchor_right = 1.0
 	_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	_panel.offset_right = -24
+	_panel.offset_left = -24.0 - W
+	_panel.offset_right = -24.0
 	_panel.offset_top = TOP
+	_panel.offset_bottom = TOP
 	_panel.custom_minimum_size.x = W
 	_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_panel)

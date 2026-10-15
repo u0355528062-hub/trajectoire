@@ -19,10 +19,15 @@ var _alpha := 0.0
 
 func _ready() -> void:
 	add_theme_stylebox_override("panel", UiStyle.ink_panel(14.0, 8))
-	set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	anchor_left = 1.0
+	anchor_right = 1.0
+	anchor_top = 0.0
+	anchor_bottom = 0.0
 	grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	offset_right = -24
-	offset_top = 150
+	offset_left = -24.0 - WIDTH
+	offset_right = -24.0
+	offset_top = 150.0
+	offset_bottom = 150.0
 	custom_minimum_size.x = WIDTH
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	modulate.a = 0.0
