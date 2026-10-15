@@ -163,12 +163,12 @@ static func camera_point(target: Vector3, p: Vector3) -> Vector3:
 ## Une caméra dans le feuillage des platanes du boulevard (alignements TREE_ROWS) passe sous les branches, ou
 ## au-dessus des houppiers pour un plan déjà haut ; sous les branches, on s'écarte de l'alignement des troncs.
 static func below_trees(p: Vector3, target := Vector3.ZERO) -> Vector3:
-	if p.y > 3.4 and p.y < 22.5 and absf(p.x) < BLVD_END:
+	if p.y > 3.4 and p.y < 27.5 and absf(p.x) < BLVD_END:
 		for row in TREE_ROWS:
 			var dz := p.z - float(row)
 			if absf(dz) < 4.5:
 				if p.y >= 12.0:
-					p.y = 23.0
+					p.y = 28.0
 				else:
 					p.y = 3.2
 					if absf(dz) < 1.6:
