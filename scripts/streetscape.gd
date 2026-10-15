@@ -181,6 +181,7 @@ func _build_night_lights() -> void:
 		lamp.position = Vector3(p.x, 0, p.y)
 		lamp.rotation.y = lp[1]
 		add_child(lamp)
+		lamp.set_process(false)          # lanterne LED : pas de vacillement à recalculer à chaque image
 		var l: OmniLight3D = lamp._light
 		l.distance_fade_enabled = true
 		l.distance_fade_begin = 55.0
