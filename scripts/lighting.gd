@@ -20,77 +20,77 @@ const SKY_BASE := {
 ## ciel, éclairage urbain (lamps : lampadaires allumés ; win : émission des fenêtres allumées / tamisées), couleur de pluie
 const TOD := {
 	"crepuscule": {
-		"sun": Vector2(13.0, 28.0), "sun_col": Color(1.0, 0.6, 0.36), "sun_e": 2.8, "sun_ang": 0.8,
+		"sun": Vector2(13.0, 28.0), "sun_col": Color(1.0, 0.68, 0.47), "sun_e": 2.8, "sun_ang": 0.8,
 		"fill": Vector2(35.0, 145.0), "fill_col": Color(0.35, 0.5, 1.0), "fill_e": 0.35,
 		"amb": Color(0.5, 0.53, 0.62), "amb_e": 0.85, "exp": 1.05,
 		"fog": Color(0.56, 0.52, 0.52), "fog_d": 0.0007, "fog_sun": 0.1, "aerial": 0.35,
 		"vfog_d": 0.0022, "vfog_alb": Color(0.8, 0.8, 0.82), "vfog_em": Color(0.02, 0.025, 0.05), "vfog_em_e": 0.5, "vfog_aniso": 0.3,
-		"contrast": 1.07, "sat": 1.04, "sky": {},
+		"contrast": 1.07, "sat": 1.0, "sky": {},
 		"lamps": true, "win": Vector2(1.2, 0.16), "rain_col": Color(0.75, 0.7, 0.72),
 	},
 	"aube": {
 		"sun": Vector2(5.0, -92.0), "sun_col": Color(1.0, 0.68, 0.5), "sun_e": 1.8, "sun_ang": 1.0,
-		"fill": Vector2(40.0, 88.0), "fill_col": Color(0.45, 0.55, 1.0), "fill_e": 0.32,
-		"amb": Color(0.5, 0.54, 0.68), "amb_e": 0.75, "exp": 1.12,
+		"fill": Vector2(40.0, 88.0), "fill_col": Color(0.62, 0.68, 1.0), "fill_e": 0.28,
+		"amb": Color(0.54, 0.55, 0.64), "amb_e": 0.72, "exp": 1.12,
 		"fog": Color(0.66, 0.62, 0.66), "fog_d": 0.0016, "fog_sun": 0.3, "aerial": 0.5,
 		"vfog_d": 0.006, "vfog_alb": Color(0.86, 0.86, 0.9), "vfog_em": Color(0.03, 0.035, 0.06), "vfog_em_e": 0.5, "vfog_aniso": 0.55,
 		"contrast": 1.04, "sat": 0.98,
-		"sky": {"zenith_color": Color(0.07, 0.11, 0.28), "mid_color": Color(0.32, 0.38, 0.62), "horizon_color": Color(1.0, 0.7, 0.54),
+		"sky": {"zenith_color": Color(0.24, 0.27, 0.42), "mid_color": Color(0.55, 0.54, 0.64), "horizon_color": Color(1.0, 0.7, 0.54),
 			"ground_color": Color(0.18, 0.17, 0.2), "star_amount": 0.12, "cloud_cover": 0.4, "cloud_lit": Color(1.0, 0.72, 0.58),
 			"cloud_shade": Color(0.38, 0.35, 0.48), "halo_color": Color(1.0, 0.58, 0.38)},
 		"lamps": true, "win": Vector2(0.75, 0.12), "rain_col": Color(0.72, 0.72, 0.78),
 	},
 	"matin": {
-		"sun": Vector2(30.0, -142.0), "sun_col": Color(1.0, 0.93, 0.83), "sun_e": 3.0, "sun_ang": 0.6,
-		"fill": Vector2(50.0, 38.0), "fill_col": Color(0.5, 0.62, 1.0), "fill_e": 0.4,
-		"amb": Color(0.6, 0.66, 0.78), "amb_e": 0.85, "exp": 1.0,
+		"sun": Vector2(30.0, -142.0), "sun_col": Color(1.0, 0.92, 0.82), "sun_e": 2.5, "sun_ang": 0.6,
+		"fill": Vector2(50.0, 38.0), "fill_col": Color(0.72, 0.8, 1.0), "fill_e": 0.3,
+		"amb": Color(0.6, 0.63, 0.7), "amb_e": 0.8, "exp": 0.95,
 		"fog": Color(0.68, 0.74, 0.84), "fog_d": 0.0006, "fog_sun": 0.15, "aerial": 0.5,
 		"vfog_d": 0.0015, "vfog_alb": Color(0.9, 0.92, 0.95), "vfog_em": Color(0, 0, 0), "vfog_em_e": 0.0, "vfog_aniso": 0.5,
 		"contrast": 1.05, "sat": 1.02,
-		"sky": {"zenith_color": Color(0.14, 0.3, 0.66), "mid_color": Color(0.34, 0.53, 0.84), "horizon_color": Color(0.74, 0.82, 0.9),
+		"sky": {"zenith_color": Color(0.2, 0.36, 0.68), "mid_color": Color(0.45, 0.6, 0.82), "horizon_color": Color(0.74, 0.82, 0.9),
 			"ground_color": Color(0.22, 0.22, 0.23), "star_amount": 0.0, "cloud_cover": 0.38, "cloud_lit": Color(1.0, 0.98, 0.95),
 			"cloud_shade": Color(0.56, 0.6, 0.7), "halo_color": Color(1.0, 0.95, 0.85), "halo_k": 0.25, "glare_color": Color(1.0, 0.95, 0.85),
 			"glare_k": 0.5, "disc_color": Color(1.0, 0.98, 0.92), "disc_k": 4.0},
 		"lamps": false, "win": Vector2(0.1, 0.02), "rain_col": Color(0.78, 0.8, 0.84),
 	},
 	"midi": {
-		"sun": Vector2(57.0, 148.0), "sun_col": Color(1.0, 0.97, 0.93), "sun_e": 3.3, "sun_ang": 0.5,
-		"fill": Vector2(60.0, -32.0), "fill_col": Color(0.5, 0.62, 1.0), "fill_e": 0.45,
-		"amb": Color(0.62, 0.68, 0.8), "amb_e": 0.9, "exp": 0.95,
+		"sun": Vector2(57.0, 148.0), "sun_col": Color(1.0, 0.97, 0.93), "sun_e": 2.6, "sun_ang": 0.5,
+		"fill": Vector2(60.0, -32.0), "fill_col": Color(0.72, 0.8, 1.0), "fill_e": 0.32,
+		"amb": Color(0.62, 0.65, 0.72), "amb_e": 0.85, "exp": 0.84,
 		"fog": Color(0.7, 0.76, 0.86), "fog_d": 0.0005, "fog_sun": 0.1, "aerial": 0.5,
 		"vfog_d": 0.0012, "vfog_alb": Color(0.92, 0.94, 0.96), "vfog_em": Color(0, 0, 0), "vfog_em_e": 0.0, "vfog_aniso": 0.5,
 		"contrast": 1.06, "sat": 1.03,
-		"sky": {"zenith_color": Color(0.1, 0.25, 0.62), "mid_color": Color(0.3, 0.5, 0.84), "horizon_color": Color(0.7, 0.8, 0.9),
+		"sky": {"zenith_color": Color(0.18, 0.34, 0.68), "mid_color": Color(0.42, 0.58, 0.82), "horizon_color": Color(0.7, 0.8, 0.9),
 			"ground_color": Color(0.22, 0.22, 0.23), "star_amount": 0.0, "cloud_cover": 0.32, "cloud_lit": Color(1.0, 1.0, 0.98),
 			"cloud_shade": Color(0.58, 0.62, 0.72), "halo_color": Color(1.0, 0.97, 0.9), "halo_k": 0.2, "glare_color": Color(1.0, 0.97, 0.9),
 			"glare_k": 0.5, "disc_color": Color(1.0, 1.0, 0.95), "disc_k": 4.0},
 		"lamps": false, "win": Vector2(0.08, 0.02), "rain_col": Color(0.8, 0.82, 0.86),
 	},
 	"aprem": {
-		"sun": Vector2(27.0, 78.0), "sun_col": Color(1.0, 0.88, 0.72), "sun_e": 3.0, "sun_ang": 0.6,
-		"fill": Vector2(45.0, -102.0), "fill_col": Color(0.5, 0.6, 1.0), "fill_e": 0.38,
-		"amb": Color(0.6, 0.63, 0.72), "amb_e": 0.85, "exp": 1.0,
+		"sun": Vector2(27.0, 78.0), "sun_col": Color(1.0, 0.88, 0.72), "sun_e": 2.5, "sun_ang": 0.6,
+		"fill": Vector2(45.0, -102.0), "fill_col": Color(0.72, 0.78, 1.0), "fill_e": 0.3,
+		"amb": Color(0.62, 0.63, 0.68), "amb_e": 0.8, "exp": 0.95,
 		"fog": Color(0.74, 0.72, 0.72), "fog_d": 0.0007, "fog_sun": 0.2, "aerial": 0.45,
 		"vfog_d": 0.0018, "vfog_alb": Color(0.92, 0.9, 0.88), "vfog_em": Color(0, 0, 0), "vfog_em_e": 0.0, "vfog_aniso": 0.5,
 		"contrast": 1.06, "sat": 1.04,
-		"sky": {"zenith_color": Color(0.13, 0.28, 0.62), "mid_color": Color(0.36, 0.52, 0.8), "horizon_color": Color(0.86, 0.82, 0.76),
+		"sky": {"zenith_color": Color(0.2, 0.34, 0.64), "mid_color": Color(0.46, 0.57, 0.78), "horizon_color": Color(0.86, 0.82, 0.76),
 			"ground_color": Color(0.22, 0.21, 0.21), "star_amount": 0.0, "cloud_cover": 0.42, "cloud_lit": Color(1.0, 0.94, 0.86),
 			"cloud_shade": Color(0.5, 0.52, 0.62), "halo_color": Color(1.0, 0.85, 0.6), "halo_k": 0.3, "glare_color": Color(1.0, 0.85, 0.6),
 			"glare_k": 0.6, "disc_color": Color(1.0, 0.95, 0.85), "disc_k": 4.0},
 		"lamps": false, "win": Vector2(0.12, 0.02), "rain_col": Color(0.8, 0.8, 0.82),
 	},
 	"nuit": {
-		"sun": Vector2(38.0, -60.0), "sun_col": Color(0.62, 0.72, 1.0), "sun_e": 0.12, "sun_ang": 0.5,
+		"sun": Vector2(38.0, -60.0), "sun_col": Color(0.62, 0.72, 1.0), "sun_e": 0.1, "sun_ang": 0.5,
 		"fill": Vector2(50.0, 120.0), "fill_col": Color(0.3, 0.4, 0.8), "fill_e": 0.06,
-		"amb": Color(0.22, 0.25, 0.36), "amb_e": 0.45, "exp": 1.25,
+		"amb": Color(0.25, 0.27, 0.34), "amb_e": 1.15, "exp": 1.5,
 		"fog": Color(0.25, 0.22, 0.22), "fog_d": 0.0012, "fog_sun": 0.0, "aerial": 0.3,
 		"vfog_d": 0.004, "vfog_alb": Color(0.7, 0.7, 0.72), "vfog_em": Color(0.035, 0.025, 0.02), "vfog_em_e": 0.6, "vfog_aniso": 0.4,
 		"contrast": 1.08, "sat": 1.0,
 		"sky": {"zenith_color": Color(0.006, 0.01, 0.03), "mid_color": Color(0.02, 0.03, 0.07), "horizon_color": Color(0.13, 0.09, 0.07),
-			"ground_color": Color(0.04, 0.035, 0.035), "star_amount": 0.3, "cloud_cover": 0.45, "cloud_lit": Color(0.28, 0.24, 0.24),
+			"ground_color": Color(0.04, 0.035, 0.035), "star_amount": 0.3, "cloud_cover": 0.45, "cloud_lit": Color(0.2, 0.19, 0.2),
 			"cloud_shade": Color(0.07, 0.06, 0.07), "halo_color": Color(0.6, 0.7, 1.0), "halo_k": 0.04, "glare_color": Color(0.7, 0.8, 1.0),
-			"glare_k": 0.15, "disc_color": Color(0.9, 0.92, 1.0), "disc_k": 1.6, "city_glow": Color(0.22, 0.12, 0.06)},
-		"lamps": true, "win": Vector2(1.4, 0.34), "rain_col": Color(0.55, 0.5, 0.48),
+			"glare_k": 0.15, "disc_color": Color(0.9, 0.92, 1.0), "disc_k": 1.6, "city_glow": Color(0.14, 0.1, 0.075)},
+		"lamps": true, "win": Vector2(1.4, 0.34), "rain_col": Color(0.7, 0.66, 0.62),
 	},
 }
 
@@ -102,7 +102,7 @@ const WEATHER := {
 	"pluie": {"cover": 1.0, "overcast": 0.95, "cloud_scale": 0.6, "desat": 0.75, "sky_k": 0.6, "sun_k": 0.15, "shadow": 0.2,
 		"amb_k": 1.05, "fog_d": 0.004, "vfog_d": 0.012, "sat_k": 0.85, "wet": 1.0, "rain": 1.0},
 	"brume": {"cover": 0.9, "overcast": 0.75, "cloud_scale": 0.7, "desat": 0.6, "sky_k": 0.9, "sun_k": 0.4, "shadow": 0.4,
-		"amb_k": 1.1, "fog_d": 0.006, "vfog_d": 0.03, "sat_k": 0.88, "wet": 0.25, "rain": 0.0, "mist": true},
+		"amb_k": 1.1, "fog_d": 0.008, "vfog_d": 0.02, "sat_k": 0.88, "wet": 0.25, "rain": 0.0, "mist": true},
 }
 
 ## Moment et météo de la scène en cours (lus par Weather et les autres modules)
@@ -188,9 +188,7 @@ static func build(parent: Node3D, tod := "crepuscule", weather := "sec") -> Dict
 	env.volumetric_fog_gi_inject = 1.0
 	if w.get("mist", false):
 		# brume : brouillard épais au ras du sol, le ciel s'y perd
-		env.fog_height = 3.0
-		env.fog_height_density = 0.12
-		env.fog_sky_affect = 0.45
+		env.fog_sky_affect = 0.6
 		env.fog_aerial_perspective = 0.7
 		env.volumetric_fog_length = 64.0
 	# brouillard de profondeur à ajouter quand le volumétrique est coupé (réglage image), pour garder l'ambiance

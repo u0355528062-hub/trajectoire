@@ -90,7 +90,7 @@ void sky() {
 		lit += cloud_lit * pow(s, 6.0) * (1.0 - thick) * 1.2;      // liseré lumineux près du soleil
 		lit = mix(lit, col * 0.9, smoothstep(0.55, 1.0, h) * 0.5 * (1.0 - overcast));  // plus haut : plus bleutés
 		lit = mix(lit, cloud_shade, thick * overcast * 0.45);      // ventres sombres sous le couvert
-		lit += city_glow * (0.35 + 0.65 * (1.0 - h)) * (0.6 + 0.6 * thick);  // ventres éclairés par la ville
+		lit += city_glow * (0.35 + 0.65 * (1.0 - h)) * (0.5 + 0.4 * thick);  // ventres éclairés par la ville
 		cloud_a = dens * 0.92;
 		col = mix(col, lit, cloud_a);
 	}

@@ -111,7 +111,7 @@ func _build_rain() -> void:
 	_drops.process_material = pm
 	var q := QuadMesh.new()
 	q.size = Vector2(0.011, 0.5) if heavy else Vector2(0.007, 0.07)
-	q.material = _streak_mat(0.2 if heavy else 0.32, heavy)
+	q.material = _streak_mat(0.28 if heavy else 0.32, heavy)
 	_drops.draw_pass_1 = q
 	add_child(_drops)
 	if heavy:
@@ -176,8 +176,6 @@ func _streak_mat(alpha: float, heavy: bool) -> StandardMaterial3D:
 	m.albedo_texture = _streak_tex() if heavy else _dot_tex()
 	m.albedo_color = Color(rain_col.r, rain_col.g, rain_col.b, alpha)
 	m.disable_receive_shadows = true
-	m.proximity_fade_enabled = true
-	m.proximity_fade_distance = 0.4
 	return m
 
 
