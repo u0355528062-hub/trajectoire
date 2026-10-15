@@ -148,10 +148,15 @@ static func apply(tree: SceneTree) -> void:
 			env.ssr_enabled = d["ssr"]
 			env.glow_enabled = d["glow"]
 			env.volumetric_fog_enabled = d["volfog"]
+			# sans brouillard volumétrique, la brume et la pluie passent par le brouillard de profondeur
+			if env.has_meta("fog_d"):
+				env.fog_density = float(env.get_meta("fog_d")) + (0.0 if d["volfog"] else float(env.get_meta("fog_novol", 0.0)))
 			env.adjustment_enabled = true
 			env.adjustment_brightness = float(d["brightness"])
-		elif n is DirectionalLight3D and (n as DirectionalLight3D).light_energy > 1.0:
+		elif n is DirectionalLight3D and (n.has_meta("main_light") or (n as DirectionalLight3D).light_energy > 1.0):
 			(n as DirectionalLight3D).shadow_enabled = d["shadows"]
+		elif n is Weather:
+			(n as Weather).apply_settings()
 
 
 ## Les nouveaux lecteurs audio sans bus explicite vont sur « Effets »
