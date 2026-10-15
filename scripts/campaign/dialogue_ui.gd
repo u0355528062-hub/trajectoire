@@ -88,7 +88,7 @@ func _ready() -> void:
 	_sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_sub.modulate.a = 0.0
 	_root.add_child(_sub)
-	_name = UiStyle.ink_outline(UiStyle.label("", 15, UiStyle.PAPER, "caps"), 5, 0.8)
+	_name = UiStyle.ink_outline(UiStyle.label("", 16, UiStyle.PAPER, "caps"), 8, 0.95)
 	_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_sub.add_child(_name)
 	_text = UiStyle.ink_outline(UiStyle.label("", 26, UiStyle.PAPER, "semibold"), 8, 0.85)
@@ -111,8 +111,8 @@ func _ready() -> void:
 	_barks_box = VBoxContainer.new()
 	_barks_box.anchor_left = 0.5 - SUB_W * 0.5
 	_barks_box.anchor_right = 0.5 + SUB_W * 0.5
-	_barks_box.anchor_top = 0.66
-	_barks_box.anchor_bottom = 0.66
+	_barks_box.anchor_top = 0.75
+	_barks_box.anchor_bottom = 0.75
 	_barks_box.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_barks_box.alignment = BoxContainer.ALIGNMENT_END
 	_barks_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -526,8 +526,8 @@ func _process(delta: float) -> void:
 		_sub_y = move_toward(_sub_y, y, delta * 0.4)
 		_sub.anchor_top = _sub_y
 		_sub.anchor_bottom = _sub_y
-		_barks_box.anchor_top = _sub_y - 0.21
-		_barks_box.anchor_bottom = _sub_y - 0.21
+		_barks_box.anchor_top = _sub_y - 0.12
+		_barks_box.anchor_bottom = _sub_y - 0.12
 	var want := 1.0 if _line_on else (0.8 if _sub_hold else 0.0)
 	_sub_a = move_toward(_sub_a, want, delta * (8.0 if _line_on else 5.0))
 	_sub.modulate.a = _sub_a
