@@ -247,9 +247,7 @@ class GateArm:
 			get_tree().current_scene.add_child(sh)
 			sh.global_position = global_transform * Vector3(length * 0.5, 1.0, 0)
 			sh.linear_velocity = Vector3(randf_range(-2, 2), randf_range(1, 3), randf_range(-2, 2))
-			get_tree().create_timer(8.0).timeout.connect(func():
-				if is_instance_valid(sh):
-					Fx.shrink_and_free(sh, 0.6))
+			Fx.after(sh, 8.0, Fx.shrink_and_free.bind(sh, 0.6))
 
 
 # =================================================================== horodateur
@@ -314,9 +312,7 @@ class PayStation:
 			get_tree().current_scene.add_child(c)
 			c.global_position = global_transform * Vector3(randf_range(-0.1, 0.1), 0.9, -0.15)
 			c.linear_velocity = Vector3(randf_range(-1.5, 1.5), randf_range(1, 2.5), randf_range(-1.5, 1.5))
-			get_tree().create_timer(14.0).timeout.connect(func():
-				if is_instance_valid(c):
-					c.queue_free())
+			Fx.after(c, 14.0, c.queue_free)
 
 
 # =================================================================== panneau « P »

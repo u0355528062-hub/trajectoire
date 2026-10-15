@@ -104,9 +104,7 @@ func _smash(pos: Vector3, dir: Vector3) -> void:
 		sh.linear_velocity = dir * randf_range(0.8, 3.0) + Vector3(randf_range(-1.5, 1.5), randf_range(1.0, 3.2), randf_range(-1.5, 1.5))
 		sh.angular_velocity = Vector3(randf_range(-9, 9), randf_range(-9, 9), randf_range(-9, 9))
 		var life := randf_range(18.0, 30.0)
-		get_tree().create_timer(life).timeout.connect(func():
-			if is_instance_valid(sh):
-				Fx.shrink_and_free(sh, 0.8))
+		Fx.after(sh, life, Fx.shrink_and_free.bind(sh, 0.8))
 	# terre + feuillage éparpillés
 	var dust := Fx.smoke(Color(0.28, 0.2, 0.14, 0.55), 12, 1.6, 0.5, true, 0.5, 2.4)
 	dust.one_shot = true
@@ -114,7 +112,7 @@ func _smash(pos: Vector3, dir: Vector3) -> void:
 	scene.add_child(dust)
 	dust.global_position = global_position + Vector3(0, 0.25, 0)
 	dust.emitting = true
-	get_tree().create_timer(3.0).timeout.connect(func(): if is_instance_valid(dust): dust.queue_free())
+	Fx.after(dust, 3.0, dust.queue_free)
 	for i in 7:
 		var lf := RigidBody3D.new()
 		lf.collision_layer = 4
@@ -138,9 +136,7 @@ func _smash(pos: Vector3, dir: Vector3) -> void:
 		lf.global_position = global_position + Vector3(randf_range(-0.12, 0.12), 0.3 + randf() * 0.2, randf_range(-0.12, 0.12))
 		lf.linear_velocity = dir * randf_range(0.5, 2.0) + Vector3(randf_range(-1.2, 1.2), randf_range(0.5, 2.5), randf_range(-1.2, 1.2))
 		var lfr := lf
-		get_tree().create_timer(randf_range(14.0, 24.0)).timeout.connect(func():
-			if is_instance_valid(lfr):
-				Fx.shrink_and_free(lfr, 0.8))
+		Fx.after(lfr, randf_range(14.0, 24.0), Fx.shrink_and_free.bind(lfr, 0.8))
 	get_tree().call_group("crowd", "on_event", "vandal", {"pos": global_position, "amount": 0.25})
 	if _nav_in and crowd != null:
 		crowd.remove_obstacle(self)

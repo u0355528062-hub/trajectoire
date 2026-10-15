@@ -263,6 +263,22 @@ static func muzzle(scene: Node, pos: Vector3, axis: Vector3) -> void:
 
 ## Fait disparaître un corps physique en réduisant son apparence (jamais le nœud physique lui-même :
 ## mettre à l'échelle un RigidBody3D fait protester le moteur — axes non normalisés dans l'intégration).
+## Appelle `cb` après `sec` secondes, tant que `owner` existe : la minuterie est un enfant de `owner`, elle
+## disparaît avec lui (rien ne survit à un rechargement de scène, contrairement à SceneTree.create_timer).
+static func after(owner: Node, sec: float, cb: Callable) -> void:
+	if owner == null or not is_instance_valid(owner):
+		return
+	var t := Timer.new()
+	t.one_shot = true
+	t.wait_time = maxf(sec, 0.001)
+	t.autostart = true
+	t.timeout.connect(func() -> void:
+		t.queue_free()
+		if cb.is_valid():
+			cb.call())
+	owner.add_child(t)
+
+
 static func shrink_and_free(body: Node3D, dur := 1.0, to := Vector3.ONE * 0.01) -> void:
 	if not is_instance_valid(body) or body.is_queued_for_deletion():
 		return

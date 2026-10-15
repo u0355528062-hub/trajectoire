@@ -279,4 +279,4 @@ static func drop_box(n: Npc) -> void:
 	box.top_level = false
 	box.transform = Transform3D.IDENTITY
 	rb.linear_velocity = n.vel + Vector3.UP * 0.5
-	n.get_tree().create_timer(60.0).timeout.connect(func(): if is_instance_valid(rb): rb.queue_free())
+	Fx.after(rb, 60.0, rb.queue_free)

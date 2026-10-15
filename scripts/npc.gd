@@ -388,9 +388,7 @@ func react(pose: String, dur: float, look_at_p: Vector3, opt := {}) -> bool:
 		var delay: float = opt.get("delay", _rng.randf_range(0.05, 0.5))
 		var cat: String = opt["voice"]
 		var loud: bool = opt.get("loud", true)
-		get_tree().create_timer(delay).timeout.connect(func():
-			if is_instance_valid(self):
-				say_cat(cat, loud))
+		Fx.after(self, delay, say_cat.bind(cat, loud))
 	if opt.get("hop", false):
 		hop(int(opt.get("hops", 2)))
 	react_cd = dur + _rng.randf_range(1.0, 3.0)
@@ -649,9 +647,8 @@ func _home_march(delta: float) -> void:
 		_whistle_cd = _rng.randf_range(25.0, 60.0)
 		if crowd.near_listener(global_position, 40.0):
 			set_act("whistle", {}, 5.0)
-			get_tree().create_timer(0.35).timeout.connect(func():
-				if is_instance_valid(self):
-					AudioLib.play_at(self, "whistle_%d" % (_rng.randi() % 3), head_pos(), 0.0, 9.0))
+			Fx.after(self, 0.35, func() -> void:
+				AudioLib.play_at(self, "whistle_%d" % (_rng.randi() % 3), head_pos(), 0.0, 9.0))
 			_home_sub = "whistle"
 			_home_t = 0.0
 
@@ -885,9 +882,7 @@ func _home_chat(delta: float) -> void:
 			look(spk.head_pos(), 1.0)
 			if _rng.randf() < delta * 0.25:
 				human.nod = 1.0
-				get_tree().create_timer(0.9).timeout.connect(func():
-					if is_instance_valid(self):
-						human.nod = 0.0)
+				Fx.after(self, 0.9, func() -> void: human.nod = 0.0)
 		if smoker:
 			set_act(_prop_rest_pose(), {}, 2.5)
 		else:
@@ -1566,9 +1561,7 @@ func _throw_stone(target: Vector3) -> void:
 	s.linear_velocity = _ballistic(origin, target + err, 13.0)
 	s.angular_velocity = Vector3(_rng.randf_range(-10, 10), _rng.randf_range(-10, 10), _rng.randf_range(-10, 10))
 	AudioLib.play_at(self, "sfx:throw", origin, -8.0, 5.0)
-	get_tree().create_timer(40.0).timeout.connect(func():
-		if is_instance_valid(s):
-			s.queue_free())
+	Fx.after(s, 40.0, s.queue_free)
 
 
 func _on_kick_impact(point: Vector3) -> void:
@@ -1894,9 +1887,7 @@ func _mortar_launch(axis: Vector3) -> void:
 	AudioLib.play_at(self, "sfx:thump", mouth, 4.0, 30.0)
 	human.kick_back(1.0)
 	if _rng.randf() < 0.5:
-		get_tree().create_timer(0.6).timeout.connect(func():
-			if is_instance_valid(self):
-				say_cat("ouais", true))
+		Fx.after(self, 0.6, say_cat.bind("ouais", true))
 	if crowd:
 		crowd.on_event("mortar_fire", {"pos": mouth, "dir": axis, "npc": self})
 

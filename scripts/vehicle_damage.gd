@@ -402,9 +402,7 @@ func explode() -> void:
 		sh.global_position = pos + Vector3(randf_range(-0.8, 0.8), randf_range(0.2, 1.0), randf_range(-1.4, 1.4))
 		sh.linear_velocity = Vector3(randf_range(-5, 5), randf_range(4, 9), randf_range(-5, 5))
 		sh.angular_velocity = Vector3(randf_range(-8, 8), randf_range(-8, 8), randf_range(-8, 8))
-		get_tree().create_timer(randf_range(14.0, 24.0)).timeout.connect(func():
-			if is_instance_valid(sh):
-				Fx.shrink_and_free(sh, 1.0))
+		Fx.after(sh, randf_range(14.0, 24.0), Fx.shrink_and_free.bind(sh, 1.0))
 	car.bump(2.0, Vector3.UP)
 	# panneaux de verre qui restent : tout part
 	for p in panes:

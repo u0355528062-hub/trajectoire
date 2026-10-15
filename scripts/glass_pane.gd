@@ -235,9 +235,7 @@ func _chips(imp: Vector2, impact_w: Vector3, dir: Vector3, n: int) -> void:
 		rb.global_position = impact_w + normal * side * 0.02
 		rb.linear_velocity = dir * _rng.randf_range(0.4, 1.8) + Vector3(_rng.randf_range(-0.5, 0.5), _rng.randf_range(0.0, 0.8), _rng.randf_range(-0.5, 0.5))
 		rb.angular_velocity = Vector3(_rng.randf_range(-6, 6), _rng.randf_range(-6, 6), _rng.randf_range(-6, 6))
-		get_tree().create_timer(_rng.randf_range(6.0, 11.0)).timeout.connect(func():
-			if is_instance_valid(rb):
-				rb.queue_free())
+		Fx.after(rb, _rng.randf_range(6.0, 11.0), rb.queue_free)
 
 
 ## Ralenti bref au moment où une vitre explose.
@@ -246,9 +244,10 @@ func _slowmo_fx() -> void:
 		return
 	_slowmo_on = true
 	Engine.time_scale = 0.3
-	var t := get_tree().create_timer(0.16, true, false, true)
+	var tree := get_tree()
+	var t := tree.create_timer(0.16, true, false, true)
 	t.timeout.connect(func():
-		var tw := get_tree().create_tween().set_ignore_time_scale(true)
+		var tw := tree.create_tween().set_ignore_time_scale(true)
 		tw.tween_property(Engine, "time_scale", 1.0, 0.3)
 		tw.tween_callback(func(): _slowmo_on = false))
 
@@ -419,18 +418,16 @@ func _shatter(imp: Vector2, kick_dir: Vector3) -> void:
 				if touches_edge and _rng.randf() < 0.6:
 					rb.freeze = true
 					var delay := _rng.randf_range(0.3, 3.0)
-					get_tree().create_timer(delay).timeout.connect(func():
-						if is_instance_valid(rb):
+					var k_rng := _rng
+					Fx.after(rb, delay, func() -> void:
 							rb.freeze = false
-							rb.linear_velocity = Vector3(_rng.randf_range(-0.3, 0.3), -0.2, _rng.randf_range(-0.3, 0.3)) + kick_dir * 0.4
-							rb.angular_velocity = Vector3(_rng.randf_range(-3, 3), _rng.randf_range(-3, 3), _rng.randf_range(-3, 3)))
+							rb.linear_velocity = Vector3(k_rng.randf_range(-0.3, 0.3), -0.2, k_rng.randf_range(-0.3, 0.3)) + kick_dir * 0.4
+							rb.angular_velocity = Vector3(k_rng.randf_range(-3, 3), k_rng.randf_range(-3, 3), k_rng.randf_range(-3, 3)))
 				else:
 					rb.linear_velocity = vel
 					rb.angular_velocity = Vector3(_rng.randf_range(-8, 8), _rng.randf_range(-8, 8), _rng.randf_range(-8, 8))
 				var life := _rng.randf_range(14.0, 22.0)
-				get_tree().create_timer(life).timeout.connect(func():
-					if is_instance_valid(rb):
-						Fx.shrink_and_free(rb, 1.0))
+				Fx.after(rb, life, Fx.shrink_and_free.bind(rb, 1.0))
 				made += 1
 	_glass_dust(impact_w, kick_dir)
 

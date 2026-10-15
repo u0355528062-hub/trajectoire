@@ -184,6 +184,6 @@ func smash(dir: Vector3) -> void:
 		rb.global_position = global_position + global_basis * Vector3(randf_range(-size.x * 0.4, size.x * 0.4), randf_range(0.4, size.y), 0)
 		rb.linear_velocity = dir.normalized() * randf_range(1.0, 3.5) + Vector3(randf_range(-1.5, 1.5), randf_range(1.0, 3.0), randf_range(-1.5, 1.5))
 		rb.angular_velocity = Vector3(randf_range(-8, 8), randf_range(-8, 8), randf_range(-8, 8))
-		get_tree().create_timer(randf_range(25.0, 40.0)).timeout.connect(func(): if is_instance_valid(rb): rb.queue_free())
+		Fx.after(rb, randf_range(25.0, 40.0), rb.queue_free)
 	if shop:
 		shop.on_item_smashed(self)

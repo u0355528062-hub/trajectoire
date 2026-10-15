@@ -581,5 +581,5 @@ func collapse() -> void:
 		get_tree().current_scene.add_child(dust)
 		dust.global_position = global_position + Vector3(0, 0.3, -1.0)
 		dust.emitting = true
-		get_tree().create_timer(4.0).timeout.connect(func(): if is_instance_valid(dust): dust.queue_free())
+		Fx.after(dust, 4.0, dust.queue_free)
 		get_tree().call_group("crowd", "on_event", "bus_collapse", {"pos": global_position}))

@@ -209,8 +209,8 @@ func _physics_process(delta: float) -> void:
 		tm.albedo_color = Color(0.1, 0.08, 0.08)
 		tm.roughness = 1.0
 		_tube.material_override = tm
-		get_tree().create_timer(30.0).timeout.connect(func():
-			if is_instance_valid(self) and not held:
+		Fx.after(self, 30.0, func() -> void:
+			if not held:
 				queue_free())
 	# lancé dans une poubelle ouverte : il l'enflamme
 	if not held and lit and linear_velocity.y < 0.5:

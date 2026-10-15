@@ -2818,7 +2818,7 @@ func _ev_call(d: Dictionary) -> void:
 				if is_instance_valid(n):
 					n.react("refuse", 2.4, p + Vector3.UP * 1.6, {"voice": "refuse", "voice_p": 0.7})
 					n.human.shake = 1.0
-					get_tree().create_timer(1.2).timeout.connect(func(): if is_instance_valid(n): n.human.shake = 0.0))
+					Fx.after(n, 1.2, func() -> void: n.human.shake = 0.0))
 		elif n.state == "home" and n.react_cd <= 0.0:
 			n.look(p + Vector3.UP * 1.6, 1.0)
 	if joiners > 0:

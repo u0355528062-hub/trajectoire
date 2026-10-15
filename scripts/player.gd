@@ -1312,7 +1312,7 @@ func call_crowd() -> void:
 	_voice.volume_db = 2.0
 	_voice.play()
 	var p := global_position
-	get_tree().create_timer(0.35).timeout.connect(func():
+	Fx.after(self, 0.35, func() -> void:
 		get_tree().call_group("crowd", "on_event", "call", {"pos": p, "dir": -cam_yaw.global_basis.z}))
 
 

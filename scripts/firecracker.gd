@@ -187,9 +187,7 @@ func explode(at := Vector3.INF) -> void:
 	sk.emitting = true
 	for n in [sp, sk]:
 		var host: Node = n
-		get_tree().create_timer(3.2).timeout.connect(func():
-			if is_instance_valid(host):
-				host.queue_free())
+		Fx.after(host, 3.2, host.queue_free)
 	# --- marque de brûlure
 	_scorch(scene, pos)
 	# --- effets physiques et événements
